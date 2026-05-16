@@ -4,8 +4,10 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import path from 'path';
+import { testConnection } from './utils/db';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,6 +24,11 @@ app.use(morgan('dev'));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'BidForGood API is running' });
+});
+
+app.get('/api/db-test', async (req, res) => {
+  const result = await testConnection();
+  res.json(result);
 });
 
 io.on('connection', (socket) => {
