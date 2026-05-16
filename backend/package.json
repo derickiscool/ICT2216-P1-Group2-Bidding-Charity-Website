@@ -1,0 +1,38 @@
+{
+  "name": "bidforgood-backend",
+  "version": "1.0.0",
+  "description": "BidForGood Backend API",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "pg": "^8.11.3",
+    "argon2": "^0.31.2",
+    "jsonwebtoken": "^9.0.2",
+    "express-rate-limit": "^7.1.5",
+    "express-session": "^1.17.3",
+    "validator": "^13.11.0",
+    "multer": "^1.4.5-lts.1",
+    "morgan": "^1.10.0",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/express-session": "^1.17.10",
+    "@types/multer": "^1.4.11",
+    "@types/morgan": "^1.9.9",
+    "@types/cors": "^2.8.17",
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.2",
+    "ts-node-dev": "^2.0.0"
+  }
+}
