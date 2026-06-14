@@ -1,0 +1,301 @@
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Eye, EyeOff, AlertCircle, CheckCircle2, Loader2, Info, Building2 } from 'lucide-react'
+import { useAuthStore } from '../store/authStore'
+import type { ApiError, UserRole } from '../types'
+
+const C = {
+  slate: '#2D3A3A', emerald: '#047857', emeraldDark: '#035c43',
+  emeraldLight: '#ECFDF5', beige: '#BBB09B', linen: '#F7F5F0',
+  muted: '#5C6E6E', mauve: '#A675A1', mauveLight: '#F5EFF5',
+  bronze: '#895B1E', bronzeLight: '#FDF5EC',
+  danger: '#B91C1C', dangerLight: '#FEF2F2', dangerBorder: '#FECACA',
+}
+
+function pwdStrength(p: string) {
+  if (!p) return { score: 0, label: '', color: '' }
+  let s = 0
+  if (p.length >= 8) s++; if (p.length >= 12) s++
+  if (/[A-Z]/.test(p)) s++; if (/[0-9]/.test(p)) s++; if (/[^A-Za-z0-9]/.test(p)) s++
+  if (s <= 1) return { score: 1, label: 'Weak', color: '#B91C1C' }
+  if (s <= 2) return { score: 2, label: 'Fair', color: '#D97706' }
+  if (s <= 3) return { score: 3, label: 'Good', color: C.emerald }
+  return { score: 4, label: 'Strong', color: '#065f46' }
+}
+
+function inputSt(hasErr: boolean, extra?: React.CSSProperties): React.CSSProperties {
+  return {
+    width: '100%', padding: '10px 14px', borderRadius: '12px',
+    border: `1.5px solid ${hasErr ? C.danger : C.beige}`,
+    background: '#fff', color: C.slate, fontSize: '14px', outline: 'none',
+    ...extra,
+  }
+}
+
+function RoleCard({ role, label, desc, selected, onToggle }: { role: UserRole; label: string; desc: string; selected: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" onClick={onToggle}
+      className="flex-1 text-left p-4 rounded-xl border-2 transition-all"
+      style={{ borderColor: selected ? C.emerald : C.beige, background: selected ? C.emeraldLight : '#fff' }}>
+      <div className="flex items-start gap-2.5">
+        <div className="mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center"
+          style={{ borderColor: selected ? C.emerald : C.beige, background: selected ? C.emerald : 'transparent' }}>
+          {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+        </div>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: selected ? C.emerald : C.slate }}>{label}</p>
+          <p className="text-xs mt-0.5 leading-snug" style={{ color: C.muted }}>{desc}</p>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+export default function RegisterPage() {
+  const navigate = useNavigate()
+  const { register, isLoading } = useAuthStore()
+
+  const [form, setForm] = useState({ full_name: '', email: '', username: '', password: '', confirm: '' })
+  const [roles, setRoles] = useState<UserRole[]>(['bidder'])
+  const [showPwd, setShowPwd] = useState(false)
+  const [showCfm, setShowCfm] = useState(false)
+  const [agreed, setAgreed] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [globalErr, setGlobalErr] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+
+  const strength = pwdStrength(form.password)
+
+  const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm(prev => ({ ...prev, [f]: e.target.value }))
+    setErrors(prev => ({ ...prev, [f]: '' }))
+  }
+
+  const toggleRole = (r: UserRole) =>
+    setRoles(prev => prev.includes(r) ? (prev.length > 1 ? prev.filter(x => x !== r) : prev) : [...prev, r])
+
+  const validate = () => {
+    const e: Record<string, string> = {}
+    if (!form.full_name.trim()) e.full_name = 'Full name is required.'
+    if (!form.email.trim()) e.email = 'Email is required.'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Enter a valid email address.'
+    if (!form.username.trim()) e.username = 'Username is required.'
+    else if (form.username.length < 3) e.username = 'At least 3 characters.'
+    else if (!/^[a-zA-Z0-9_]+$/.test(form.username)) e.username = 'Letters, numbers, and underscores only.'
+    if (!form.password) e.password = 'Password is required.'
+    else if (form.password.length < 8) e.password = 'At least 8 characters.'
+    else if (strength.score < 2) e.password = 'Password is too weak. Add uppercase, numbers or symbols.'
+    if (form.password !== form.confirm) e.confirm = 'Passwords do not match.'
+    if (!agreed) e.agreed = 'You must agree to the terms.'
+    setErrors(e); return Object.keys(e).length === 0
+  }
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); setGlobalErr(null)
+    if (!validate()) return
+    try {
+      await register({ full_name: form.full_name, email: form.email, username: form.username, password: form.password, roles })
+      setSuccess(true)
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setErrors(ae.errors); else setGlobalErr(ae.message || 'Registration failed. Please try again.')
+    }
+  }
+
+  // ─── Success screen ───────────────────────────────────────────────────────
+  if (success) return (
+    <div className="min-h-[calc(100vh-64px)] flex items-center justify-center px-6 py-12" style={{ background: C.linen }}>
+      <div className="w-full max-w-sm text-center bg-white rounded-2xl px-8 py-12 shadow-sm"
+        style={{ border: `1px solid ${C.beige}` }}>
+        <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-5"
+          style={{ background: C.emeraldLight }}>
+          <CheckCircle2 className="w-7 h-7" style={{ color: C.emerald }} />
+        </div>
+        <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>Check your inbox</h2>
+        <p className="text-sm mb-1" style={{ color: C.muted }}>
+          We sent a verification link to <span className="font-medium" style={{ color: C.slate }}>{form.email}</span>
+        </p>
+        <p className="text-xs mb-8" style={{ color: C.beige }}>Activate your account by clicking the link in the email.</p>
+        <Link to="/login"
+          className="block w-full py-2.5 rounded-xl text-sm font-semibold text-white text-center"
+          style={{ background: C.emerald }}>
+          Go to Login
+        </Link>
+      </div>
+    </div>
+  )
+
+  // ─── Form ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-[calc(100vh-64px)] flex items-start justify-center px-6 py-12" style={{ background: C.linen }}>
+      <div className="w-full max-w-lg">
+
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold mb-1" style={{ color: C.slate }}>Create your account</h1>
+          <p className="text-sm" style={{ color: C.muted }}>Join BidForGood and start making a difference</p>
+        </div>
+
+        {/* Charity CTA banner */}
+        <Link to="/register/charity"
+          className="flex items-center gap-3 p-4 rounded-xl mb-6 transition-opacity hover:opacity-90"
+          style={{ background: C.bronzeLight, border: `1px solid #E8C99A` }}>
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: C.bronze }}>
+            <Building2 className="w-4.5 h-4.5 text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: C.bronze }}>Registering a charity organisation?</p>
+            <p className="text-xs mt-0.5" style={{ color: '#A07030' }}>Apply for charity account →</p>
+          </div>
+        </Link>
+
+        <div className="bg-white rounded-2xl px-8 py-8 shadow-sm" style={{ border: `1px solid ${C.beige}` }}>
+
+          {globalErr && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl px-4 py-3"
+              style={{ background: C.dangerLight, border: `1px solid ${C.dangerBorder}` }}>
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: C.danger }} />
+              <p className="text-sm font-medium" style={{ color: C.danger }}>{globalErr}</p>
+            </div>
+          )}
+
+          <form onSubmit={onSubmit} noValidate className="space-y-4">
+
+            {/* Full name */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Full name</label>
+              <input type="text" autoComplete="name" value={form.full_name} onChange={set('full_name')}
+                placeholder="Jordan Smith" style={inputSt(!!errors.full_name)}
+                onFocus={e => (e.target.style.borderColor = C.emerald)}
+                onBlur={e => (e.target.style.borderColor = errors.full_name ? C.danger : C.beige)} />
+              {errors.full_name && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.full_name}</p>}
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Email address</label>
+              <input type="email" autoComplete="email" value={form.email} onChange={set('email')}
+                placeholder="you@example.com" style={inputSt(!!errors.email)}
+                onFocus={e => (e.target.style.borderColor = C.emerald)}
+                onBlur={e => (e.target.style.borderColor = errors.email ? C.danger : C.beige)} />
+              {errors.email && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.email}</p>}
+            </div>
+
+            {/* Username */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Username</label>
+              <input type="text" autoComplete="username" value={form.username} onChange={set('username')}
+                placeholder="jordansmith" style={inputSt(!!errors.username)}
+                onFocus={e => (e.target.style.borderColor = C.emerald)}
+                onBlur={e => (e.target.style.borderColor = errors.username ? C.danger : C.beige)} />
+              {errors.username && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.username}</p>}
+            </div>
+
+            {/* Password */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Password</label>
+              <div className="relative">
+                <input type={showPwd ? 'text' : 'password'} autoComplete="new-password"
+                  value={form.password} onChange={set('password')}
+                  placeholder="Min. 8 characters" style={inputSt(!!errors.password, { paddingRight: '42px' })}
+                  onFocus={e => (e.target.style.borderColor = C.emerald)}
+                  onBlur={e => (e.target.style.borderColor = errors.password ? C.danger : C.beige)} />
+                <button type="button" onClick={() => setShowPwd(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
+                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {form.password && (
+                <div className="mt-2">
+                  <div className="flex gap-1 mb-1">
+                    {[1, 2, 3, 4].map(i => (
+                      <div key={i} className="h-1 flex-1 rounded-full transition-colors"
+                        style={{ background: i <= strength.score ? strength.color : '#E5E7EB' }} />
+                    ))}
+                  </div>
+                  <p className="text-xs font-medium" style={{ color: strength.color }}>{strength.label}</p>
+                </div>
+              )}
+              {errors.password && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.password}</p>}
+            </div>
+
+            {/* Confirm password */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Confirm password</label>
+              <div className="relative">
+                <input type={showCfm ? 'text' : 'password'} autoComplete="new-password"
+                  value={form.confirm} onChange={set('confirm')}
+                  placeholder="Repeat your password" style={inputSt(!!errors.confirm, { paddingRight: '42px' })}
+                  onFocus={e => (e.target.style.borderColor = C.emerald)}
+                  onBlur={e => (e.target.style.borderColor = errors.confirm ? C.danger : C.beige)} />
+                <button type="button" onClick={() => setShowCfm(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
+                  {showCfm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {errors.confirm && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.confirm}</p>}
+            </div>
+
+            {/* Role selector */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <label className="text-sm font-medium" style={{ color: C.slate }}>I want to…</label>
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  style={{ background: C.mauveLight, color: C.mauve }}>Both can be selected</span>
+              </div>
+              <div className="flex gap-3">
+                <RoleCard role="bidder" label="Bid on items" desc="Browse and bid on charity auctions"
+                  selected={roles.includes('bidder')} onToggle={() => toggleRole('bidder')} />
+                <RoleCard role="donor" label="Donate items" desc="List items for charity auctions"
+                  selected={roles.includes('donor')} onToggle={() => toggleRole('donor')} />
+              </div>
+            </div>
+
+            {/* Terms */}
+            <div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <div className="flex-shrink-0 mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center cursor-pointer transition-all"
+                  onClick={() => { setAgreed(v => !v); setErrors(prev => ({ ...prev, agreed: '' })) }}
+                  style={{ borderColor: errors.agreed ? C.danger : (agreed ? C.emerald : C.beige), background: agreed ? C.emerald : '#fff' }}>
+                  {agreed && <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 10 8">
+                    <path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>}
+                </div>
+                <span className="text-sm leading-snug" style={{ color: C.muted }}>
+                  I agree to the{' '}
+                  <a href="#" className="font-medium" style={{ color: C.emerald }}>Terms of Service</a>
+                  {' '}and{' '}
+                  <a href="#" className="font-medium" style={{ color: C.emerald }}>Privacy Policy</a>
+                </span>
+              </label>
+              {errors.agreed && <p className="text-xs mt-1 ml-7" style={{ color: C.danger }}>{errors.agreed}</p>}
+            </div>
+
+            {/* Submit */}
+            <button type="submit" disabled={isLoading}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all mt-2"
+              style={{ background: isLoading ? '#6ba88e' : C.emerald, cursor: isLoading ? 'not-allowed' : 'pointer' }}
+              onMouseEnter={e => { if (!isLoading) (e.currentTarget.style.background = C.emeraldDark) }}
+              onMouseLeave={e => { if (!isLoading) (e.currentTarget.style.background = C.emerald) }}>
+              {isLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Creating account…</> : 'Create Account'}
+            </button>
+          </form>
+
+          <p className="text-center text-sm mt-6" style={{ color: C.muted }}>
+            Already have an account?{' '}
+            <Link to="/login" className="font-semibold" style={{ color: C.emerald }}>Log in</Link>
+          </p>
+
+          {/* Email notice */}
+          <div className="mt-5 flex items-start gap-2.5 rounded-xl px-4 py-3"
+            style={{ background: C.emeraldLight, border: `1px solid #A7F3D0` }}>
+            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: C.emerald }} />
+            <p className="text-xs leading-snug" style={{ color: '#065F46' }}>
+              You'll receive a verification email after signing up. Your account is only activated once your email is confirmed.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
