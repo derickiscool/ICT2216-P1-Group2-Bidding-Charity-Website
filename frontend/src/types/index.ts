@@ -1,6 +1,6 @@
 // ─── User & Auth ────────────────────────────────────────────────────────────
 
-export type UserRole = 'bidder' | 'donor' | 'charity_staff' | 'admin'
+export type UserRole = 'bidder' | 'donor' | 'charity_staff' | 'charity' | 'admin'
 
 export interface User {
   id: number
@@ -52,6 +52,7 @@ export type ItemCondition = 'new' | 'like_new' | 'good' | 'fair'
 
 export interface Listing {
   id: number
+  uuid?: string
   donor_id: number
   campaign_id: number
   campaign?: Campaign
@@ -64,6 +65,7 @@ export interface Listing {
   reserve_price?: number
   buy_now_price?: number
   current_bid: number
+  min_increment?: number
   bid_count: number
   status: ListingStatus
   start_time: string

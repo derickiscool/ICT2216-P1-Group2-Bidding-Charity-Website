@@ -1,0 +1,37 @@
+Local validation for Ezra SFR branch
+====================================
+
+Commands run from repository root:
+
+npm ci
+npm run build
+npm test
+npm audit --audit-level=high
+
+Observed result:
+
+npm ci: PASS
+npm run build: PASS
+- backend TypeScript build passed
+- frontend TypeScript/Vite production build passed
+
+npm test: PASS
+- backend Node test runner passed: 11/11 tests
+- frontend TypeScript no-emit check passed
+
+npm audit --audit-level=high: PASS
+- found 0 vulnerabilities
+
+Automated tests covered:
+
+1. SFR02 login uses HttpOnly cookie sessions and generic invalid-credential errors.
+2. SFR02 Authorization Bearer token is rejected without a session cookie.
+3. SFR02 account lockout after five consecutive failed login attempts.
+4. SFR01 breached/common password rejection and duplicate-email enumeration suppression.
+5. SFR01 OTP registration lifecycle: account creation, one-time OTP use, expiry, and 3-attempt lockout.
+6. SFR12/SFR13 public search hides pending listings and rejects SQL-like syntax.
+7. SFR10 bidding requires CSRF, enforces minimum increment, and accepts valid sequential bids.
+8. SFR10 per-listing bid serialisation rejects same-amount concurrent bids and automated bid flooding.
+9. SFR04/SFR05 charity document validation, oversized upload rejection, pending state, role enforcement, admin-only review, and one-time admin review.
+10. SFR08 active auction configuration locking for snake_case and camelCase fields.
+11. Session configuration fails securely when production JWT_SECRET is missing or too short.
