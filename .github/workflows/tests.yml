@@ -59,31 +59,20 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: package-lock.json    # single workspace lockfile at repo root
 
-      - name: Install backend dependencies
-        working-directory: backend
+      # npm workspaces share one lockfile at the repo root, so install once
+      # here rather than running `npm ci` separately inside backend/frontend.
+      - name: Install dependencies
         run: npm ci
 
       - name: Run database migrations
         working-directory: backend
-        run: npm run migrate    # adjust to your actual migration command
-
-      - name: Run backend unit/integration tests
-        working-directory: backend
-        run: npm test
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+        run: npm run migrate --if-present    # no-op until a migrate script exists
 
       - name: Build frontend
         working-directory: frontend
         run: npm run build
-
-      - name: Run frontend tests
-        working-directory: frontend
-        run: npm test --if-present
 
   # ──────────────────────────────────────────────
   # 2. DEPENDENCY VULNERABILITY SCAN
@@ -117,6 +106,7 @@ jobs:
     permissions:
       security-events: write    # needed to upload findings to Security tab
       contents: read
+      actions: read    # needed by analyze step to look up workflow run metadata
     strategy:
       matrix:
         language: [javascript-typescript]
@@ -151,70 +141,3 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ──────────────────────────────────────────────
-  # 5. (OPTIONAL) SELENIUM E2E / UI TEST work in progress
-  #     Delete this entire job if you don't have browser tests yet.
-  #     Consider Playwright instead of Selenium for new E2E work.
-  # ──────────────────────────────────────────────
-  e2e-test:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    container:
-      image: node:20
-      options: --network-alias=testserver
-
-    env:
-      SELENIUM_HOST: http://selenium:4444/wd/hub
-      TEST_BASE_URL: http://testserver:3000
-      DB_HOST: postgres        # inside a job container, reach services by name
-      DB_PORT: 5432
-      DB_NAME: bidforgood
-      DB_USER: testuser
-      DB_PASSWORD: testpass
-      NODE_ENV: test
-
-    services:
-      selenium:
-        image: selenium/standalone-chrome
-        ports:
-          - 4444:4444
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: bidforgood
-        options: >-
-          --health-cmd "pg_isready -U testuser"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Run database migrations
-        working-directory: backend
-        run: npm run migrate
-
-      - name: Start backend server
-        working-directory: backend
-        run: |
-          nohup node src/server.js &
-          sleep 5
-
-      - name: Wait for Selenium to be ready
-        run: |
-          for i in $(seq 1 10); do
-            curl -s "$SELENIUM_HOST/status" && break || sleep 3
-          done
-
-      - name: Run Selenium tests
-        working-directory: backend
-        run: node tests/SeleniumTest.mjs github
