@@ -9,9 +9,14 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "npm run dev -w backend",
-    "dev:frontend": "npm run dev -w frontend"
+    "dev:frontend": "npm run dev -w frontend",
+    "lint": "npm run lint -w backend && npm run lint -w frontend"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "eslint": "^10.5.0",
+    "eslint-plugin-security": "^4.0.1",
+    "globals": "^17.7.0",
+    "typescript-eslint": "^8.62.0"
   }
 }

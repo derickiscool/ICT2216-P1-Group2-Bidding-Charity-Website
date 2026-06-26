@@ -1,7 +1,7 @@
 // File: frontend/src/pages/RegisterCharityPage.tsx
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, AlertCircle, Loader2, Building2, CheckCircle2, ShieldCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Eye, EyeOff, AlertCircle, Loader2, Building2, ShieldCheck } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import type { ApiError } from '../types'
 
@@ -23,7 +23,6 @@ function inputSt(hasErr: boolean, extra?: React.CSSProperties): React.CSSPropert
 }
 
 export default function RegisterCharityPage() {
-  const navigate = useNavigate()
   const { register, isLoading } = useAuthStore()
 
   const [form, setForm] = useState({ 

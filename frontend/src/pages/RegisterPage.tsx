@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Eye, EyeOff, AlertCircle, CheckCircle2, Loader2, Info, Building2 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import type { ApiError, UserRole } from '../types'
@@ -32,7 +32,7 @@ function inputSt(hasErr: boolean, extra?: React.CSSProperties): React.CSSPropert
   }
 }
 
-function RoleCard({ role, label, desc, selected, onToggle }: { role: UserRole; label: string; desc: string; selected: boolean; onToggle: () => void }) {
+function RoleCard({ label, desc, selected, onToggle }: { role: UserRole; label: string; desc: string; selected: boolean; onToggle: () => void }) {
   return (
     <button type="button" onClick={onToggle}
       className="flex-1 text-left p-4 rounded-xl border-2 transition-all"
@@ -52,7 +52,6 @@ function RoleCard({ role, label, desc, selected, onToggle }: { role: UserRole; l
 }
 
 export default function RegisterPage() {
-  const navigate = useNavigate()
   const { register, isLoading } = useAuthStore()
 
   const [form, setForm] = useState({ full_name: '', email: '', username: '', password: '', confirm: '' })
