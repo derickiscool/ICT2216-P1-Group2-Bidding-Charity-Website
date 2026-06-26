@@ -149,7 +149,7 @@ jobs:
           fail-on-severity: high
 
   # ──────────────────────────────────────────────
-  # 3. STATIC APPLICATION SECURITY TESTING (SAST) — CodeQL
+  # 3. STATIC APPLICATION SECURITY TESTING (SAST) — CodeQL "feature might not be enabled in this repo"
   # ──────────────────────────────────────────────
   codeql:
     runs-on: ubuntu-latest
