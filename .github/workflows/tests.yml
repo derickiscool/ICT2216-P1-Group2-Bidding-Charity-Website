@@ -1,0 +1,220 @@
+name: CI Security and Testing
+
+# Runs on every branch push, plus PRs into main.
+on:
+  push:
+    branches:
+      - '**'        # all branches
+      - feat/cicd        # tet on feat/cicd branch
+  pull_request:
+    branches:
+      - main
+
+# Least-privilege default token. Jobs that need more request it explicitly.
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────
+  # 1. BUILD + UNIT/INTEGRATION TESTS
+  # ──────────────────────────────────────────────
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # Disposable Postgres for tests. Created fresh each run, destroyed after.
+    # Reachable at localhost:5432 because of the port mapping below.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: bidforgood
+        ports:
+          - 5432:5432
+        # Wait until Postgres is actually accepting connections before tests run.
+        options: >-
+          --health-cmd "pg_isready -U testuser"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # These match the disposable DB above. Throwaway values — safe to hardcode
+    # because they only ever touch a temporary container. Real secrets go in
+    # GitHub repository secrets, never here.
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: bidforgood
+      DB_USER: testuser
+      DB_PASSWORD: testpass
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run database migrations
+        working-directory: backend
+        run: npm run migrate    # adjust to your actual migration command
+
+      - name: Run backend unit/integration tests
+        working-directory: backend
+        run: npm test
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test --if-present
+
+  # ──────────────────────────────────────────────
+  # 2. DEPENDENCY VULNERABILITY SCAN
+  # ──────────────────────────────────────────────
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Audit backend dependencies
+        working-directory: backend
+        run: npm audit --audit-level=high
+        # Fails on high/critical vulns. To warn instead of block, add:
+        # continue-on-error: true
+
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  # ──────────────────────────────────────────────
+  # 3. STATIC APPLICATION SECURITY TESTING (SAST) — CodeQL
+  # ──────────────────────────────────────────────
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write    # needed to upload findings to Security tab
+      contents: read
+    strategy:
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+          queries: security-extended    # more security queries than default
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # ──────────────────────────────────────────────
+  # 4. SECRET SCANNING — catches committed keys/passwords/.env files
+  # ──────────────────────────────────────────────
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # full history so past commits are scanned too
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────
+  # 5. (OPTIONAL) SELENIUM E2E / UI TEST work in progress
+  #     Delete this entire job if you don't have browser tests yet.
+  #     Consider Playwright instead of Selenium for new E2E work.
+  # ──────────────────────────────────────────────
+  e2e-test:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    container:
+      image: node:20
+      options: --network-alias=testserver
+
+    env:
+      SELENIUM_HOST: http://selenium:4444/wd/hub
+      TEST_BASE_URL: http://testserver:3000
+      DB_HOST: postgres        # inside a job container, reach services by name
+      DB_PORT: 5432
+      DB_NAME: bidforgood
+      DB_USER: testuser
+      DB_PASSWORD: testpass
+      NODE_ENV: test
+
+    services:
+      selenium:
+        image: selenium/standalone-chrome
+        ports:
+          - 4444:4444
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: bidforgood
+        options: >-
+          --health-cmd "pg_isready -U testuser"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run database migrations
+        working-directory: backend
+        run: npm run migrate
+
+      - name: Start backend server
+        working-directory: backend
+        run: |
+          nohup node src/server.js &
+          sleep 5
+
+      - name: Wait for Selenium to be ready
+        run: |
+          for i in $(seq 1 10); do
+            curl -s "$SELENIUM_HOST/status" && break || sleep 3
+          done
+
+      - name: Run Selenium tests
+        working-directory: backend
+        run: node tests/SeleniumTest.mjs github
