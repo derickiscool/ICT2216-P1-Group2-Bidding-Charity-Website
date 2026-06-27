@@ -34,6 +34,7 @@ jobs:
             npm run build -w frontend
 
             echo "--- Restarting application ---"
+            cd backend
             pm2 restart bidforgood
 
             echo "--- Deploy complete ---"

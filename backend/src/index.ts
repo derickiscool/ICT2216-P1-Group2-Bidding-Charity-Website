@@ -39,6 +39,16 @@ io.on('connection', (socket) => {
   });
 });
 
+// Serve built frontend files in production
+app.use(express.static(path.join(__dirname, '../../frontend/dist')));
+
+// Fallback: serve index.html for any non-API route (React Router support)
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(__dirname, '../../frontend/dist/index.html'));
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 
 httpServer.listen(PORT, () => {
