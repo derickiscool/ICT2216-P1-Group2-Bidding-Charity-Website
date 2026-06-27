@@ -1,0 +1,39 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+
+# If a second push to main happens while the first deploy is still running,
+# cancel the in-progress one and start fresh.
+concurrency:
+  group: aws-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "--- Pulling latest code ---"
+            cd /home/student2/app
+            git pull origin main
+
+            echo "--- Installing dependencies ---"
+            npm ci
+
+            echo "--- Building ---"
+            npm run build -w backend
+            npm run build -w frontend
+
+            echo "--- Restarting application ---"
+            pm2 restart bidforgood
+
+            echo "--- Deploy complete ---"

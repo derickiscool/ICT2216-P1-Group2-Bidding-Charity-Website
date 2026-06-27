@@ -4,7 +4,8 @@ name: CI Security and Testing
 on:
   push:
     branches:
-      - '**'        # all branches
+      - '**'
+      - '!main'     # skip main — already validated by PR checks
   pull_request:
     branches:
       - main
