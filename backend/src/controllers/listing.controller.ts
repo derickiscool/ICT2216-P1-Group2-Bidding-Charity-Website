@@ -1,14 +1,9 @@
 import type { Request, Response } from 'express';
-import { approveListing, createListing, getPendingListings, getPublicListing, legacySearchListingsByTitle, searchPublicListings, updateListingDetails } from '../services/listing.service';
+import { approveListing, createListing, getPendingListings, getPublicListing, searchPublicListings, updateListingDetails } from '../services/listing.service';
 
 export const listActive = async (req: Request, res: Response): Promise<void> => {
   const listings = await searchPublicListings(req.query);
   res.json({ data: listings, total: listings.length });
-};
-
-// INTENTIONALLY VULNERABLE — see services/listing.service.ts. Remove before merging.
-export const legacySearch = async (req: Request, res: Response): Promise<void> => {
-  res.json(await legacySearchListingsByTitle(String(req.query.title ?? '')));
 };
 
 export const getListing = async (req: Request, res: Response): Promise<void> => {
