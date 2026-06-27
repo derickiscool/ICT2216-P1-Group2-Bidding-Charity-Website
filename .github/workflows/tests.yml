@@ -1,0 +1,200 @@
+name: CI Security and Testing
+
+# Runs on every branch push, plus PRs into main.
+on:
+  push:
+    branches:
+      - '**'        # all branches
+  pull_request:
+    branches:
+      - main
+
+# Least-privilege default token. Jobs that need more request it explicitly.
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────
+  # 1. BUILD + UNIT/INTEGRATION TESTS
+  # ──────────────────────────────────────────────
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # Disposable Postgres for tests. Created fresh each run, destroyed after.
+    # Reachable at localhost:5432 because of the port mapping below.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: bidforgood
+        ports:
+          - 5432:5432
+        # Wait until Postgres is actually accepting connections before tests run.
+        options: >-
+          --health-cmd "pg_isready -U testuser"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # These match the disposable DB above. Throwaway values — safe to hardcode
+    # because they only ever touch a temporary container. Real secrets go in
+    # GitHub repository secrets, never here.
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: bidforgood
+      DB_USER: testuser
+      DB_PASSWORD: testpass
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json    # single workspace lockfile at repo root
+
+      # npm workspaces share one lockfile at the repo root, so install once
+      # here rather than running `npm ci` separately inside backend/frontend.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        working-directory: backend
+        run: npm run migrate --if-present    # no-op until a migrate script exists
+
+      - name: Build backend (typecheck)
+        working-directory: backend
+        run: npm run build
+
+      - name: Build frontend (typecheck)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+
+  # ──────────────────────────────────────────────
+  # 1b. LINT
+  # ──────────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint backend
+        working-directory: backend
+        run: npm run lint
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+  # ──────────────────────────────────────────────
+  # 2. DEPENDENCY VULNERABILITY SCAN
+  # ──────────────────────────────────────────────
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Audit backend dependencies
+        working-directory: backend
+        run: npm audit --audit-level=high
+        # Fails on high/critical vulns. To warn instead of block, add:
+        # continue-on-error: true
+
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  # ──────────────────────────────────────────────
+  # 2b. DEPENDENCY REVIEW — blocks PRs that introduce newly-vulnerable deps
+  #     (npm audit above only catches what's already merged to the branch;
+  #     this catches it at PR time, before merge.)
+  # ──────────────────────────────────────────────
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  # ──────────────────────────────────────────────
+  # 3. STATIC APPLICATION SECURITY TESTING (SAST) — CodeQL "feature might not be enabled in this repo"
+  # ──────────────────────────────────────────────
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write    # needed to upload findings to Security tab
+      contents: read
+      actions: read    # needed by analyze step to look up workflow run metadata
+    strategy:
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+          queries: security-extended    # more security queries than default
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # ──────────────────────────────────────────────
+  # 4. SECRET SCANNING — catches committed keys/passwords/.env files
+  # ──────────────────────────────────────────────
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # full history so past commits are scanned too
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

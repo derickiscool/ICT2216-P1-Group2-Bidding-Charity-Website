@@ -1,0 +1,50 @@
+/* ─── BidForGood Design Tokens ───────────────────────────────────────────── */
+:root {
+  /* Brand palette */
+  --bfg-linen:   #F7F5F0;   /* Body background                      */
+  --bfg-slate:   #2D3A3A;   /* Primary text, headings, footer bg    */
+  --bfg-emerald: #047857;   /* Primary CTA (Bid, Donate, Submit)    */
+  --bfg-emerald-dark: #035c43; /* Hover state for primary buttons   */
+  --bfg-emerald-light: #ECFDF5; /* Emerald tint for highlights      */
+  --bfg-bronze:  #895B1E;   /* Secondary buttons (Learn More)       */
+  --bfg-bronze-dark: #6b4716; /* Hover state for secondary buttons  */
+  --bfg-mauve:   #A675A1;   /* Badges, tags, status indicators      */
+  --bfg-mauve-light: #F5EFF5; /* Mauve tint for badge backgrounds   */
+  --bfg-beige:   #BBB09B;   /* Borders, dividers, input borders     */
+  --bfg-beige-light: rgba(187,176,155,0.18); /* Card borders at low opacity */
+
+  /* Semantic aliases */
+  --bfg-body-bg:  var(--bfg-linen);
+  --bfg-card-bg:  #FFFFFF;
+  --bfg-text:     var(--bfg-slate);
+  --bfg-text-muted: #5C6E6E;
+  --bfg-border:   var(--bfg-beige);
+
+  /* Danger / error */
+  --bfg-danger:       #B91C1C;
+  --bfg-danger-light: #FEF2F2;
+  --bfg-danger-border:#FECACA;
+}
+
+/* ─── Global resets ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  background-color: var(--bfg-body-bg);
+  color: var(--bfg-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Utility classes that Tailwind can't easily express ─────────────────── */
+.bfg-card {
+  background: var(--bfg-card-bg);
+  border: 1px solid var(--bfg-beige-light);
+  border-radius: 1rem;
+}
+
+/* Focus ring using emerald */
+.bfg-focus:focus-visible {
+  outline: 2px solid var(--bfg-emerald);
+  outline-offset: 2px;
+}

@@ -1,63 +1,123 @@
-import { useState } from 'react'
+// import { useState } from 'react'
 
-interface DbTestResult {
-  success: boolean
-  message: string
-  latency?: number
-}
+// interface DbTestResult {
+//   success: boolean
+//   message: string
+//   latency?: number
+// }
 
-function App() {
-  const [dbStatus, setDbStatus] = useState<DbTestResult | null>(null)
-  const [loading, setLoading] = useState(false)
+// function App() {
+//   const [dbStatus, setDbStatus] = useState<DbTestResult | null>(null)
+//   const [loading, setLoading] = useState(false)
 
-  const testDatabase = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch('http://localhost:5000/api/db-test')
-      const data = await response.json()
-      setDbStatus(data)
-    } catch (error) {
-      setDbStatus({
-        success: false,
-        message: `Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`
-      })
-    }
-    setLoading(false)
-  }
+//   const testDatabase = async () => {
+//     setLoading(true)
+//     try {
+//       const response = await fetch('http://localhost:5000/api/db-test')
+//       const data = await response.json()
+//       setDbStatus(data)
+//     } catch (error) {
+//       setDbStatus({
+//         success: false,
+//         message: `Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`
+//       })
+//     }
+//     setLoading(false)
+//   }
+
+//   return (
+//     <div className="min-h-screen bg-base-100">
+//       <div className="hero bg-base-200">
+//         <div className="hero-content text-center">
+//           <div className="max-w-md">
+//             <h1 className="text-5xl font-bold">BidForGood</h1>
+//             <p className="py-6">
+//               A charity auction platform where you can bid on donated items,
+//               services, or experiences to support verified charity organisations.
+//             </p>
+//             <button className="btn btn-primary">Get Started</button>
+            
+//             <div className="mt-8">
+//               <button 
+//                 className="btn btn-secondary" 
+//                 onClick={testDatabase}
+//                 disabled={loading}
+//               >
+//                 {loading ? 'Testing...' : 'Test Database Connection'}
+//               </button>
+              
+//               {dbStatus && (
+//                 <div className={`mt-4 p-4 rounded ${dbStatus.success ? 'bg-success text-success-content' : 'bg-error text-error-content'}`}>
+//                   <p className="font-bold">{dbStatus.message}</p>
+//                   {dbStatus.latency && <p>Latency: {dbStatus.latency}ms</p>}
+//                 </div>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+//       </div>
+//     </div>
+//   )
+// }
+
+// export default App
+import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useAuthStore } from './store/authStore'
+
+// Layout
+import Layout from './components/layout/Layout'
+import { ProtectedRoute, RoleProtectedRoute } from './components/layout/ProtectedRoute'
+
+// Pages
+import HomePage from './pages/HomePage'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import RegisterCharityPage from './pages/RegisterCharityPage'
+import AuctionsPage from './pages/AuctionsPage'
+import AuctionDetailPage from './pages/AuctionDetailPage'
+import CharitiesPage from './pages/CharitiesPage'
+import DashboardPage from './pages/DashboardPage'
+import ProfilePage from './pages/ProfilePage'
+import AdminPage from './pages/AdminPage'
+import NotFoundPage from './pages/NotFoundPage'
+
+export default function App() {
+  const { fetchMe } = useAuthStore()
+
+  // On first load, try to rehydrate user from stored token
+  useEffect(() => {
+    fetchMe()
+  }, [fetchMe])
 
   return (
-    <div className="min-h-screen bg-base-100">
-      <div className="hero bg-base-200">
-        <div className="hero-content text-center">
-          <div className="max-w-md">
-            <h1 className="text-5xl font-bold">BidForGood</h1>
-            <p className="py-6">
-              A charity auction platform where you can bid on donated items,
-              services, or experiences to support verified charity organisations.
-            </p>
-            <button className="btn btn-primary">Get Started</button>
-            
-            <div className="mt-8">
-              <button 
-                className="btn btn-secondary" 
-                onClick={testDatabase}
-                disabled={loading}
-              >
-                {loading ? 'Testing...' : 'Test Database Connection'}
-              </button>
-              
-              {dbStatus && (
-                <div className={`mt-4 p-4 rounded ${dbStatus.success ? 'bg-success text-success-content' : 'bg-error text-error-content'}`}>
-                  <p className="font-bold">{dbStatus.message}</p>
-                  {dbStatus.latency && <p>Latency: {dbStatus.latency}ms</p>}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* ── Public routes (wrapped in shared Layout) ── */}
+        <Route element={<Layout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/auctions" element={<AuctionsPage />} />
+          <Route path="/auctions/:id" element={<AuctionDetailPage />} />
+          <Route path="/charities" element={<CharitiesPage />} />
+          <Route path="/register/charity" element={<RegisterCharityPage />} />
+
+          {/* ── Auth required ── */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+          </Route>
+
+          {/* ── Admin only ── */}
+          <Route element={<RoleProtectedRoute allowedRoles={['admin']} />}>
+            <Route path="/admin" element={<AdminPage />} />
+          </Route>
+
+          {/* ── 404 ── */}
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }
-
-export default App
