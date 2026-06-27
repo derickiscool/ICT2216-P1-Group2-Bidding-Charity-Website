@@ -7,7 +7,29 @@ export const randomToken = (bytes = 32): string => crypto.randomBytes(bytes).toS
 
 export const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 
-export const isValidEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+export const isValidEmail = (email: string): boolean => {
+  const value = email.trim();
+  if (value.length < 3 || value.length > 254) return false;
+  if ([...value].some(char => char <= ' ' || char > '~')) return false;
+  const at = value.indexOf('@');
+  if (at <= 0 || at !== value.lastIndexOf('@') || at >= value.length - 1) return false;
+
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (local.length > 64 || local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
+  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false;
+
+  return domain.split('.').every(label => {
+    if (label.length === 0 || label.length > 63) return false;
+    if (label.startsWith('-') || label.endsWith('-')) return false;
+    return [...label].every(char =>
+      (char >= 'a' && char <= 'z') ||
+      (char >= 'A' && char <= 'Z') ||
+      (char >= '0' && char <= '9') ||
+      char === '-'
+    );
+  });
+};
 
 export const safeString = (value: unknown, maxLength: number): string => {
   if (typeof value !== 'string') return '';
@@ -42,6 +64,20 @@ export const isSafeSearchQuery = (query: string): boolean => {
   return /^[\p{L}\p{N}\s.,&()_-]*$/u.test(q);
 };
 
-export const stripHtml = (value: string): string => value.replace(/<[^>]*>/g, '').trim();
+export const escapeHtml = (value: string): string => {
+  let escaped = '';
+  for (const char of value) {
+    switch (char) {
+      case '&': escaped += '&amp;'; break;
+      case '<': escaped += '&lt;'; break;
+      case '>': escaped += '&gt;'; break;
+      case '"': escaped += '&quot;'; break;
+      case "'": escaped += '&#x27;'; break;
+      case '`': escaped += '&#x60;'; break;
+      default: escaped += char;
+    }
+  }
+  return escaped.trim();
+};
 
-export const sanitizeText = (value: unknown, maxLength: number): string => stripHtml(safeString(value, maxLength));
+export const sanitizeText = (value: unknown, maxLength: number): string => escapeHtml(safeString(value, maxLength));

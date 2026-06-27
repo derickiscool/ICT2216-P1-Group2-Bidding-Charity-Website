@@ -29,6 +29,28 @@ function inputSt(hasErr: boolean, extra?: CSSProperties): CSSProperties {
   }
 }
 
+function isEmailLike(email: string): boolean {
+  const value = email.trim()
+  if (value.length < 3 || value.length > 254) return false
+  if ([...value].some(char => char <= ' ' || char > '~')) return false
+  const at = value.indexOf('@')
+  if (at <= 0 || at !== value.lastIndexOf('@') || at >= value.length - 1) return false
+  const local = value.slice(0, at)
+  const domain = value.slice(at + 1)
+  if (local.length > 64 || local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false
+  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false
+  return domain.split('.').every(label => {
+    if (label.length === 0 || label.length > 63) return false
+    if (label.startsWith('-') || label.endsWith('-')) return false
+    return [...label].every(char =>
+      (char >= 'a' && char <= 'z') ||
+      (char >= 'A' && char <= 'Z') ||
+      (char >= '0' && char <= '9') ||
+      char === '-'
+    )
+  })
+}
+
 function RoleCard({ label, desc, selected, onToggle }: { label: string; desc: string; selected: boolean; onToggle: () => void }) {
   return (
     <button type="button" onClick={onToggle}
@@ -76,7 +98,7 @@ export default function RegisterPage() {
     const e: Record<string, string> = {}
     if (!form.full_name.trim()) e.full_name = 'Full name is required.'
     if (!form.email.trim()) e.email = 'Email is required.'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Enter a valid email address.'
+    else if (!isEmailLike(form.email)) e.email = 'Enter a valid email address.'
     if (!form.username.trim()) e.username = 'Username is required.'
     else if (form.username.length < 3) e.username = 'At least 3 characters.'
     else if (!/^[a-zA-Z0-9_]+$/.test(form.username)) e.username = 'Letters, numbers, and underscores only.'

@@ -8,7 +8,7 @@ const devOtpOutbox = new Map<string, string>();
 export const sendRegistrationOtp = async (email: string, otp: string): Promise<void> => {
   if (process.env.NODE_ENV !== 'production') {
     devOtpOutbox.set(email, otp);
-    console.info(`[BidForGood DEV OTP] ${email}: ${otp}`);
+    console.info(`[BidForGood DEV OTP] otp=${otp}`);
   }
 };
 

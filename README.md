@@ -10,7 +10,7 @@ Implemented in this branch:
 
 - Secure user registration with OTP verification before account creation.
 - Duplicate-email enumeration suppression during registration.
-- Breached/common-password rejection using built-in strings and SHA-256 hash denylist.
+- Breached/common-password rejection using built-in strings and a breached-password denylist.
 - Login/logout with generic failure messages, failed-login tracking, and temporary lockout.
 - HttpOnly cookie session management using JWT, `sid`, `jti`, expiry, and server-side session records.
 - CSRF protection for state-changing authenticated requests.
@@ -75,7 +75,7 @@ BidForGood/
 │       └── ci.yml
 ├── backend/
 │   ├── data/
-│   │   └── breached-password-sha256.txt
+│   │   └── breached-passwords.txt
 │   ├── src/
 │   │   ├── app.ts
 │   │   ├── index.ts
