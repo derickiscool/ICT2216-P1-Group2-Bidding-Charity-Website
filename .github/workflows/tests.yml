@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - '**'        # all branches
-      - feat/cicd        # tet on feat/cicd branch
   pull_request:
     branches:
       - main
@@ -77,6 +76,14 @@ jobs:
       - name: Build frontend (typecheck)
         working-directory: frontend
         run: npm run build
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
 
   # ──────────────────────────────────────────────
   # 1b. LINT
