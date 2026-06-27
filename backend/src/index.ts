@@ -1,65 +1,26 @@
-import express from 'express';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import cors from 'cors';
-import rateLimit from 'express-rate-limit';
-import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
-import { testConnection } from './utils/db';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { createApp } from './app';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const app = express();
+const app = createApp();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: {
-    origin: 'http://localhost:5173',
-    methods: ['GET', 'POST']
-  }
+  cors: { origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173', methods: ['GET', 'POST'], credentials: true }
 });
-
-app.use(cors());
-app.use(express.json());
-app.use(morgan('dev'));
-
-// Rate limiting for all routes
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,  // 15 minutes
-  max: 200,                   // max 200 requests per window per IP
-  standardHeaders: true,
-  legacyHeaders: false,
-}));
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'BidForGood API is running' });
-});
-
-app.get('/api/db-test', async (req, res) => {
-  const result = await testConnection();
-  res.json(result);
-});
+app.set('io', io);
 
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
+  socket.on('listing:join', (listingId: number) => {
+    if (Number.isInteger(listingId)) void socket.join(`listing:${listingId}`);
   });
-});
-
-// Serve built frontend files in production
-app.use(express.static(path.join(__dirname, '../../frontend/dist')));
-
-// Fallback: serve index.html for any non-API route (React Router support)
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(__dirname, '../../frontend/dist/index.html'));
-  }
+  socket.on('disconnect', () => undefined);
 });
 
 const PORT = process.env.PORT || 5000;
-
 httpServer.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

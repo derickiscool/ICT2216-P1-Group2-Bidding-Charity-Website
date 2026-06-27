@@ -10,8 +10,10 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "npm run dev -w backend",
     "dev:frontend": "npm run dev -w frontend",
+    "build": "npm run build -w backend && npm run build -w frontend",
     "lint": "npm run lint -w backend && npm run lint -w frontend",
-    "test": "npm test -w backend && npm test -w frontend"
+    "test": "npm test -w backend && npm test -w frontend",
+    "audit:high": "npm audit --workspaces --audit-level=high"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

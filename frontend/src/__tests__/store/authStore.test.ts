@@ -8,9 +8,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock API — vi.mock is hoisted to top, runs before imports
 // Use vi.hoisted to create mock fns before the hoisted mock factory runs
-const { mockPost, mockGet } = vi.hoisted(() => ({
+const { mockPost, mockGet, mockSetCsrfToken } = vi.hoisted(() => ({
   mockPost: vi.fn(),
   mockGet: vi.fn(),
+  mockSetCsrfToken: vi.fn(),
 }));
 
 vi.mock('../../services/api', () => ({
@@ -18,6 +19,7 @@ vi.mock('../../services/api', () => ({
     post: mockPost,
     get: mockGet,
   },
+  setCsrfToken: mockSetCsrfToken,
 }));
 
 // Import AFTER vi.mock (Vitest hoists it, but imports happen after)
@@ -26,9 +28,9 @@ import { useAuthStore } from '../../store/authStore';
 describe('Auth Store', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     useAuthStore.setState({
       user: null,
-      token: null,
       isAuthenticated: false,
       isLoading: false,
     });
@@ -36,31 +38,16 @@ describe('Auth Store', () => {
   });
 
   describe('initial state', () => {
-    it('should start unauthenticated when no token in localStorage', () => {
+    it('should start unauthenticated without client-readable session tokens', () => {
       const state = useAuthStore.getState();
       expect(state.user).toBeNull();
-      expect(state.token).toBeNull();
       expect(state.isAuthenticated).toBe(false);
       expect(state.isLoading).toBe(false);
-    });
-
-    it('should restore authentication from localStorage token', () => {
-      localStorage.setItem('token', 'existing-jwt-token');
-
-      // Re-initialize the store (simulates page refresh)
-      useAuthStore.setState({
-        token: 'existing-jwt-token',
-        isAuthenticated: true,
-      });
-
-      const state = useAuthStore.getState();
-      expect(state.token).toBe('existing-jwt-token');
-      expect(state.isAuthenticated).toBe(true);
     });
   });
 
   describe('login()', () => {
-    it('should set user + token on successful login', async () => {
+    it('should set user and CSRF token on successful cookie-session login', async () => {
       const mockUser = {
         id: 1,
         email: 'test@example.com',
@@ -71,20 +58,20 @@ describe('Auth Store', () => {
         is_active: true,
         created_at: '2026-01-01T00:00:00.000Z',
       };
-      const mockToken = 'jwt-token-abc';
+      const mockCsrfToken = 'csrf-token-abc';
 
       mockPost.mockResolvedValueOnce({
-        data: { token: mockToken, user: mockUser },
+        data: { csrfToken: mockCsrfToken, user: mockUser },
       });
 
       await useAuthStore.getState().login('test@example.com', 'password123');
 
       const state = useAuthStore.getState();
       expect(state.user).toEqual(mockUser);
-      expect(state.token).toBe(mockToken);
       expect(state.isAuthenticated).toBe(true);
       expect(state.isLoading).toBe(false);
-      expect(localStorage.getItem('token')).toBe(mockToken);
+      expect(localStorage.getItem('token')).toBeNull();
+      expect(mockSetCsrfToken).toHaveBeenCalledWith(mockCsrfToken);
       expect(mockPost).toHaveBeenCalledWith('/auth/login', {
         email: 'test@example.com',
         password: 'password123',
@@ -117,10 +104,8 @@ describe('Auth Store', () => {
           is_active: true,
           created_at: '2026-01-01T00:00:00.000Z',
         },
-        token: 'jwt-token',
         isAuthenticated: true,
       });
-      localStorage.setItem('token', 'jwt-token');
 
       mockPost.mockResolvedValueOnce({});
 
@@ -128,8 +113,8 @@ describe('Auth Store', () => {
 
       const state = useAuthStore.getState();
       expect(state.user).toBeNull();
-      expect(state.token).toBeNull();
       expect(state.isAuthenticated).toBe(false);
+      expect(mockSetCsrfToken).toHaveBeenCalledWith(null);
     });
   });
 

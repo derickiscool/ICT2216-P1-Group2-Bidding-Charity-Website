@@ -1,31 +1,39 @@
 import axios from 'axios'
 import type { ApiError } from '../types'
 
+let csrfToken: string | null = sessionStorage.getItem('csrfToken')
+
+export const setCsrfToken = (token: string | null) => {
+  csrfToken = token
+  if (token) sessionStorage.setItem('csrfToken', token)
+  else sessionStorage.removeItem('csrfToken')
+}
+
 const api = axios.create({
-  baseURL: '/api',          // Vite proxies /api → http://localhost:5000
-  withCredentials: true,    // Send cookies with every request
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: '/api',
+  withCredentials: true,
 })
 
-// ── Request interceptor: attach JWT from localStorage if it exists ──────────
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  const method = (config.method || 'get').toUpperCase()
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
+    config.headers['X-CSRF-Token'] = csrfToken
+  }
+  if (!(config.data instanceof FormData) && !config.headers['Content-Type']) {
+    config.headers['Content-Type'] = 'application/json'
   }
   return config
 })
 
-// ── Response interceptor: handle 401 globally ───────────────────────────────
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const headerToken = response.headers['x-csrf-token']
+    if (headerToken) setCsrfToken(headerToken)
+    return response
+  },
   (error) => {
     if (error.response?.status === 401) {
-      // Clear token and redirect to login
-      localStorage.removeItem('token')
-      window.location.href = '/login'
+      setCsrfToken(null)
     }
     const apiError: ApiError = {
       message: error.response?.data?.message || 'An unexpected error occurred',
