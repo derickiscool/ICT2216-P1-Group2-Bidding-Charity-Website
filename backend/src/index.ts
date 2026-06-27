@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -21,6 +22,14 @@ const io = new Server(httpServer, {
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
+
+// Rate limiting for all routes
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 200,                   // max 200 requests per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'BidForGood API is running' });
