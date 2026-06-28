@@ -1,161 +1,173 @@
 # BidForGood
 
-A charity auction web application where users can bid on donated items, services, or experiences, with proceeds going to verified charity organisations. The platform combines online auction features with charity fundraising.
+BidForGood is a charity auction web application where users can bid on donated items, services, or experiences, with proceeds going to verified charity organisations.
 
-## Project Description
+This branch focuses on Ezra's assigned secure implementation scope for Deliverable 2. It builds on the merged team frontend/backend codebase and implements security controls for registration, login, charity registration, auction configuration, bidding, search filtering, CI, dependency audit, and automated tests.
 
-BidForGood is a secure, interactive charity auction platform that makes fundraising more transparent, accessible, and engaging. Users can browse charity campaigns, view detailed auction listings, place real-time bids, set automated bids, track saved items, and receive notifications. After successful auctions, winners receive digital donation receipts showing their contribution details.
+## Current Implementation Scope
 
-## Features
+Implemented in this branch:
 
-- User registration and profile management
-- Charity campaign pages
-- Detailed auction listings
-- Real-time bidding
-- Automated bidding
-- Payment and donation receipt generation
-- Search and filtering
-- Watchlist
-- Notifications
-- Donor dashboard
-- Admin dashboard
-- Audit logging (bids, payments, receipts)
+- Secure user registration with OTP verification before account creation.
+- Duplicate-email enumeration suppression during registration.
+- Breached/common-password rejection using built-in strings and a breached-password denylist.
+- Login/logout with generic failure messages, failed-login tracking, and temporary lockout.
+- HttpOnly cookie session management using JWT, `sid`, `jti`, expiry, and server-side session records.
+- CSRF protection for state-changing authenticated requests.
+- Cookie-only authentication; `Authorization: Bearer` fallback is intentionally not accepted.
+- Charity registration supporting-document validation for PDF, PNG, and JPEG using declared MIME type and magic-byte checks.
+- Admin-only charity registration review workflow.
+- Auction configuration locking once a listing becomes active.
+- Bidder-only bid placement with CSRF, minimum increment validation, self-bidding prevention, per-listing mutex, and bid-flood protection.
+- Public listing search/browse that only exposes active listings.
+- Unsafe SQL-like search/filter syntax rejection.
+- Audit logging for security-relevant events with sensitive-field redaction.
+- GitHub Actions CI with dependency installation, Gitleaks secret scan, build, test, and high-severity npm audit.
+- Backend automated SFR tests.
+
+Not implemented in this branch:
+
+- Payment and escrow flow.
+- Donation receipt generation.
+- Delivery confirmation.
+- Automated bidding.
+- Persistent watchlist.
+- Full charity campaign management.
+- Full donor/bidder/charity/admin dashboards.
+- Full PostgreSQL runtime repository integration.
+- Docker/nginx/AWS deployment pipeline.
+- OWASP ZAP/DAST execution.
+
+## SFR Mapping
+
+| Requirement | Status in this branch |
+|---|---|
+| SFR01 | Implemented: OTP registration, duplicate-email enumeration suppression, breached-password rejection. |
+| SFR02 | Implemented: secure login/logout, lockout, cookie-only session authentication. |
+| SFR04 | Implemented: charity supporting-document MIME and magic-byte validation. |
+| SFR05 | Implemented: charity registration remains pending until admin review. |
+| SFR08 | Implemented: active auction configuration fields are locked. |
+| SFR10 | Implemented: bid validation, CSRF, velocity checking, and per-listing mutex. |
+| SFR12 | Implemented: public search only returns active listings. |
+| SFR13 | Implemented: malformed/SQL-like search syntax is rejected. |
+| FSR08 | Implemented: Gitleaks secret scan in GitHub Actions. |
 
 ## Tech Stack
 
 | Category | Technologies |
-|----------|-------------|
-| Frontend | React, TypeScript, Tailwind CSS, DaisyUI, Socket.IO Client |
-| Backend | Node.js, Express.js, TypeScript, Socket.IO Server |
-| Database | PostgreSQL, node-postgres (pg) |
-| Authentication | JWT, argon2 (password hashing) |
-| Security | express-rate-limit, express-session, validator |
-| File Upload | multer |
-| Logging | morgan |
-| Testing | Jest, OWASP ZAP |
-| Deployment | GitHub Actions, Docker, nginx |
+|---|---|
+| Frontend | React, TypeScript, Vite, Tailwind CSS, DaisyUI |
+| Backend | Node.js, Express.js, TypeScript |
+| Current Runtime Data Layer | In-memory repository for local development/testing |
+| Intended Database | PostgreSQL / `pg` dependency present |
+| Authentication | JWT, HttpOnly cookies, Argon2id password hashing |
+| Security | CSRF token, RBAC middleware, express-rate-limit, security headers, audit logging |
+| File Upload | Multer memory storage with backend validation for charity documents |
+| Testing | Node built-in test runner, TypeScript checks |
+| CI | GitHub Actions with Gitleaks, build, test, npm audit |
 
 ## Project Structure
 
-```
+```text
 BidForGood/
-├── frontend/          # React frontend application
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── backend/
+│   ├── data/
+│   │   └── breached-passwords.txt
 │   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── hooks/
-│   │   ├── services/
-│   │   ├── types/
-│   │   └── styles/
-│   ├── public/
-│   ├── package.json
-│   └── vite.config.ts
-│
-├── backend/           # Node.js backend API
-│   ├── src/
+│   │   ├── app.ts
+│   │   ├── index.ts
 │   │   ├── controllers/
-│   │   ├── routes/
 │   │   ├── middleware/
+│   │   ├── repositories/
+│   │   ├── routes/
 │   │   ├── services/
-│   │   ├── models/
-│   │   ├── utils/
-│   │   └── types/
+│   │   ├── tests/
+│   │   ├── types/
+│   │   └── utils/
 │   ├── package.json
 │   └── tsconfig.json
-│
-├── docker/            # Docker configuration files
-├── docs/              # Documentation
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   ├── store/
+│   │   ├── styles/
+│   │   └── types/
+│   ├── package.json
+│   └── vite.config.ts
+├── docs/
+│   ├── evidence/
+│   └── implementation/
+├── package.json
+├── package-lock.json
 └── README.md
 ```
 
-## Getting Started
+## Local Setup
 
-### Prerequisites
-
-Before you begin, ensure you have installed:
-
-- Node.js (v18 or higher)
-- npm or yarn
-- PostgreSQL (v14 or higher)
-- Docker (optional, for containerized setup)
-- Git
-
-### Installation
-
-1. Clone the repository:
-
-```bash
-git clone <repository-url>
-cd ICT2216-P1-Group2-Bidding-Charity-Website
-```
-
-2. Install all dependencies:
-
-```bash
-npm run install:all
-```
-
-Or manually:
+Install dependencies from the repository root:
 
 ```bash
 npm install
-cd backend && npm install
-cd ../frontend && npm install
 ```
 
-### Environment Configuration
-
-1. Backend environment:
-
-```bash
-cd backend
-cp .env.example .env
-```
-
-2. Frontend environment:
-
-```bash
-cd frontend
-cp .env.example .env
-```
-
-Update the `.env` files with your local configuration. Refer to `.env.example` for the required variables.
-
-### Running the Application
-
-From the root directory, run:
+Run both backend and frontend locally:
 
 ```bash
 npm run dev
 ```
 
-This will start both the backend (http://localhost:5000) and frontend (http://localhost:5173) simultaneously.
+Default local services:
 
-To run only the backend:
-
-```bash
-npm run dev:backend
+```text
+Backend:  http://localhost:5000
+Frontend: http://localhost:5173
 ```
 
-To run only the frontend:
+For local OTP testing, registration OTPs are printed in the backend console. OTPs are not returned by API responses.
+
+## Validation Commands
+
+Run these from the repository root before committing:
 
 ```bash
-npm run dev:frontend
+npm run build
+npm test
+npm audit --audit-level=high
 ```
 
-### Docker Setup (Optional)
+Expected result:
 
-```bash
-# Build and run all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
+```text
+backend build: PASS
+frontend build: PASS
+backend SFR tests: PASS
+frontend type-check: PASS
+npm audit --audit-level=high: PASS
 ```
+
+## Demo Accounts
+
+```text
+admin@bidforgood.test   / S3cure!Pass2026
+charity@bidforgood.test / S3cure!Pass2026
+donor@bidforgood.test   / S3cure!Pass2026
+bidder@bidforgood.test  / S3cure!Pass2026
+```
+
+## Security Notes
+
+- Session tokens are sent through HttpOnly cookies and are not stored in localStorage.
+- The backend intentionally rejects bearer-token authentication when no session cookie is present.
+- Production must configure `JWT_SECRET` with at least 32 characters. The application fails securely if it is missing or too short in production.
+- The current runtime repository is in-memory and intended for local development/testing. PostgreSQL persistence remains a team task.
+- This branch is not publicly hosted. GitHub stores the source code only; deployment remains separate.
 
 ## License
 
-This project is for educational purposes as part of ICT2216.
+This project is for educational purposes as part of ICT2216 Secure Software Development.

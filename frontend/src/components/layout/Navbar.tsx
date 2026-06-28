@@ -17,7 +17,16 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
 
   const handleLogout = async () => { onClose(); await logout(); navigate('/login') }
 
-  const roleLabel = (r: string) => ({ bidder: 'Bidder', donor: 'Donor', charity_staff: 'Charity Staff', admin: 'Admin' }[r] ?? r)
+  const roleLabel = (r: string) => {
+    switch (r) {
+      case 'bidder': return 'Bidder'
+      case 'donor': return 'Donor'
+      case 'charity_staff': return 'Charity Staff'
+      case 'charity': return 'Charity'
+      case 'admin': return 'Admin'
+      default: return r
+    }
+  }
 
   return (
     <div ref={ref} className="absolute right-0 top-full mt-2 w-56 rounded-2xl shadow-xl z-50 overflow-hidden"

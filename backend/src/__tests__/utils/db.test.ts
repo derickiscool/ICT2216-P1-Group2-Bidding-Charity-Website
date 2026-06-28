@@ -18,9 +18,9 @@ jest.mock('pg', () => {
   return { Pool: jest.fn(() => mockPool) };
 });
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Pool } = require('pg');
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const db = require('../../utils/db');
 
 describe('Database Connection', () => {

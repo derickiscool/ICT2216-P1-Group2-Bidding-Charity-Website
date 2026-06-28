@@ -1,17 +1,15 @@
 import { create } from 'zustand'
 import type { User, UserRole } from '../types'
-import api from '../services/api'
+import api, { setCsrfToken } from '../services/api'
 
 interface AuthStore {
   user: User | null
-  token: string | null
   isAuthenticated: boolean
   isLoading: boolean
-
-  // Actions
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  register: (data: RegisterData) => Promise<void>
+  register: (data: RegisterData) => Promise<string>
+  verifyRegistration: (email: string, otp: string) => Promise<void>
   fetchMe: () => Promise<void>
   hasRole: (role: UserRole) => boolean
 }
@@ -25,26 +23,28 @@ interface RegisterData {
 }
 
 interface LoginResponse {
-  token: string
+  csrfToken: string
   user: User
+}
+
+interface RegisterResponse {
+  message: string
 }
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
   user: null,
-  token: localStorage.getItem('token'),
-  isAuthenticated: !!localStorage.getItem('token'),
+  isAuthenticated: false,
   isLoading: false,
 
   login: async (email, password) => {
     set({ isLoading: true })
     try {
       const res = await api.post<LoginResponse>('/auth/login', { email, password })
-      const { token, user } = res.data
-      localStorage.setItem('token', token)
-      set({ user, token, isAuthenticated: true, isLoading: false })
+      setCsrfToken(res.data.csrfToken)
+      set({ user: res.data.user, isAuthenticated: true, isLoading: false })
     } catch (err) {
       set({ isLoading: false })
-      throw err   
+      throw err
     }
   },
 
@@ -52,15 +52,27 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       await api.post('/auth/logout')
     } finally {
-      localStorage.removeItem('token')
-      set({ user: null, token: null, isAuthenticated: false })
+      setCsrfToken(null)
+      set({ user: null, isAuthenticated: false })
     }
   },
 
   register: async (data) => {
     set({ isLoading: true })
     try {
-      await api.post('/auth/register', data)
+      const res = await api.post<RegisterResponse>('/auth/register', data)
+      set({ isLoading: false })
+      return res.data.message
+    } catch (err) {
+      set({ isLoading: false })
+      throw err
+    }
+  },
+
+  verifyRegistration: async (email, otp) => {
+    set({ isLoading: true })
+    try {
+      await api.post('/auth/register/verify', { email, otp })
       set({ isLoading: false })
     } catch (err) {
       set({ isLoading: false })
@@ -69,14 +81,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
 
   fetchMe: async () => {
-    const token = localStorage.getItem('token')
-    if (!token) return
     try {
       const res = await api.get<User>('/auth/me')
       set({ user: res.data, isAuthenticated: true })
     } catch {
-      localStorage.removeItem('token')
-      set({ user: null, token: null, isAuthenticated: false })
+      setCsrfToken(null)
+      set({ user: null, isAuthenticated: false })
     }
   },
 

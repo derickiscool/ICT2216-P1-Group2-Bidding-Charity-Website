@@ -25,6 +25,13 @@ const STATS = [
   { label: 'Bidders Online', value: '892', icon: Users },
 ]
 
+const FEATURED_COUNTDOWN = [
+  { value: '00', label: 'DD' },
+  { value: '42', label: 'HH' },
+  { value: '17', label: 'MM' },
+  { value: '08', label: 'SS' },
+]
+
 // ─── Leaderboard Strip ────────────────────────────────────────────────────────
 function LeaderboardStrip() {
   return (
@@ -124,12 +131,12 @@ function Hero() {
             <p className="text-[11px] mb-4" style={{ color: 'rgba(255,255,255,0.55)' }}>Benefits: Children's Hospital Trust</p>
 
             <div className="flex items-center gap-1.5 mb-4">
-              {['00', '42', '17', '08'].map((v, i) => (
+              {FEATURED_COUNTDOWN.map(({ value, label }, i) => (
                 <div key={i} className="flex items-center">
                   <div className="rounded-xl px-2.5 py-1.5 text-center min-w-[36px]" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(187,176,155,0.14)' }}>
-                    <span className="text-base font-bold font-mono text-white block">{v}</span>
+                    <span className="text-base font-bold font-mono text-white block">{value}</span>
                     <span className="text-[8px] uppercase tracking-wider block mt-0.5" style={{ color: 'rgba(255,255,255,0.36)' }}>
-                      {['DD', 'HH', 'MM', 'SS'][i]}
+                      {label}
                     </span>
                   </div>
                   {i < 3 && <span className="mx-0.5 font-mono" style={{ color: 'rgba(255,255,255,0.28)' }}>:</span>}

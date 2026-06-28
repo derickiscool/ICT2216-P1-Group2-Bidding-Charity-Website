@@ -3,7 +3,7 @@
 ## Running Tests
 
 ```bash
-# Backend tests (Jest)
+# Backend tests (Jest, including Ezra SFR tests)
 npm test -w backend
 
 # Frontend tests (Vitest)
@@ -25,6 +25,9 @@ npm test
 | Test location | `backend/src/__tests__/` (mirrors `src/` structure) |
 | File naming | `*.test.ts` |
 | Example | `backend/src/__tests__/utils/db.test.ts` |
+
+Ezra's SFR integration tests are in `backend/src/__tests__/sfr/ezra.sfr.test.ts`.
+They run through the same backend Jest command, so CI does not need a separate test runner.
 
 ### Frontend
 
