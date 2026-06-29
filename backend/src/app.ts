@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import { testConnection } from './utils/db';
 import authRoutes from './routes/auth.routes';
@@ -10,6 +9,7 @@ import adminRoutes from './routes/admin.routes';
 import charityRoutes from './routes/charity.routes';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { securityHeaders } from './middleware/securityHeaders.middleware';
+import { requestLogger } from './middleware/logging.middleware';
 
 export const createApp = () => {
   const app = express();
@@ -17,7 +17,7 @@ export const createApp = () => {
   app.use(securityHeaders);
   app.use(cors({ origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173', credentials: true }));
   app.use(express.json({ limit: '100kb' }));
-  app.use(morgan('dev'));
+  app.use(requestLogger);
   app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', message: 'BidForGood API is running' }));
