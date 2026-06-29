@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Mail, Phone, Save, ShieldCheck, UserCircle } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
@@ -17,6 +17,7 @@ const C = {
 // Once backend confirms the exact field, we can keep only one field name.
 type ProfileUser = User & { contact_number?: string | null; phone_number?: string | null }
 type ProfileForm = { full_name: string; username: string; email: string; contact_number: string }
+type EditableProfileField = 'full_name' | 'username' | 'contact_number'
 type PasswordForm = { currentPassword: string; newPassword: string; confirmPassword: string }
 
 const emptyPwd: PasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
@@ -55,18 +56,16 @@ function pwdStrength(p: string) {
   return { score: 4, label: 'Strong', color: '#065F46' }
 }
 
-// Keeps role display readable even if backend later adds more role names.
 function roleText(role: string) {
-  const labels: Record<string, string> = {
-    bidder: 'Bidder',
-    donor: 'Donor',
-    charity_staff: 'Charity Staff',
-    charity_org: 'Charity Organisation',
-    charity_organisation: 'Charity Organisation',
-    admin: 'Admin',
+  switch (role) {
+    case 'bidder': return 'Bidder'
+    case 'donor': return 'Donor'
+    case 'charity_staff': return 'Charity Staff'
+    case 'charity_org':
+    case 'charity_organisation': return 'Charity Organisation'
+    case 'admin': return 'Admin'
+    default: return role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
-
-  return labels[role] ?? role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 // Shows user-friendly error messages instead of raw backend messages like "Not found".
@@ -82,7 +81,7 @@ function errMsg(err: unknown, fallback: string) {
 export default function ProfilePage() {
   const { user, fetchMe } = useAuthStore()
 
-  const [profile, setProfile] = useState<ProfileForm>(toForm(user))
+  const [profileEdits, setProfileEdits] = useState<Partial<ProfileForm>>({})
   const [passwords, setPasswords] = useState<PasswordForm>(emptyPwd)
   const [profileErrs, setProfileErrs] = useState<Record<string, string>>({})
   const [pwdErrs, setPwdErrs] = useState<Record<string, string>>({})
@@ -96,22 +95,28 @@ export default function ProfilePage() {
   const [showCfm, setShowCfm] = useState(false)
 
   const original = useMemo(() => toForm(user), [user])
+  const profile = useMemo<ProfileForm>(() => ({ ...original, ...profileEdits }), [original, profileEdits])
   const strength = pwdStrength(passwords.newPassword)
+  const dirty = profile.full_name !== original.full_name || profile.username !== original.username || profile.contact_number !== original.contact_number
 
-  
-  // Enables Save button only when profile fields are changed. This avoids unnecessary API calls when user did not edit anything.
-  const dirty = profile.full_name !== original.full_name ||
-    profile.username !== original.username ||
-    profile.contact_number !== original.contact_number
+  const setProfileField = (key: EditableProfileField) => (e: ChangeEvent<HTMLInputElement>) => {
+  const value = e.target.value
 
-  // authStore may load user data after this page first renders. This keeps the form synced when /auth/me finishes loading.
-  useEffect(() => setProfile(toForm(user)), [user])
+  // Avoid dynamic object injection warning by updating known fields only.
+  setProfileEdits(prev => {
+    if (key === 'full_name') return { ...prev, full_name: value }
+    if (key === 'username') return { ...prev, username: value }
+    return { ...prev, contact_number: value }
+  })
 
-  const setProfileField = (key: keyof ProfileForm) => (e: ChangeEvent<HTMLInputElement>) => {
-    setProfile(prev => ({ ...prev, [key]: e.target.value }))
-    setProfileErrs(prev => ({ ...prev, [key]: '' }))
-    setProfileMsg(null)
-  }
+  setProfileErrs(prev => {
+    if (key === 'full_name') return { ...prev, full_name: '' }
+    if (key === 'username') return { ...prev, username: '' }
+    return { ...prev, contact_number: '' }
+  })
+
+  setProfileMsg(null)
+}
 
   const setPwdField = (key: keyof PasswordForm) => (e: ChangeEvent<HTMLInputElement>) => {
     setPasswords(prev => ({ ...prev, [key]: e.target.value }))
@@ -189,6 +194,7 @@ export default function ProfilePage() {
       })
 
       await fetchMe()
+      setProfileEdits({})
       setProfileMsg({ type: 'success', text: 'Profile updated successfully.' })
     } catch (err) {
       const ae = err as ApiError
