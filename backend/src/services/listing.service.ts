@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { Listing, ListingStatus } from '../types/domain';
-import { addListing, getListingByUuid, listActiveListings, listPendingListings, updateListing } from '../repositories/inMemory.repository';
+import { addListing, getListingByUuid, listActiveListings, listPendingListings, updateListing } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
 import { isSafeSearchQuery, roundMoney, sanitizeText } from '../utils/security';
 import { audit } from './audit.service';

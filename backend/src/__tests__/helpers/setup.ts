@@ -2,9 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { createApp } from '../../app';
 import {
-  getPendingRegistration,
   resetRepositoryForTests,
-  savePendingRegistration,
 } from '../../repositories/inMemory.repository';
 import { readDevOtpForTest, clearDevOtpForTest } from '../../services/otpDelivery.service';
 

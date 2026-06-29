@@ -2,6 +2,15 @@ import crypto from 'crypto';
 import argon2 from 'argon2';
 import type { AuditEvent, Bid, CharityOrganisation, Listing, PendingRegistration, SessionRecord, User, UserRole } from '../types/domain';
 import { sha256 } from '../utils/security';
+import type {
+  BidForGoodRepository,
+  NewAuditEventInput,
+  NewBidInput,
+  NewCharityInput,
+  NewListingInput,
+  NewUserInput,
+  PublicUser,
+} from './repository.types';
 
 let userSeq = 1;
 let charitySeq = 1;
@@ -16,6 +25,7 @@ const charities: CharityOrganisation[] = [];
 const listings: Listing[] = [];
 const bids: Bid[] = [];
 const auditEvents: AuditEvent[] = [];
+const listingLocks = new Map<number, Promise<void>>();
 
 const publicUser = (user: User): Omit<User, 'passwordHash'> => {
   const { passwordHash: _passwordHash, ...safeUser } = user;
@@ -27,7 +37,7 @@ const nowIso = () => new Date().toISOString();
 
 export const resetRepositoryForTests = async (): Promise<void> => {
   userSeq = 1; charitySeq = 1; listingSeq = 1; bidSeq = 1; auditSeq = 1;
-  users.splice(0); pendingRegistrations.clear(); sessions.clear(); charities.splice(0); listings.splice(0); bids.splice(0); auditEvents.splice(0);
+  users.splice(0); pendingRegistrations.clear(); sessions.clear(); charities.splice(0); listings.splice(0); bids.splice(0); auditEvents.splice(0); listingLocks.clear();
   await seedDemoData();
 };
 
@@ -71,7 +81,7 @@ export const seedDemoData = async (): Promise<void> => {
 export const findUserByEmail = async (email: string): Promise<User | undefined> => users.find(u => u.email === email);
 export const findUserById = async (id: number): Promise<User | undefined> => users.find(u => u.id === id);
 export const findUserByUuid = async (uuid: string): Promise<User | undefined> => users.find(u => u.uuid === uuid);
-export const addUser = async (input: Omit<User, 'id' | 'uuid' | 'created_at' | 'failedLoginAttempts' | 'is_active'>): Promise<User> => {
+export const addUser = async (input: NewUserInput): Promise<User> => {
   const user: User = { ...input, id: userSeq++, uuid: crypto.randomUUID(), is_active: true, failedLoginAttempts: 0, created_at: nowIso() };
   users.push(user);
   return user;
@@ -94,7 +104,7 @@ export const revokeSession = async (sid: string): Promise<void> => {
   if (session) sessions.set(sid, { ...session, revokedAt: new Date() });
 };
 
-export const addCharity = async (input: Omit<CharityOrganisation, 'id' | 'uuid' | 'status' | 'created_at'>): Promise<CharityOrganisation> => {
+export const addCharity = async (input: NewCharityInput): Promise<CharityOrganisation> => {
   const record: CharityOrganisation = { ...input, id: charitySeq++, uuid: crypto.randomUUID(), status: 'pending', created_at: nowIso() };
   charities.push(record);
   return record;
@@ -106,7 +116,7 @@ export const updateCharity = async (record: CharityOrganisation): Promise<void> 
   if (idx >= 0) charities.splice(idx, 1, record);
 };
 
-export const addListing = async (input: Omit<Listing, 'id' | 'uuid' | 'created_at' | 'current_bid' | 'bid_count' | 'winner_id'>): Promise<Listing> => {
+export const addListing = async (input: NewListingInput): Promise<Listing> => {
   const listing: Listing = { ...input, id: listingSeq++, uuid: crypto.randomUUID(), current_bid: input.starting_price, bid_count: 0, created_at: nowIso() };
   listings.push(listing);
   return listing;
@@ -121,19 +131,34 @@ export const listListings = async (): Promise<Listing[]> => [...listings];
 export const listActiveListings = async (): Promise<Listing[]> => listings.filter(l => l.status === 'active');
 export const listPendingListings = async (): Promise<Listing[]> => listings.filter(l => l.status === 'pending');
 
-export const addBid = async (input: Omit<Bid, 'id' | 'uuid' | 'created_at'>): Promise<Bid> => {
+export const addBid = async (input: NewBidInput): Promise<Bid> => {
   const bid: Bid = { ...input, id: bidSeq++, uuid: crypto.randomUUID(), created_at: nowIso() };
   bids.push(bid);
   return bid;
 };
 export const getBidsForListing = async (listingId: number): Promise<Bid[]> => bids.filter(b => b.listing_id === listingId).sort((a, b) => b.amount - a.amount);
 
+export const withListingLock = async <T>(listingId: number, fn: () => Promise<T>): Promise<T> => {
+  const previous = listingLocks.get(listingId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>(resolve => { release = resolve; });
+  const chained = previous.then(() => current);
+  listingLocks.set(listingId, chained);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (listingLocks.get(listingId) === chained) listingLocks.delete(listingId);
+  }
+};
+
 const redactPayload = (payload: Record<string, unknown>): Record<string, unknown> => {
   const sensitive = /password|token|cookie|csrf|secret|otp|authorization/i;
   return Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, sensitive.test(key) ? '[REDACTED]' : value]));
 };
 
-export const appendAuditEvent = async (event: Omit<AuditEvent, 'id' | 'timestamp' | 'previousHash' | 'currentHash' | 'payload'> & { payload?: Record<string, unknown> }): Promise<AuditEvent> => {
+export const appendAuditEvent = async (event: NewAuditEventInput): Promise<AuditEvent> => {
   const previousHash = auditEvents.length > 0 ? auditEvents[auditEvents.length - 1].currentHash : 'GENESIS';
   const payload = redactPayload(event.payload ?? {});
   const timestamp = nowIso();
@@ -144,6 +169,39 @@ export const appendAuditEvent = async (event: Omit<AuditEvent, 'id' | 'timestamp
 };
 export const listAuditEvents = async (): Promise<AuditEvent[]> => [...auditEvents];
 
-export const userRolesInclude = (user: Omit<User, 'passwordHash'>, role: UserRole): boolean => user.roles.includes(role);
+export const userRolesInclude = (user: PublicUser, role: UserRole): boolean => user.roles.includes(role);
+
+export const inMemoryRepository: BidForGoodRepository = {
+  findUserByEmail,
+  findUserById,
+  findUserByUuid,
+  addUser,
+  updateUser,
+  toPublicUser,
+  savePendingRegistration,
+  getPendingRegistration,
+  removePendingRegistration,
+  addSession,
+  getSession,
+  updateSession,
+  revokeSession,
+  addCharity,
+  getCharityByUuid,
+  listCharities,
+  updateCharity,
+  addListing,
+  getListingById,
+  getListingByUuid,
+  updateListing,
+  listListings,
+  listActiveListings,
+  listPendingListings,
+  addBid,
+  getBidsForListing,
+  withListingLock,
+  appendAuditEvent,
+  listAuditEvents,
+  userRolesInclude,
+};
 
 void seedDemoData();

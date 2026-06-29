@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import type { Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { addSession, getSession, revokeSession, updateSession } from '../repositories/inMemory.repository';
+import { addSession, getSession, revokeSession, updateSession } from '../repositories';
 import type { SessionRecord, User } from '../types/domain';
 import { randomToken, sha256 } from '../utils/security';
 import { unauthorised } from '../utils/errors';
