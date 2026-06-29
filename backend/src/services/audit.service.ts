@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import { appendAuditEvent, listAuditEvents } from '../repositories/inMemory.repository';
+import { appendAuditEvent, listAuditEvents } from '../repositories';
 import type { AuditEvent } from '../types/domain';
 import { sha256 } from '../utils/security';
 

@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { findUserById, toPublicUser } from '../repositories/inMemory.repository';
+import { findUserById, toPublicUser } from '../repositories';
 import { parseCookieHeader } from '../utils/security';
 import { getSessionCookieName, verifySessionToken } from '../services/session.service';
 import { unauthorised } from '../utils/errors';

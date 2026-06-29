@@ -1,27 +1,11 @@
 import type { Request } from 'express';
 import type { Bid } from '../types/domain';
-import { addBid, getBidsForListing, getListingById, updateListing } from '../repositories/inMemory.repository';
+import { addBid, getBidsForListing, getListingById, updateListing, withListingLock } from '../repositories';
 import { badRequest, forbidden, notFound, tooManyRequests } from '../utils/errors';
 import { roundMoney } from '../utils/security';
 import { audit } from './audit.service';
 
-const locks = new Map<number, Promise<void>>();
 const bidderVelocity = new Map<string, number[]>();
-
-const withListingLock = async <T>(listingId: number, fn: () => Promise<T>): Promise<T> => {
-  const previous = locks.get(listingId) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>(resolve => { release = resolve; });
-  const chained = previous.then(() => current);
-  locks.set(listingId, chained);
-  await previous;
-  try {
-    return await fn();
-  } finally {
-    release();
-    if (locks.get(listingId) === chained) locks.delete(listingId);
-  }
-};
 
 const checkBidVelocity = (userId: number, listingId: number): void => {
   const key = `${userId}:${listingId}`;

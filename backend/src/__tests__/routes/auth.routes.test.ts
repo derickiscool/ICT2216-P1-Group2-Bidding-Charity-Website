@@ -5,7 +5,6 @@ import {
   stopServer,
   postJson,
   request,
-  loginAs,
   registerVerifiedUser,
 } from '../helpers/setup';
 import {

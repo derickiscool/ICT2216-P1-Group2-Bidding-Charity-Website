@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { CharityOrganisation } from '../types/domain';
-import { addCharity, getCharityByUuid, listCharities, updateCharity } from '../repositories/inMemory.repository';
+import { addCharity, getCharityByUuid, listCharities, updateCharity } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';

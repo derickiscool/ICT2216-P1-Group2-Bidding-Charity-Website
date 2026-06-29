@@ -3,7 +3,7 @@ import argon2 from 'argon2';
 import type { Request, Response } from 'express';
 import {
   addUser, findUserByEmail, getPendingRegistration, removePendingRegistration, savePendingRegistration, toPublicUser, updateUser
-} from '../repositories/inMemory.repository';
+} from '../repositories';
 import type { UserRole } from '../types/domain';
 import { badRequest, tooManyRequests, unauthorised } from '../utils/errors';
 import { isStrongPassword } from '../utils/breachedPasswords';
