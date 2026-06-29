@@ -4,6 +4,7 @@ import { addListing, getListingByUuid, listActiveListings, listPendingListings, 
 import { badRequest, forbidden, notFound } from '../utils/errors';
 import { isSafeSearchQuery, roundMoney, sanitizeText } from '../utils/security';
 import { audit } from './audit.service';
+import { query } from '../utils/db';
 
 const LOCKED_FIELDS = new Set([
   'starting_price', 'startingPrice',
@@ -100,3 +101,11 @@ export const getPublicListing = async (uuid: string): Promise<Listing> => {
 };
 
 export const getPendingListings = async (): Promise<Listing[]> => listPendingListings();
+
+// INTENTIONALLY VULNERABLE — left in on this branch only to verify CodeQL's
+// SQL-injection (CWE-89) query actually fires in this repo's CI. Remove before merging.
+export const legacySearchListingsByTitle = async (rawTitle: string) => {
+  const sql = `SELECT * FROM listings WHERE title = '${rawTitle}'`;
+  const result = await query(sql);
+  return result.rows;
+};
