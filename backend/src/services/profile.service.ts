@@ -1,9 +1,13 @@
+import argon2 from 'argon2';
 import type { Request } from 'express';
 import { findUserById, findUserByUsername, toPublicUser, updateUser } from '../repositories';
 import type { PublicUser } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { safeString } from '../utils/security';
+import { isStrongPassword } from '../utils/breachedPasswords';
 import { audit } from './audit.service';
+
+const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 } as const;
 
 export interface UpdateProfileInput {
   full_name?: unknown;
@@ -55,4 +59,37 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
   await audit(req, 'PROFILE_UPDATED', { previous, updated: { full_name: fullName, username, contact_number: contactNumber } }, 'user', user.uuid, user.id);
 
   return toPublicUser(user);
+};
+
+export interface ChangePasswordInput {
+  currentPassword?: unknown;
+  newPassword?: unknown;
+}
+
+export const changePassword = async (userId: number, input: ChangePasswordInput, req?: Request): Promise<void> => {
+  const user = await findUserById(userId);
+  if (!user) throw notFound('User not found.');
+
+  const currentPassword = String(input.currentPassword ?? '');
+  const newPassword = String(input.newPassword ?? '');
+
+  const errors: Record<string, string> = {};
+  if (!currentPassword) errors.currentPassword = 'Current password is required.';
+  if (!newPassword) errors.newPassword = 'New password is required.';
+  else if (!isStrongPassword(newPassword)) errors.newPassword = 'Password must be 8-128 characters and must not match known breached passwords.';
+  if (Object.keys(errors).length > 0) throw badRequest('Password change validation failed.', 'VALIDATION_ERROR', errors);
+
+  const currentOk = await argon2.verify(user.passwordHash, currentPassword);
+  if (!currentOk) {
+    throw badRequest('Password change failed.', 'VALIDATION_ERROR', { currentPassword: 'Current password is incorrect.' });
+  }
+
+  const isSameAsCurrentPassword = await argon2.verify(user.passwordHash, newPassword);
+  if (isSameAsCurrentPassword) {
+    throw badRequest('Password change failed.', 'VALIDATION_ERROR', { newPassword: 'New password must be different from your current password.' });
+  }
+
+  user.passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
+  await updateUser(user);
+  await audit(req, 'PASSWORD_CHANGED', {}, 'user', user.uuid, user.id);
 };
