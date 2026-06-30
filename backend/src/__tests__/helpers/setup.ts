@@ -3,8 +3,9 @@ import { createServer, type Server } from 'node:http';
 import { createApp } from '../../app';
 import {
   resetRepositoryForTests,
-} from '../../repositories/inMemory.repository';
+} from '../../repositories/postgres.repository';
 import { readDevOtpForTest, clearDevOtpForTest } from '../../services/otpDelivery.service';
+import { closePool } from '../../utils/db';
 
 export type TestListing = {
   id: number;
@@ -48,6 +49,7 @@ export const startServer = async () => {
 
 export const stopServer = async () => {
   await new Promise<void>(resolve => server.close(() => resolve()));
+  await closePool();
 };
 
 export const request = async (path: string, init: RequestInit = {}) => {

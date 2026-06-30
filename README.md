@@ -34,7 +34,6 @@ Not implemented in this branch:
 - Persistent watchlist.
 - Full charity campaign management.
 - Full donor/bidder/charity/admin dashboards.
-- Full PostgreSQL runtime repository integration.
 - Docker/nginx/AWS deployment pipeline.
 - OWASP ZAP/DAST execution.
 
@@ -58,8 +57,7 @@ Not implemented in this branch:
 |---|---|
 | Frontend | React, TypeScript, Vite, Tailwind CSS, DaisyUI |
 | Backend | Node.js, Express.js, TypeScript |
-| Current Runtime Data Layer | In-memory repository for local development/testing |
-| Intended Database | PostgreSQL / `pg` dependency present |
+| Database | PostgreSQL via `pg` (raw SQL repository, no ORM) |
 | Authentication | JWT, HttpOnly cookies, Argon2id password hashing |
 | Security | CSRF token, RBAC middleware, express-rate-limit, security headers, audit logging |
 | File Upload | Multer memory storage with backend validation for charity documents |
@@ -116,6 +114,20 @@ Install dependencies from the repository root:
 npm install
 ```
 
+Start PostgreSQL (Docker) and apply the schema, then copy `backend/.env.example` to `backend/.env`:
+
+```bash
+cd backend/db && cp .env.example .env && docker compose up -d && cd ../..
+cp backend/.env.example backend/.env
+cd backend && npm run migrate
+```
+
+This creates the schema only. To also load the [Demo Accounts](#demo-accounts) and sample listings/bids for manual testing:
+
+```bash
+npm run seed
+```
+
 Run both backend and frontend locally:
 
 ```bash
@@ -160,12 +172,14 @@ donor@bidforgood.test   / S3cure!Pass2026
 bidder@bidforgood.test  / S3cure!Pass2026
 ```
 
+Run `npm run seed` (from `backend/`) to load these accounts plus sample listings (active with bids, pending, sold, draft) and an approved demo charity — see `backend/db/init/seed.sql`.
+
 ## Security Notes
 
 - Session tokens are sent through HttpOnly cookies and are not stored in localStorage.
 - The backend intentionally rejects bearer-token authentication when no session cookie is present.
 - Production must configure `JWT_SECRET` with at least 32 characters. The application fails securely if it is missing or too short in production.
-- The current runtime repository is in-memory and intended for local development/testing. PostgreSQL persistence remains a team task.
+- The runtime repository is PostgreSQL-backed; data persists across backend restarts.
 - This branch is not publicly hosted. GitHub stores the source code only; deployment remains separate.
 
 ## License
