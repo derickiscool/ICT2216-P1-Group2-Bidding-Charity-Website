@@ -1,15 +1,12 @@
 // File: frontend/src/pages/HomePage.tsx
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Clock, ArrowRight, Shield, Zap, Users, TrendingUp } from 'lucide-react'
-import AuctionCard, { AuctionDummy } from '../components/auctions/AuctionCard'
+import AuctionCard from '../components/auctions/AuctionCard'
+import api from '../services/api'
+import type { Listing } from '../types'
 
 // ─── Mock Data ───────────────────────────────────────────────────────────────
-const LIVE_AUCTIONS: AuctionDummy[] = [
-  { id: 1, title: 'Signed Premier League Jersey', charity: "Children's Hospital Trust", bid: 1250, endsIn: '00:42:17', urgent: true, category: 'Sports' },
-  { id: 2, title: 'Private Dining Experience', charity: 'Food Bank Singapore', bid: 3800, endsIn: '01:05:33', urgent: true, category: 'Experiences' },
-  { id: 3, title: 'Original Oil Painting', charity: 'Arts for Youth', bid: 720, endsIn: '02:14:09', urgent: false, category: 'Art' },
-]
-
 const LIVE_ACTIVITY = [
   { user: 'b***r42', action: 'bid $1,250 on Signed Jersey', time: '10s' },
   { user: 'm***e19', action: 'bid $3,800 on Dining Experience', time: '42s' },
@@ -33,7 +30,7 @@ const FEATURED_COUNTDOWN = [
 ]
 
 // ─── Leaderboard Strip ────────────────────────────────────────────────────────
-function LeaderboardStrip() {
+function LeaderboardStrip({ listings }: { listings: Listing[] }) {
   return (
     <div className="border-b" style={{ background: '#1F2A2A', borderColor: 'rgba(187,176,155,0.1)' }}>
       <div className="max-w-[1440px] mx-auto px-6 py-2.5 flex items-center gap-4 overflow-x-auto scrollbar-none">
@@ -42,12 +39,12 @@ function LeaderboardStrip() {
           <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--bfg-danger)' }}>Live</span>
         </div>
         <div className="flex items-center gap-3 overflow-x-auto scrollbar-none">
-          {LIVE_AUCTIONS.map((a, i) => (
-            <div key={a.id} className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 flex-shrink-0 transition-colors cursor-pointer"
+          {listings.map((l, i) => (
+            <div key={l.uuid ?? l.id} className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 flex-shrink-0 transition-colors cursor-pointer"
                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(187,176,155,0.2)' }}>
               <span className="text-[10px] font-mono" style={{ color: 'var(--bfg-beige)' }}>#{i + 1}</span>
-              <span className="text-xs max-w-[120px] truncate" style={{ color: 'var(--bfg-linen)' }}>{a.title}</span>
-              <span className="text-xs font-semibold text-white">${a.bid.toLocaleString()}</span>
+              <span className="text-xs max-w-[120px] truncate" style={{ color: 'var(--bfg-linen)' }}>{l.title}</span>
+              <span className="text-xs font-semibold text-white">${l.current_bid.toLocaleString()}</span>
             </div>
           ))}
         </div>
@@ -57,7 +54,30 @@ function LeaderboardStrip() {
 }
 
 // ─── Hero Section ─────────────────────────────────────────────────────────────
-function Hero() {
+function countdownParts(endTime: string, now: number) {
+  const diff = Math.max(0, new Date(endTime).getTime() - now)
+  const days = Math.floor(diff / 86_400_000)
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000)
+  const minutes = Math.floor((diff % 3_600_000) / 60_000)
+  const seconds = Math.floor((diff % 60_000) / 1000)
+  return [
+    { value: String(days).padStart(2, '0'), label: 'DD' },
+    { value: String(hours).padStart(2, '0'), label: 'HH' },
+    { value: String(minutes).padStart(2, '0'), label: 'MM' },
+    { value: String(seconds).padStart(2, '0'), label: 'SS' },
+  ]
+}
+
+function Hero({ featured }: { featured: Listing | undefined }) {
+  const [now, setNow] = useState(0)
+  useEffect(() => {
+    const update = () => setNow(Date.now())
+    update()
+    const interval = window.setInterval(update, 1000)
+    return () => window.clearInterval(interval)
+  }, [])
+  const countdown = featured && now > 0 ? countdownParts(featured.end_time, now) : FEATURED_COUNTDOWN
+
   return (
     <section className="relative overflow-hidden py-20 px-6" style={{ background: 'linear-gradient(135deg, #1C2C2B 0%, #223433 46%, #142220 100%)' }}>
       <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
@@ -127,11 +147,13 @@ function Hero() {
               <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>Item image</span>
             </div>
 
-            <h3 className="text-sm font-semibold text-white mb-0.5">Signed Premier League Jersey</h3>
-            <p className="text-[11px] mb-4" style={{ color: 'rgba(255,255,255,0.55)' }}>Benefits: Children's Hospital Trust</p>
+            <h3 className="text-sm font-semibold text-white mb-0.5">{featured ? featured.title : 'Signed Premier League Jersey'}</h3>
+            <p className="text-[11px] mb-4" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              Benefits: {featured ? (featured.charityName ?? 'Verified Charity') : "Children's Hospital Trust"}
+            </p>
 
             <div className="flex items-center gap-1.5 mb-4">
-              {FEATURED_COUNTDOWN.map(({ value, label }, i) => (
+              {countdown.map(({ value, label }, i) => (
                 <div key={i} className="flex items-center">
                   <div className="rounded-xl px-2.5 py-1.5 text-center min-w-[36px]" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(187,176,155,0.14)' }}>
                     <span className="text-base font-bold font-mono text-white block">{value}</span>
@@ -147,9 +169,9 @@ function Hero() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.42)' }}>Current Bid</p>
-                <p className="text-xl font-bold text-white">$1,250</p>
+                <p className="text-xl font-bold text-white">${(featured ? featured.current_bid : 1250).toLocaleString()}</p>
               </div>
-              <Link to="/auctions/1"
+              <Link to={featured ? `/auctions/${featured.uuid}` : '/auctions'}
                 className="px-4 py-2 text-sm font-semibold rounded-xl transition-colors"
                 style={{ background: 'var(--bfg-emerald)', color: 'white' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--bfg-emerald-dark)'}
@@ -165,7 +187,7 @@ function Hero() {
 }
 
 // ─── Active Auctions (With Sidebar) ───────────────────────────────────────────
-function ActiveAuctions() {
+function ActiveAuctions({ listings }: { listings: Listing[] }) {
   return (
     <section className="py-20 px-6" style={{ background: 'var(--bfg-linen)' }}>
       <div className="max-w-[1440px] mx-auto">
@@ -179,8 +201,11 @@ function ActiveAuctions() {
         <div className="flex gap-8">
           {/* Main Grid */}
           <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {LIVE_AUCTIONS.map((auction) => (
-              <AuctionCard key={auction.id} auction={auction} />
+            {listings.length === 0 && (
+              <p className="text-sm" style={{ color: 'var(--bfg-text-muted)' }}>No active auctions right now.</p>
+            )}
+            {listings.map((auction) => (
+              <AuctionCard key={auction.uuid ?? auction.id} auction={auction} />
             ))}
           </div>
 
@@ -293,11 +318,24 @@ function CTABanner() {
 }
 
 export default function HomePage() {
+  const [listings, setListings] = useState<Listing[]>([])
+
+  useEffect(() => {
+    api.get<{ data: Listing[] }>('/listings')
+      .then(res => {
+        const sorted = [...res.data.data].sort(
+          (a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime(),
+        )
+        setListings(sorted.slice(0, 3))
+      })
+      .catch(() => setListings([]))
+  }, [])
+
   return (
     <div className="bg-white">
-      <LeaderboardStrip />
-      <Hero />
-      <ActiveAuctions />
+      <LeaderboardStrip listings={listings} />
+      <Hero featured={listings[0]} />
+      <ActiveAuctions listings={listings} />
       <HowItWorks />
       <CTABanner />
     </div>
