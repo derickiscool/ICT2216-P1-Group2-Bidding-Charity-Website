@@ -28,6 +28,7 @@ interface UserRow {
   email: string;
   username: string;
   full_name: string;
+  contact_number: string | null;
   roles: UserRole[];
   password_hash: string;
   is_verified: boolean;
@@ -160,6 +161,7 @@ const mapUser = (row: UserRow): User => ({
   email: row.email,
   username: row.username,
   full_name: row.full_name,
+  contact_number: row.contact_number ?? undefined,
   roles: mapRoles(row.roles),
   passwordHash: row.password_hash,
   is_verified: row.is_verified,
@@ -286,6 +288,11 @@ const findUserByUuid = async (uuid: string): Promise<User | undefined> => {
   return row ? mapUser(row) : undefined;
 };
 
+const findUserByUsername = async (username: string): Promise<User | undefined> => {
+  const row = await firstRow<UserRow>('SELECT * FROM users WHERE lower(username) = lower($1) LIMIT 1', [username]);
+  return row ? mapUser(row) : undefined;
+};
+
 const addUser = async (input: NewUserInput): Promise<User> => {
   const row = await firstRow<UserRow>(
     `INSERT INTO users (email, username, full_name, roles, password_hash, is_verified, is_active, failed_login_attempts)
@@ -300,14 +307,16 @@ const addUser = async (input: NewUserInput): Promise<User> => {
 const updateUser = async (user: User): Promise<void> => {
   await query(
     `UPDATE users
-     SET email = $2, username = $3, full_name = $4, roles = $5, password_hash = $6,
-         is_verified = $7, is_active = $8, failed_login_attempts = $9, locked_until = $10
+     SET email = $2, username = $3, full_name = $4, contact_number = $5, roles = $6,
+         password_hash = $7, is_verified = $8, is_active = $9, failed_login_attempts = $10,
+         locked_until = $11
      WHERE id = $1`,
     [
       user.id,
       user.email,
       user.username,
       user.full_name,
+      user.contact_number ?? null,
       user.roles,
       user.passwordHash,
       user.is_verified,
@@ -578,6 +587,7 @@ export const postgresRepository: BidForGoodRepository = {
   findUserByEmail,
   findUserById,
   findUserByUuid,
+  findUserByUsername,
   addUser,
   updateUser,
   toPublicUser,

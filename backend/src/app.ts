@@ -8,6 +8,7 @@ import listingRoutes from './routes/listing.routes';
 import bidRoutes from './routes/bid.routes';
 import adminRoutes from './routes/admin.routes';
 import charityRoutes from './routes/charity.routes';
+import profileRoutes from './routes/profile.routes';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { securityHeaders } from './middleware/securityHeaders.middleware';
 
@@ -25,6 +26,7 @@ export const createApp = () => {
     try { res.json(await testConnection()); } catch (err) { next(err); }
   });
   app.use('/api/auth', authRoutes);
+  app.use('/api/users', profileRoutes);
   app.use('/api/listings', listingRoutes);
   app.use('/api/bids', bidRoutes);
   app.use('/api/admin', adminRoutes);

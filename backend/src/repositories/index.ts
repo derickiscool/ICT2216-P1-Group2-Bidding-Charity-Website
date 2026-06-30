@@ -15,6 +15,7 @@ export const {
   findUserByEmail,
   findUserById,
   findUserByUuid,
+  findUserByUsername,
   addUser,
   updateUser,
   toPublicUser,

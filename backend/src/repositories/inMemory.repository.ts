@@ -81,6 +81,7 @@ export const seedDemoData = async (): Promise<void> => {
 export const findUserByEmail = async (email: string): Promise<User | undefined> => users.find(u => u.email === email);
 export const findUserById = async (id: number): Promise<User | undefined> => users.find(u => u.id === id);
 export const findUserByUuid = async (uuid: string): Promise<User | undefined> => users.find(u => u.uuid === uuid);
+export const findUserByUsername = async (username: string): Promise<User | undefined> => users.find(u => u.username.toLowerCase() === username.toLowerCase());
 export const addUser = async (input: NewUserInput): Promise<User> => {
   const user: User = { ...input, id: userSeq++, uuid: crypto.randomUUID(), is_active: true, failedLoginAttempts: 0, created_at: nowIso() };
   users.push(user);
@@ -175,6 +176,7 @@ export const inMemoryRepository: BidForGoodRepository = {
   findUserByEmail,
   findUserById,
   findUserByUuid,
+  findUserByUsername: async (username) => users.find(u => u.username.toLowerCase() === username.toLowerCase()),
   addUser,
   updateUser,
   toPublicUser,
