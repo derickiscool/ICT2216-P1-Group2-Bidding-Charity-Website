@@ -7,7 +7,9 @@ VALUES
   ('admin@bidforgood.test', 'admin', 'Demo Admin', ARRAY['admin']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
   ('donor@bidforgood.test', 'donor', 'Demo Donor', ARRAY['donor']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
   ('bidder@bidforgood.test', 'bidder', 'Demo Bidder', ARRAY['bidder']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
-  ('charity@bidforgood.test', 'charity', 'Demo Charity', ARRAY['charity']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true)
+  ('charity@bidforgood.test', 'charity', 'Demo Charity', ARRAY['charity']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
+  ('bidder2@bidforgood.test', 'bidder2', 'Demo Bidder Two', ARRAY['bidder']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
+  ('charity2@bidforgood.test', 'charity2', 'Demo Charity Two', ARRAY['charity']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true)
 ON CONFLICT (lower(email)) DO NOTHING;
 
 -- Demo charity organisation, already approved so bidder-facing flows have a real charity to point at.
@@ -24,7 +26,19 @@ SELECT
   NOW()
 WHERE NOT EXISTS (SELECT 1 FROM charities WHERE organisation_name = 'Children''s Hospital Trust');
 
--- Demo listings covering active (with bid history), pending review, sold, and draft states.
+-- Second charity left pending so the admin demo account has something to review/approve.
+INSERT INTO charities (owner_user_id, organisation_name, description, document_name, document_mime, document_sha256, status)
+SELECT
+  (SELECT id FROM users WHERE email = 'charity2@bidforgood.test'),
+  'Green Paws Animal Rescue',
+  'Rescues and rehomes abandoned animals; awaiting admin review in this seed data.',
+  'registration-certificate.pdf',
+  'application/pdf',
+  'b4e6d9c0f2a3b5d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1',
+  'pending'
+WHERE NOT EXISTS (SELECT 1 FROM charities WHERE organisation_name = 'Green Paws Animal Rescue');
+
+-- Demo listings covering active (with bid history), pending review, sold, draft, and active-with-no-bids states.
 INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, charity_name, min_increment)
 SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Signed Premier League Jersey',
        'Signed jersey donated for charity fundraising.', 'good', 'Sports', ARRAY[]::TEXT[],
@@ -38,6 +52,27 @@ SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Private
        2000, 3800, 2, 'active', NOW() - INTERVAL '2 hours', NOW() + INTERVAL '5 hours',
        'Food Bank Singapore', 100
 WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = 'Private Dining Experience');
+
+INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, charity_name, min_increment)
+SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Vintage Vinyl Record Collection',
+       'Curated collection of 70s and 80s vinyl records, untouched.', 'good', 'Collectibles', ARRAY[]::TEXT[],
+       150, 150, 0, 'active', NOW() - INTERVAL '10 minutes', NOW() + INTERVAL '2 days',
+       'Children''s Hospital Trust', 10
+WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = 'Vintage Vinyl Record Collection');
+
+INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, charity_name, min_increment)
+SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Wireless Noise-Cancelling Headphones',
+       'Brand new, sealed box, donated by a corporate sponsor.', 'new', 'Electronics', ARRAY[]::TEXT[],
+       200, 280, 2, 'active', NOW() - INTERVAL '30 minutes', NOW() + INTERVAL '1 day',
+       'Food Bank Singapore', 20
+WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = 'Wireless Noise-Cancelling Headphones');
+
+INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, charity_name, min_increment)
+SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Professional Photography Session',
+       'Two-hour portrait session with a professional photographer.', 'new', 'Experiences', ARRAY[]::TEXT[],
+       300, 350, 1, 'active', NOW() - INTERVAL '15 minutes', NOW() + INTERVAL '6 hours',
+       'Green Paws Animal Rescue', 25
+WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = 'Professional Photography Session');
 
 INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, charity_name, min_increment)
 SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Pending Vintage Camera',
@@ -94,6 +129,28 @@ SELECT (SELECT id FROM listings WHERE title = 'Antique Pocket Watch'),
        (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'), 'bidder', 750, false, NOW() - INTERVAL '1 day'
 WHERE NOT EXISTS (
   SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Antique Pocket Watch') AND amount = 750
+);
+
+-- Two different bidders compete here to demonstrate outbid scenarios.
+INSERT INTO bids (listing_id, bidder_id, bidder_username, amount, is_auto_bid, created_at)
+SELECT (SELECT id FROM listings WHERE title = 'Wireless Noise-Cancelling Headphones'),
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'), 'bidder', 240, false, NOW() - INTERVAL '25 minutes'
+WHERE NOT EXISTS (
+  SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Wireless Noise-Cancelling Headphones') AND amount = 240
+);
+
+INSERT INTO bids (listing_id, bidder_id, bidder_username, amount, is_auto_bid, created_at)
+SELECT (SELECT id FROM listings WHERE title = 'Wireless Noise-Cancelling Headphones'),
+       (SELECT id FROM users WHERE email = 'bidder2@bidforgood.test'), 'bidder2', 280, false, NOW() - INTERVAL '10 minutes'
+WHERE NOT EXISTS (
+  SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Wireless Noise-Cancelling Headphones') AND amount = 280
+);
+
+INSERT INTO bids (listing_id, bidder_id, bidder_username, amount, is_auto_bid, created_at)
+SELECT (SELECT id FROM listings WHERE title = 'Professional Photography Session'),
+       (SELECT id FROM users WHERE email = 'bidder2@bidforgood.test'), 'bidder2', 350, false, NOW() - INTERVAL '12 minutes'
+WHERE NOT EXISTS (
+  SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Professional Photography Session') AND amount = 350
 );
 
 COMMIT;

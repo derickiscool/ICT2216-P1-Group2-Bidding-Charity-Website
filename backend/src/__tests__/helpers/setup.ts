@@ -48,7 +48,7 @@ export const startServer = async () => {
 };
 
 export const stopServer = async () => {
-  await new Promise<void>(resolve => server.close(() => resolve()));
+  if (server) await new Promise<void>(resolve => server.close(() => resolve()));
   await closePool();
 };
 

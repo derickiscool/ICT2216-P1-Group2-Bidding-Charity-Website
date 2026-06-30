@@ -165,14 +165,36 @@ npm audit --audit-level=high: PASS
 
 ## Demo Accounts
 
+All demo accounts use the password `S3cure!Pass2026`. Loaded automatically on first `docker compose up` (fresh volume), or on demand with `npm run seed` (from `backend/`) — see `backend/db/init/seed.sql`.
+
 ```text
-admin@bidforgood.test   / S3cure!Pass2026
-charity@bidforgood.test / S3cure!Pass2026
-donor@bidforgood.test   / S3cure!Pass2026
-bidder@bidforgood.test  / S3cure!Pass2026
+admin@bidforgood.test     (admin)
+donor@bidforgood.test     (donor)
+bidder@bidforgood.test    (bidder)
+bidder2@bidforgood.test   (bidder)  — second bidder, used to demo competing/outbid scenarios
+charity@bidforgood.test   (charity) — owns the approved demo charity
+charity2@bidforgood.test  (charity) — owns the pending demo charity
 ```
 
-Run `npm run seed` (from `backend/`) to load these accounts plus sample listings (active with bids, pending, sold, draft) and an approved demo charity — see `backend/db/init/seed.sql`.
+**Charities**
+
+| Organisation | Status | Owner |
+|---|---|---|
+| Children's Hospital Trust | approved | `charity@bidforgood.test` |
+| Green Paws Animal Rescue | pending | `charity2@bidforgood.test` — log in as `admin` to review/approve it |
+
+**Listings** — only `active` listings appear on the public Browse Auctions page (5 of the 8 below); the rest are reachable through role-specific views (donor's own listings, admin's review queue, etc.).
+
+| Title | Category | Status | Current Bid | Notes |
+|---|---|---|---|---|
+| Signed Premier League Jersey | Sports | active | $1,250 | 2 bids from `bidder` |
+| Private Dining Experience | Experiences | active | $3,800 | 2 bids from `bidder` |
+| Vintage Vinyl Record Collection | Collectibles | active | $150 | no bids yet |
+| Wireless Noise-Cancelling Headphones | Electronics | active | $280 | `bidder` outbid by `bidder2` |
+| Professional Photography Session | Experiences | active | $350 | 1 bid from `bidder2` |
+| Pending Vintage Camera | Collectibles | pending | $400 | awaiting admin review, hidden from Browse |
+| Antique Pocket Watch | Collectibles | sold | $750 | closed auction, won by `bidder` |
+| Weekend Spa Getaway | Experiences | draft | $1,500 | not yet submitted by the donor |
 
 ## Security Notes
 
