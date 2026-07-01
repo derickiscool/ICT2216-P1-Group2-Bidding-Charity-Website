@@ -76,6 +76,7 @@ import RegisterPage from './pages/RegisterPage'
 import RegisterCharityPage from './pages/RegisterCharityPage'
 import AuctionsPage from './pages/AuctionsPage'
 import AuctionDetailPage from './pages/AuctionDetailPage'
+import CampaignManagementPage from './pages/CampaignManagementPage'
 import CharitiesPage from './pages/CharitiesPage'
 import CharityStaffManagementPage from './pages/CharityStaffManagementPage'
 import DashboardPage from './pages/DashboardPage'
@@ -113,6 +114,11 @@ export default function App() {
           {/* ── Charity Org Admin only ── */}
           <Route element={<RoleProtectedRoute allowedRoles={['charity', 'admin']} />}>
             <Route path="/charity/staff" element={<CharityStaffManagementPage />} />
+          </Route>
+
+          {/* ── Campaign Management: Charity Org / Charity Staff / Admin ── */}
+          <Route element={<RoleProtectedRoute allowedRoles={['charity', 'charity_staff', 'admin']} />}>
+            <Route path="/charity/campaigns" element={<CampaignManagementPage />} />
           </Route>
 
           {/* ── Admin only ── */}
