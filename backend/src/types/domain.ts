@@ -6,6 +6,7 @@ export interface User {
   email: string;
   username: string;
   full_name: string;
+  contact_number?: string;
   roles: UserRole[];
   passwordHash: string;
   is_verified: boolean;
