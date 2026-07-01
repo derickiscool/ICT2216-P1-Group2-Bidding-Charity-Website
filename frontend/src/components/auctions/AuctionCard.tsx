@@ -32,7 +32,7 @@ export default function AuctionCard({ auction }: { auction: AuctionLike }) {
   const urgent = isListing(auction) ? now > 0 && new Date(auction.end_time).getTime() - now < 3 * 60 * 60 * 1000 : auction.urgent
   const currentBid = isListing(auction) ? auction.current_bid : auction.bid
   const endsLabel = isListing(auction) ? (now > 0 ? timeLeft(auction.end_time, now) : '--:--:--') : auction.endsIn
-  const charityName = isListing(auction) ? (auction.campaign?.charity?.name ?? 'Verified Charity') : auction.charity
+  const charityName = isListing(auction) ? (auction.campaign?.charity?.name ?? auction.charityName ?? 'Verified Charity') : auction.charity
   const routeId = isListing(auction) ? (auction.uuid ?? auction.id) : auction.id
 
   useEffect(() => {

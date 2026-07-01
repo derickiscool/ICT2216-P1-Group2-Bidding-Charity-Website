@@ -34,7 +34,6 @@ Not implemented in this branch:
 - Persistent watchlist.
 - Full charity campaign management.
 - Full donor/bidder/charity/admin dashboards.
-- Full PostgreSQL runtime repository integration.
 - Docker/nginx/AWS deployment pipeline.
 - OWASP ZAP/DAST execution.
 
@@ -58,8 +57,7 @@ Not implemented in this branch:
 |---|---|
 | Frontend | React, TypeScript, Vite, Tailwind CSS, DaisyUI |
 | Backend | Node.js, Express.js, TypeScript |
-| Current Runtime Data Layer | In-memory repository for local development/testing |
-| Intended Database | PostgreSQL / `pg` dependency present |
+| Database | PostgreSQL via `pg` (raw SQL repository, no ORM) |
 | Authentication | JWT, HttpOnly cookies, Argon2id password hashing |
 | Security | CSRF token, RBAC middleware, express-rate-limit, security headers, audit logging |
 | File Upload | Multer memory storage with backend validation for charity documents |
@@ -116,6 +114,20 @@ Install dependencies from the repository root:
 npm install
 ```
 
+Start PostgreSQL (Docker) and apply the schema, then copy `backend/.env.example` to `backend/.env`:
+
+```bash
+cd backend/db && cp .env.example .env && docker compose up -d && cd ../..
+cp backend/.env.example backend/.env
+cd backend && npm run migrate
+```
+
+This creates the schema only. To also load the [Demo Accounts](#demo-accounts) and sample listings/bids for manual testing:
+
+```bash
+npm run seed
+```
+
 Run both backend and frontend locally:
 
 ```bash
@@ -153,19 +165,43 @@ npm audit --audit-level=high: PASS
 
 ## Demo Accounts
 
+All demo accounts use the password `S3cure!Pass2026`. Loaded automatically on first `docker compose up` (fresh volume), or on demand with `npm run seed` (from `backend/`) — see `backend/db/init/seed.sql`.
+
 ```text
-admin@bidforgood.test   / S3cure!Pass2026
-charity@bidforgood.test / S3cure!Pass2026
-donor@bidforgood.test   / S3cure!Pass2026
-bidder@bidforgood.test  / S3cure!Pass2026
+admin@bidforgood.test     (admin)
+donor@bidforgood.test     (donor)
+bidder@bidforgood.test    (bidder)
+bidder2@bidforgood.test   (bidder)  — second bidder, used to demo competing/outbid scenarios
+charity@bidforgood.test   (charity) — owns the approved demo charity
+charity2@bidforgood.test  (charity) — owns the pending demo charity
 ```
+
+**Charities**
+
+| Organisation | Status | Owner |
+|---|---|---|
+| Children's Hospital Trust | approved | `charity@bidforgood.test` |
+| Green Paws Animal Rescue | pending | `charity2@bidforgood.test` — log in as `admin` to review/approve it |
+
+**Listings** — only `active` listings appear on the public Browse Auctions page (5 of the 8 below); the rest are reachable through role-specific views (donor's own listings, admin's review queue, etc.).
+
+| Title | Category | Status | Current Bid | Notes |
+|---|---|---|---|---|
+| Signed Premier League Jersey | Sports | active | $1,250 | 2 bids from `bidder` |
+| Private Dining Experience | Experiences | active | $3,800 | 2 bids from `bidder` |
+| Vintage Vinyl Record Collection | Collectibles | active | $150 | no bids yet |
+| Wireless Noise-Cancelling Headphones | Electronics | active | $280 | `bidder` outbid by `bidder2` |
+| Professional Photography Session | Experiences | active | $350 | 1 bid from `bidder2` |
+| Pending Vintage Camera | Collectibles | pending | $400 | awaiting admin review, hidden from Browse |
+| Antique Pocket Watch | Collectibles | sold | $750 | closed auction, won by `bidder` |
+| Weekend Spa Getaway | Experiences | draft | $1,500 | not yet submitted by the donor |
 
 ## Security Notes
 
 - Session tokens are sent through HttpOnly cookies and are not stored in localStorage.
 - The backend intentionally rejects bearer-token authentication when no session cookie is present.
 - Production must configure `JWT_SECRET` with at least 32 characters. The application fails securely if it is missing or too short in production.
-- The current runtime repository is in-memory and intended for local development/testing. PostgreSQL persistence remains a team task.
+- The runtime repository is PostgreSQL-backed; data persists across backend restarts.
 - This branch is not publicly hosted. GitHub stores the source code only; deployment remains separate.
 
 ## License

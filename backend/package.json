@@ -7,9 +7,11 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "jest",
-    "test:sfr": "jest src/__tests__/routes src/__tests__/services",
-    "lint": "eslint ."
+    "test": "jest --runInBand",
+    "test:sfr": "jest --runInBand src/__tests__/routes src/__tests__/services",
+    "lint": "eslint .",
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js"
   },
   "dependencies": {
     "argon2": "^0.44.0",
