@@ -17,7 +17,7 @@ module.exports = tseslint.config(
     },
   },
   {
-    files: ['eslint.config.js'],
+    files: ['eslint.config.js', 'scripts/**/*.js'],
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
     },

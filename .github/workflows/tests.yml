@@ -68,7 +68,7 @@ jobs:
 
       - name: Run database migrations
         working-directory: backend
-        run: npm run migrate --if-present    # no-op until a migrate script exists
+        run: npm run migrate
 
       - name: Build backend (typecheck)
         working-directory: backend

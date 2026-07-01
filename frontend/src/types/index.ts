@@ -56,6 +56,7 @@ export interface Listing {
   donor_id: number
   campaign_id: number
   campaign?: Campaign
+  charityName?: string
   title: string
   description: string
   condition: ItemCondition
