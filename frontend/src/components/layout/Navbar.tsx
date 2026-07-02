@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Heart, Settings, ShieldCheck, Menu, X, Users } from 'lucide-react'
+import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Heart, HeartHandshake, Settings, ShieldCheck, Menu, X, Users } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 // ─── Avatar dropdown ─────────────────────────────────────────────────────────
@@ -72,6 +72,17 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
           >
             <Users className="w-4 h-4" style={{ color: '#047857' }} />
             Staff Management
+          </Link>
+        )}
+        {(user?.roles?.includes('charity') || user?.roles?.includes('charity_staff') || user?.roles?.includes('admin')) && (
+          <Link
+            to="/charity/campaigns"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+            style={{ color: '#2D3A3A' }}
+          >
+            <HeartHandshake className="w-4 h-4" style={{ color: '#047857' }} />
+            Campaign Management
           </Link>
         )}
         {user?.roles?.includes('admin') && (
