@@ -1,12 +1,16 @@
 import type { ErrorRequestHandler } from 'express';
 import { AppError } from '../utils/errors';
+import { audit } from '../services/audit.service';
 
 export const notFoundHandler = (req: import('express').Request, res: import('express').Response): void => {
   res.status(404).json({ message: 'Not found', path: req.path });
 };
 
-export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof AppError) {
+    if (err.statusCode === 400) {
+      void audit(req, 'INPUT_REJECTED', { path: req.originalUrl, code: err.code, message: err.message });
+    }
     res.status(err.statusCode).json({ message: err.message, code: err.code, errors: err.details });
     return;
   }
