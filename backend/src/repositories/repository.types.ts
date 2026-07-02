@@ -21,12 +21,14 @@ export type NewAuditEventInput = Omit<AuditEvent, 'id' | 'timestamp' | 'previous
 
 export interface BidForGoodRepository {
   findUserByEmail(email: string): Promise<User | undefined>;
+  findUserByUsername(username: string): Promise<User | undefined>;
   findUserById(id: number): Promise<User | undefined>;
   findUserByUuid(uuid: string): Promise<User | undefined>;
   findUserByUsername(username: string): Promise<User | undefined>;
   addUser(input: NewUserInput): Promise<User>;
   updateUser(user: User): Promise<void>;
   toPublicUser(user: User): PublicUser;
+  listStaffByCharityId(charityId: number): Promise<User[]>;
 
   savePendingRegistration(registration: PendingRegistration): Promise<void>;
   getPendingRegistration(email: string): Promise<PendingRegistration | undefined>;
@@ -39,6 +41,7 @@ export interface BidForGoodRepository {
 
   addCharity(input: NewCharityInput): Promise<CharityOrganisation>;
   getCharityByUuid(uuid: string): Promise<CharityOrganisation | undefined>;
+  getCharityByOwnerUserId(ownerUserId: number): Promise<CharityOrganisation | undefined>;
   listCharities(): Promise<CharityOrganisation[]>;
   updateCharity(record: CharityOrganisation): Promise<void>;
 

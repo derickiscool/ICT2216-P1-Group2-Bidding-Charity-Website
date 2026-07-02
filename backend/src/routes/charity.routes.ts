@@ -6,6 +6,7 @@ import { requireCsrf } from '../middleware/csrf.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 import { badRequest } from '../utils/errors';
 import { createCharityRegistration, listCharityRegistrations, reviewCharityRegistration } from '../controllers/charity.controller';
+import { createCharityStaff, deactivateCharityStaff, getCharityStaff, updateCharityStaff } from '../controllers/charityStaff.controller';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
@@ -30,4 +31,10 @@ router.post(
 );
 router.get('/', asyncHandler(authenticate), requireRole('admin'), asyncHandler(listCharityRegistrations));
 router.post('/:uuid/review', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(reviewCharityRegistration));
+
+router.get('/staff', asyncHandler(authenticate), requireRole('charity', 'admin'), asyncHandler(getCharityStaff));
+router.post('/staff', asyncHandler(authenticate), requireCsrf, requireRole('charity', 'admin'), asyncHandler(createCharityStaff));
+router.put('/staff/:uuid', asyncHandler(authenticate), requireCsrf, requireRole('charity', 'admin'), asyncHandler(updateCharityStaff));
+router.patch('/staff/:uuid/deactivate', asyncHandler(authenticate), requireCsrf, requireRole('charity', 'admin'), asyncHandler(deactivateCharityStaff));
+
 export default router;
