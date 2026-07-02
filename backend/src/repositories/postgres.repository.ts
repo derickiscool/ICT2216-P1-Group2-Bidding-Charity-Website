@@ -29,13 +29,15 @@ interface UserRow {
   email: string;
   username: string;
   full_name: string;
-  contact_number: string | null;
   roles: UserRole[];
   password_hash: string;
   is_verified: boolean;
   is_active: boolean;
   failed_login_attempts: number;
   locked_until: DbDate | null;
+  contact_number: string | null;
+  charity_id: number | null;
+  last_login_at: DbDate | null;
   created_at: DbDate;
 }
 
@@ -162,13 +164,15 @@ const mapUser = (row: UserRow): User => ({
   email: row.email,
   username: row.username,
   full_name: row.full_name,
-  contact_number: row.contact_number ?? undefined,
   roles: mapRoles(row.roles),
   passwordHash: row.password_hash,
   is_verified: row.is_verified,
   is_active: row.is_active,
   failedLoginAttempts: Number(row.failed_login_attempts),
   lockedUntil: optionalDate(row.locked_until),
+  contactNumber: row.contact_number ?? undefined,
+  charityId: optionalNumber(row.charity_id),
+  lastLoginAt: optionalIso(row.last_login_at),
   created_at: toIso(row.created_at),
 });
 
@@ -279,6 +283,11 @@ const findUserByEmail = async (email: string): Promise<User | undefined> => {
   return row ? mapUser(row) : undefined;
 };
 
+const findUserByUsername = async (username: string): Promise<User | undefined> => {
+  const row = await firstRow<UserRow>('SELECT * FROM users WHERE lower(username) = lower($1) LIMIT 1', [username]);
+  return row ? mapUser(row) : undefined;
+};
+
 const findUserById = async (id: number): Promise<User | undefined> => {
   const row = await firstRow<UserRow>('SELECT * FROM users WHERE id = $1 LIMIT 1', [id]);
   return row ? mapUser(row) : undefined;
@@ -289,17 +298,12 @@ const findUserByUuid = async (uuid: string): Promise<User | undefined> => {
   return row ? mapUser(row) : undefined;
 };
 
-const findUserByUsername = async (username: string): Promise<User | undefined> => {
-  const row = await firstRow<UserRow>('SELECT * FROM users WHERE lower(username) = lower($1) LIMIT 1', [username]);
-  return row ? mapUser(row) : undefined;
-};
-
 const addUser = async (input: NewUserInput): Promise<User> => {
   const row = await firstRow<UserRow>(
-    `INSERT INTO users (email, username, full_name, roles, password_hash, is_verified, is_active, failed_login_attempts)
-     VALUES ($1, $2, $3, $4, $5, $6, true, 0)
+    `INSERT INTO users (email, username, full_name, roles, password_hash, is_verified, is_active, failed_login_attempts, charity_id)
+     VALUES ($1, $2, $3, $4, $5, $6, true, 0, $7)
      RETURNING *`,
-    [input.email, input.username, input.full_name, input.roles, input.passwordHash, input.is_verified],
+    [input.email, input.username, input.full_name, input.roles, input.passwordHash, input.is_verified, input.charityId ?? null],
   );
   if (!row) throw new Error('Failed to create user.');
   return mapUser(row);
@@ -310,22 +314,32 @@ const updateUser = async (user: User): Promise<void> => {
     `UPDATE users
      SET email = $2, username = $3, full_name = $4, contact_number = $5, roles = $6,
          password_hash = $7, is_verified = $8, is_active = $9, failed_login_attempts = $10,
-         locked_until = $11
+         locked_until = $11, charity_id = $12, last_login_at = $13
      WHERE id = $1`,
     [
       user.id,
       user.email,
       user.username,
       user.full_name,
-      user.contact_number ?? null,
+      user.contactNumber ?? null,
       user.roles,
       user.passwordHash,
       user.is_verified,
       user.is_active,
       user.failedLoginAttempts,
       user.lockedUntil ?? null,
+      user.charityId ?? null,
+      user.lastLoginAt ?? null,
     ],
   );
+};
+
+const listStaffByCharityId = async (charityId: number): Promise<User[]> => {
+  const rows = await allRows<UserRow>(
+    `SELECT * FROM users WHERE charity_id = $1 AND 'charity_staff' = ANY(roles) ORDER BY created_at DESC, id DESC`,
+    [charityId],
+  );
+  return rows.map(mapUser);
 };
 
 export const savePendingRegistration = async (registration: PendingRegistration): Promise<void> => {
@@ -407,6 +421,11 @@ const addCharity = async (input: NewCharityInput): Promise<CharityOrganisation> 
 
 const getCharityByUuid = async (uuid: string): Promise<CharityOrganisation | undefined> => {
   const row = await firstRow<CharityRow>('SELECT * FROM charities WHERE uuid = $1 LIMIT 1', [uuid]);
+  return row ? mapCharity(row) : undefined;
+};
+
+const getCharityByOwnerUserId = async (ownerUserId: number): Promise<CharityOrganisation | undefined> => {
+  const row = await firstRow<CharityRow>('SELECT * FROM charities WHERE owner_user_id = $1 ORDER BY created_at DESC LIMIT 1', [ownerUserId]);
   return row ? mapCharity(row) : undefined;
 };
 
@@ -636,12 +655,13 @@ export const resetRepositoryForTests = async (): Promise<void> => {
 
 export const postgresRepository: BidForGoodRepository = {
   findUserByEmail,
+  findUserByUsername,
   findUserById,
   findUserByUuid,
-  findUserByUsername,
   addUser,
   updateUser,
   toPublicUser,
+  listStaffByCharityId,
 
   savePendingRegistration,
   getPendingRegistration,
@@ -654,6 +674,7 @@ export const postgresRepository: BidForGoodRepository = {
 
   addCharity,
   getCharityByUuid,
+  getCharityByOwnerUserId,
   listCharities,
   updateCharity,
 

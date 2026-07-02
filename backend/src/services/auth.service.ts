@@ -135,6 +135,7 @@ export const login = async (emailInput: string, password: string, req: Request, 
   }
   user.failedLoginAttempts = 0;
   user.lockedUntil = undefined;
+  user.lastLoginAt = new Date().toISOString();
   await updateUser(user);
   const safeUser = toPublicUser(user);
   const session = await createSession(safeUser);

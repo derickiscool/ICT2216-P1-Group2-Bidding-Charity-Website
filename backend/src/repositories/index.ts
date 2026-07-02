@@ -4,12 +4,13 @@ export const repository = postgresRepository;
 
 export const {
   findUserByEmail,
+  findUserByUsername,
   findUserById,
   findUserByUuid,
-  findUserByUsername,
   addUser,
   updateUser,
   toPublicUser,
+  listStaffByCharityId,
   savePendingRegistration,
   getPendingRegistration,
   removePendingRegistration,
@@ -19,6 +20,7 @@ export const {
   revokeSession,
   addCharity,
   getCharityByUuid,
+  getCharityByOwnerUserId,
   listCharities,
   updateCharity,
   addListing,
