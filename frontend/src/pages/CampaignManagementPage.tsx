@@ -13,7 +13,7 @@
   Backend must still enforce RBAC, charity ownership, input validation, sanitisation and audit logging.
 */
 import { useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { AlertCircle, CalendarDays, CheckCircle2, Edit3, Eye, Flag, HeartHandshake, ImageIcon, Lock, Plus, Search, Target, X, XCircle } from 'lucide-react'
+import { AlertCircle, CalendarDays, CheckCircle2, Edit3, Eye, Flag, HeartHandshake, ImageIcon, Lock, Plus, Search, Target, Upload, X, XCircle } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import type { Campaign } from '../types'
 
@@ -27,22 +27,27 @@ const C = {
 type CampaignStatus = Campaign['status']
 type AlertMsg = { type: 'success' | 'error'; text: string } | null
 
+// Local extension because the current shared Campaign type does not yet include a campaign image field.
+type CampaignWithImage = Campaign & { image_url?: string }
+
 interface CampaignForm {
   name: string
   description: string
   end_date: string
+  image_file: File | null
+  image_preview_url: string
 }
 
-type CampaignField = keyof CampaignForm
-type CampaignFormErrors = Partial<Record<CampaignField, string>>
+type CampaignField = 'name' | 'description' | 'end_date'
+type CampaignFormErrors = Partial<Record<CampaignField | 'image_file', string>>
 
-const emptyForm: CampaignForm = { name: '', description: '', end_date: '' }
+const emptyForm: CampaignForm = { name: '', description: '', end_date: '', image_file: null, image_preview_url: '' }
 
 /*
   Mock campaigns are only here so the page can be developed and reviewed before backend integration.
   Field names follow the existing Campaign type in src/types/index.ts.
 */
-const mockCampaigns: Campaign[] = [
+const mockCampaigns: CampaignWithImage[] = [
   {
     id: 1, charity_id: 1, name: 'Build Schools in Rural Communities',
     description: 'Help us construct 10 new primary schools in underserved rural areas. Every auction item donated raises direct funds for construction and teacher training.',
@@ -114,6 +119,22 @@ function containsUnsafeMarkup(value: string) {
   return unsafePatterns.some((pattern) => pattern.test(value))
 }
 
+function validateCampaignImage(file: File) {
+  // Frontend file checks improve user feedback; backend must still verify MIME type, extension and file content.
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  const maxSizeInBytes = 2 * 1024 * 1024
+  if (!allowedTypes.includes(file.type)) return 'Campaign image must be a JPG, PNG or WEBP file.'
+  if (file.size > maxSizeInBytes) return 'Campaign image must be 2MB or smaller.'
+  return ''
+}
+
+function readImageAsDataUrl(file: File, onReady: (value: string) => void) {
+  // FileReader creates a temporary preview for frontend-only development before backend uploads are ready.
+  const reader = new FileReader()
+  reader.onload = () => onReady(String(reader.result ?? ''))
+  reader.readAsDataURL(file)
+}
+
 function updateKnownField(form: CampaignForm, field: CampaignField, value: string): CampaignForm {
   return { ...form, [field]: value }
 }
@@ -124,13 +145,13 @@ function clearKnownError(errors: CampaignFormErrors, field: CampaignField): Camp
 
 export default function CampaignManagementPage() {
   const { user } = useAuthStore()
-  const [campaigns, setCampaigns] = useState<Campaign[]>(mockCampaigns)
+  const [campaigns, setCampaigns] = useState<CampaignWithImage[]>(mockCampaigns)
   const [createForm, setCreateForm] = useState<CampaignForm>(emptyForm)
   const [editForm, setEditForm] = useState<CampaignForm>(emptyForm)
   const [createErrors, setCreateErrors] = useState<CampaignFormErrors>({})
   const [editErrors, setEditErrors] = useState<CampaignFormErrors>({})
   const [message, setMessage] = useState<AlertMsg>(null)
-  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
+  const [editingCampaign, setEditingCampaign] = useState<CampaignWithImage | null>(null)
   const [confirmCloseId, setConfirmCloseId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | CampaignStatus>('all')
@@ -171,6 +192,60 @@ export default function CampaignManagementPage() {
     setMessage(null)
   }
 
+  function updateCreateImage(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    setMessage(null)
+    if (!file) {
+      setCreateForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' }))
+      setCreateErrors((prev) => ({ ...prev, image_file: '' }))
+      return
+    }
+
+    const imageError = validateCampaignImage(file)
+    if (imageError) {
+      setCreateErrors((prev) => ({ ...prev, image_file: imageError }))
+      e.target.value = ''
+      return
+    }
+
+    readImageAsDataUrl(file, (previewUrl) => {
+      setCreateForm((prev) => ({ ...prev, image_file: file, image_preview_url: previewUrl }))
+      setCreateErrors((prev) => ({ ...prev, image_file: '' }))
+    })
+  }
+
+  function updateEditImage(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    setMessage(null)
+    if (!file) {
+      setEditForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' }))
+      setEditErrors((prev) => ({ ...prev, image_file: '' }))
+      return
+    }
+
+    const imageError = validateCampaignImage(file)
+    if (imageError) {
+      setEditErrors((prev) => ({ ...prev, image_file: imageError }))
+      e.target.value = ''
+      return
+    }
+
+    readImageAsDataUrl(file, (previewUrl) => {
+      setEditForm((prev) => ({ ...prev, image_file: file, image_preview_url: previewUrl }))
+      setEditErrors((prev) => ({ ...prev, image_file: '' }))
+    })
+  }
+
+  function clearCreateImage() {
+    setCreateForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' }))
+    setCreateErrors((prev) => ({ ...prev, image_file: '' }))
+  }
+
+  function clearEditImage() {
+    setEditForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' }))
+    setEditErrors((prev) => ({ ...prev, image_file: '' }))
+  }
+
   function validateCampaignForm(form: CampaignForm, editingId: number | null) {
     const errors: CampaignFormErrors = {}
     const name = normaliseText(form.name)
@@ -188,6 +263,10 @@ export default function CampaignManagementPage() {
     else if (containsUnsafeMarkup(description)) errors.description = 'Description cannot contain script-like content.'
 
     if (form.end_date && isPastDate(form.end_date)) errors.end_date = 'End date cannot be in the past.'
+    if (form.image_file) {
+      const imageError = validateCampaignImage(form.image_file)
+      if (imageError) errors.image_file = imageError
+    }
     return errors
   }
 
@@ -208,9 +287,10 @@ export default function CampaignManagementPage() {
       TODO: Replace this local insert with POST /api/charities/campaigns.
       Backend should attach the new campaign to the authenticated user's approved charity organisation.
     */
-    const newCampaign: Campaign = {
+    const newCampaign: CampaignWithImage = {
       id: Date.now(), charity_id: 1, name: normaliseText(createForm.name), description: normaliseText(createForm.description),
-      status: 'active', end_date: createForm.end_date || undefined, total_raised: 0, active_auctions: 0, created_at: new Date().toISOString(),
+      status: 'active', end_date: createForm.end_date || undefined, image_url: createForm.image_preview_url || undefined,
+      total_raised: 0, active_auctions: 0, created_at: new Date().toISOString(),
     }
 
     setCampaigns((prev) => [newCampaign, ...prev])
@@ -220,12 +300,12 @@ export default function CampaignManagementPage() {
     setMessage({ type: 'success', text: 'Campaign created successfully.' })
   }
 
-  function startEdit(campaign: Campaign) {
+  function startEdit(campaign: CampaignWithImage) {
     setEditingCampaign(campaign)
     setConfirmCloseId(null)
     setEditErrors({})
     setMessage(null)
-    setEditForm({ name: campaign.name, description: campaign.description, end_date: campaign.end_date ?? '' })
+    setEditForm({ name: campaign.name, description: campaign.description, end_date: campaign.end_date ?? '', image_file: null, image_preview_url: campaign.image_url ?? '' })
   }
 
   function closeEditModal() {
@@ -255,7 +335,7 @@ export default function CampaignManagementPage() {
     setCampaigns((prev) =>
       prev.map((campaign) =>
         campaign.id === editingCampaign.id
-          ? { ...campaign, name: normaliseText(editForm.name), description: normaliseText(editForm.description), end_date: editForm.end_date || undefined }
+          ? { ...campaign, name: normaliseText(editForm.name), description: normaliseText(editForm.description), end_date: editForm.end_date || undefined, image_url: editForm.image_preview_url || undefined }
           : campaign,
       ),
     )
@@ -298,6 +378,7 @@ export default function CampaignManagementPage() {
               <form onSubmit={saveCreateCampaign} noValidate className="space-y-5">
                 <TextInput label="Campaign name" value={createForm.name} error={createErrors.name} disabled={!canManageCampaigns} autoComplete="off" placeholder="e.g. Build Schools in Rural Communities" onChange={(e) => updateCreateField('name', e.target.value)} />
                 <TextAreaInput label="Campaign description" value={createForm.description} error={createErrors.description} disabled={!canManageCampaigns} placeholder="Explain what this campaign is raising awareness and funds for." note="Plain text only. Script-like content will be rejected." onChange={(e) => updateCreateField('description', e.target.value)} />
+                <ImageUploadInput label="Campaign image" previewUrl={createForm.image_preview_url} error={createErrors.image_file} disabled={!canManageCampaigns} note="Optional. Accepted formats: JPG, PNG or WEBP, up to 2MB." onChange={updateCreateImage} onClear={clearCreateImage} />
 
                 <div className="grid md:grid-cols-2 gap-4 items-end">
                   <TextInput label="Optional end date" type="date" value={createForm.end_date} error={createErrors.end_date} disabled={!canManageCampaigns} min={todayForInput()} onChange={(e) => updateCreateField('end_date', e.target.value)} />
@@ -329,7 +410,7 @@ export default function CampaignManagementPage() {
         </div>
       </div>
 
-      {editingCampaign && <EditCampaignModal campaign={editingCampaign} form={editForm} errors={editErrors} onClose={closeEditModal} onSave={saveEditCampaign} onChange={updateEditField} />}
+      {editingCampaign && <EditCampaignModal campaign={editingCampaign} form={editForm} errors={editErrors} onClose={closeEditModal} onSave={saveEditCampaign} onChange={updateEditField} onImageChange={updateEditImage} onClearImage={clearEditImage} />}
     </div>
   )
 }
@@ -346,10 +427,10 @@ function Header() {
 }
 
 type CampaignGridProps = {
-  campaigns: Campaign[]
+  campaigns: CampaignWithImage[]
   canManageCampaigns: boolean
   confirmCloseId: number | null
-  onEdit: (campaign: Campaign) => void
+  onEdit: (campaign: CampaignWithImage) => void
   onAskClose: (id: number) => void
   onCancelClose: () => void
   onConfirmClose: (id: number) => void
@@ -376,10 +457,10 @@ function CampaignGrid({ campaigns, canManageCampaigns, confirmCloseId, onEdit, o
 }
 
 type CampaignCardProps = {
-  campaign: Campaign
+  campaign: CampaignWithImage
   canManageCampaigns: boolean
   isConfirmingClose: boolean
-  onEdit: (campaign: Campaign) => void
+  onEdit: (campaign: CampaignWithImage) => void
   onAskClose: (id: number) => void
   onCancelClose: () => void
   onConfirmClose: (id: number) => void
@@ -391,7 +472,7 @@ function CampaignCard({ campaign, canManageCampaigns, isConfirmingClose, onEdit,
 
   return (
     <article className="rounded-2xl p-5 shadow-sm" style={{ background: C.white, border: `1px solid ${C.beige}` }}>
-      <CampaignImagePlaceholder />
+      <CampaignImage src={campaign.image_url} />
 
       <div className="flex items-start justify-between gap-3 mt-4">
         <div className="min-w-0">
@@ -435,15 +516,17 @@ function CampaignCard({ campaign, canManageCampaigns, isConfirmingClose, onEdit,
 }
 
 type EditCampaignModalProps = {
-  campaign: Campaign
+  campaign: CampaignWithImage
   form: CampaignForm
   errors: CampaignFormErrors
   onClose: () => void
   onSave: (e: FormEvent) => void
   onChange: (field: CampaignField, value: string) => void
+  onImageChange: (e: ChangeEvent<HTMLInputElement>) => void
+  onClearImage: () => void
 }
 
-function EditCampaignModal({ campaign, form, errors, onClose, onSave, onChange }: EditCampaignModalProps) {
+function EditCampaignModal({ campaign, form, errors, onClose, onSave, onChange, onImageChange, onClearImage }: EditCampaignModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(45, 58, 58, 0.45)' }}>
       <section className="w-full max-w-2xl bg-white rounded-2xl shadow-xl" style={{ border: `1px solid ${C.beige}` }}>
@@ -460,6 +543,7 @@ function EditCampaignModal({ campaign, form, errors, onClose, onSave, onChange }
         <form onSubmit={onSave} noValidate className="px-6 py-6 space-y-5">
           <TextInput label="Campaign name" value={form.name} error={errors.name} autoComplete="off" onChange={(e) => onChange('name', e.target.value)} />
           <TextAreaInput label="Campaign description" value={form.description} error={errors.description} note="Do not paste HTML, JavaScript or tracking snippets here." onChange={(e) => onChange('description', e.target.value)} />
+          <ImageUploadInput label="Campaign image" previewUrl={form.image_preview_url} error={errors.image_file} note="Optional. Upload a new image to replace the current preview." onChange={onImageChange} onClear={onClearImage} />
           <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
 
           <div className="flex justify-end gap-3 pt-2">
@@ -495,7 +579,10 @@ function OverviewCard({ total, active, closed, totalRaised, linkedAuctions }: { 
   )
 }
 
-function CampaignImagePlaceholder() {
+function CampaignImage({ src }: { src?: string }) {
+  if (src) {
+    return <img src={src} alt="Campaign preview" className="h-36 w-full rounded-2xl object-cover" />
+  }
   return (
     <div className="h-36 rounded-2xl flex flex-col items-center justify-center" style={{ background: '#E5E7EB', color: '#8A97A8' }}>
       <ImageIcon className="w-8 h-8 mb-2" />
@@ -520,6 +607,49 @@ function StatusFilter({ value, onChange }: { value: 'all' | CampaignStatus; onCh
       <option value="active">Active only</option>
       <option value="closed">Closed only</option>
     </select>
+  )
+}
+
+type ImageUploadInputProps = {
+  label: string
+  previewUrl: string
+  error?: string
+  note?: string
+  disabled?: boolean
+  onChange: (e: ChangeEvent<HTMLInputElement>) => void
+  onClear: () => void
+}
+
+function ImageUploadInput({ label, previewUrl, error, note, disabled, onChange, onClear }: ImageUploadInputProps) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>{label}</label>
+      <div className="rounded-2xl border border-dashed p-4" style={{ borderColor: error ? C.danger : C.beige, background: disabled ? C.linen : C.white }}>
+        {previewUrl ? (
+          <img src={previewUrl} alt="Selected campaign preview" className="h-40 w-full rounded-xl object-cover mb-3" />
+        ) : (
+          <div className="h-40 rounded-xl flex flex-col items-center justify-center mb-3" style={{ background: C.linen, color: C.muted }}>
+            <ImageIcon className="w-8 h-8 mb-2" />
+            <p className="text-sm font-medium">No campaign image selected</p>
+            <p className="text-xs mt-1">Upload an image to represent this campaign.</p>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: disabled ? '#6ba88e' : C.emerald, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+            <Upload className="w-4 h-4" />
+            Choose image
+            <input type="file" accept="image/jpeg,image/png,image/webp" disabled={disabled} onChange={onChange} className="hidden" />
+          </label>
+          {previewUrl && (
+            <button type="button" onClick={onClear} disabled={disabled} className="px-4 py-2 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+              Remove image
+            </button>
+          )}
+        </div>
+      </div>
+      {note && <p className="text-xs mt-1" style={{ color: C.muted }}>{note}</p>}
+      {error && <p className="text-xs mt-1" style={{ color: C.danger }}>{error}</p>}
+    </div>
   )
 }
 
