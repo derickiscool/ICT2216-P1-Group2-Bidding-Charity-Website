@@ -24,6 +24,7 @@ export interface BidForGoodRepository {
   findUserByUsername(username: string): Promise<User | undefined>;
   findUserById(id: number): Promise<User | undefined>;
   findUserByUuid(uuid: string): Promise<User | undefined>;
+  findUserByUsername(username: string): Promise<User | undefined>;
   addUser(input: NewUserInput): Promise<User>;
   updateUser(user: User): Promise<void>;
   toPublicUser(user: User): PublicUser;
