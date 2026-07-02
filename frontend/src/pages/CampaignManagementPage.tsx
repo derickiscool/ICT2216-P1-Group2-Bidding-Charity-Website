@@ -372,38 +372,101 @@ export default function CampaignManagementPage() {
         {!canManageCampaigns && <Alert msg={{ type: 'error', text: 'Your charity account must be approved before you can manage campaigns.' }} />}
         {message && <Alert msg={message} />}
 
-        <div className="grid lg:grid-cols-[1fr_340px] gap-6 mt-6">
-          <main className="space-y-6">
-            <Card icon={<Plus className="w-5 h-5" />} title="Create campaign" desc="Set up a fundraising campaign that auction listings can support.">
+        <div className="space-y-6 mt-6">
+          <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+            <Card
+              icon={<Plus className="w-5 h-5" />}
+              title="Create campaign"
+              desc="Set up a fundraising campaign that auction listings can support."
+            >
               <form onSubmit={saveCreateCampaign} noValidate className="space-y-5">
-                <TextInput label="Campaign name" value={createForm.name} error={createErrors.name} disabled={!canManageCampaigns} autoComplete="off" placeholder="e.g. Build Schools in Rural Communities" onChange={(e) => updateCreateField('name', e.target.value)} />
-                <TextAreaInput label="Campaign description" value={createForm.description} error={createErrors.description} disabled={!canManageCampaigns} placeholder="Explain what this campaign is raising awareness and funds for." note="Plain text only. Script-like content will be rejected." onChange={(e) => updateCreateField('description', e.target.value)} />
-                <ImageUploadInput label="Campaign image" previewUrl={createForm.image_preview_url} error={createErrors.image_file} disabled={!canManageCampaigns} note="Optional. Accepted formats: JPG, PNG or WEBP, up to 2MB." onChange={updateCreateImage} onClear={clearCreateImage} />
+                <TextInput
+                  label="Campaign name"
+                  value={createForm.name}
+                  error={createErrors.name}
+                  disabled={!canManageCampaigns}
+                  autoComplete="off"
+                  placeholder="e.g. Build Schools in Rural Communities"
+                  onChange={(e) => updateCreateField('name', e.target.value)}
+                />
+
+                <TextAreaInput
+                  label="Campaign description"
+                  value={createForm.description}
+                  error={createErrors.description}
+                  disabled={!canManageCampaigns}
+                  placeholder="Explain what this campaign is raising awareness and funds for."
+                  note="Plain text only. Script-like content will be rejected."
+                  onChange={(e) => updateCreateField('description', e.target.value)}
+                />
+
+                <ImageUploadInput
+                  label="Campaign image"
+                  previewUrl={createForm.image_preview_url}
+                  error={createErrors.image_file}
+                  disabled={!canManageCampaigns}
+                  note="Optional. Accepted formats: JPG, PNG or WEBP, up to 2MB."
+                  onChange={updateCreateImage}
+                  onClear={clearCreateImage}
+                />
 
                 <div className="grid md:grid-cols-2 gap-4 items-end">
-                  <TextInput label="Optional end date" type="date" value={createForm.end_date} error={createErrors.end_date} disabled={!canManageCampaigns} min={todayForInput()} onChange={(e) => updateCreateField('end_date', e.target.value)} />
+                  <TextInput
+                    label="Optional end date"
+                    type="date"
+                    value={createForm.end_date}
+                    error={createErrors.end_date}
+                    disabled={!canManageCampaigns}
+                    min={todayForInput()}
+                    onChange={(e) => updateCreateField('end_date', e.target.value)}
+                  />
+
                   <div className="flex justify-end">
-                    <PrimaryButton disabled={!canManageCampaigns} icon={<Plus className="w-4 h-4" />} label="Create campaign" />
+                    <PrimaryButton
+                      disabled={!canManageCampaigns}
+                      icon={<Plus className="w-4 h-4" />}
+                      label="Create campaign"
+                    />
                   </div>
                 </div>
               </form>
             </Card>
 
-            <Card icon={<HeartHandshake className="w-5 h-5" />} title="Campaign records" desc="Search, edit and close campaigns created by your charity organisation.">
-              <div className="grid md:grid-cols-[1fr_180px] gap-3 mb-5">
-                <SearchBox value={search} onChange={setSearch} />
-                <StatusFilter value={statusFilter} onChange={setStatusFilter} />
-              </div>
-              <CampaignGrid campaigns={filteredCampaigns} canManageCampaigns={canManageCampaigns} confirmCloseId={confirmCloseId} onEdit={startEdit} onAskClose={setConfirmCloseId} onCancelClose={() => setConfirmCloseId(null)} onConfirmClose={closeCampaign} />
-            </Card>
-          </main>
+            <aside className="space-y-6">
+              <OverviewCard
+                total={campaigns.length}
+                active={activeCount}
+                closed={closedCount}
+                totalRaised={totalRaised}
+                linkedAuctions={linkedAuctionCount}
+              />
 
-          <aside className="space-y-6">
-            <OverviewCard total={campaigns.length} active={activeCount} closed={closedCount} totalRaised={totalRaised} linkedAuctions={linkedAuctionCount} />
-            <InfoCard title="Security reminder" tone="warning">
-              Frontend checks are for usability. Backend still needs RBAC, ownership checks, sanitisation and audit logging.
-            </InfoCard>
-          </aside>
+              <InfoCard title="Security reminder" tone="warning">
+                Frontend checks are for usability. Backend still needs RBAC, ownership checks, sanitisation and audit logging.
+              </InfoCard>
+            </aside>
+          </div>
+
+          <Card
+            icon={<HeartHandshake className="w-5 h-5" />}
+            title="Campaign records"
+            desc="Search, edit and close campaigns created by your charity organisation."
+          >
+            <div className="grid md:grid-cols-[1fr_180px] gap-3 mb-5">
+              <SearchBox value={search} onChange={setSearch} />
+              <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+            </div>
+
+            <CampaignGrid
+              campaigns={filteredCampaigns}
+              canManageCampaigns={canManageCampaigns}
+              confirmCloseId={confirmCloseId}
+              onEdit={startEdit}
+              onAskClose={setConfirmCloseId}
+              onCancelClose={() => setConfirmCloseId(null)}
+              onConfirmClose={closeCampaign}
+            />
+          </Card>
         </div>
       </div>
 
@@ -445,9 +508,18 @@ function CampaignGrid({ campaigns, canManageCampaigns, confirmCloseId, onEdit, o
   }
 
   return (
-    <div className="grid xl:grid-cols-2 gap-4">
+    <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-4">
       {campaigns.map((campaign) => (
-        <CampaignCard key={campaign.id} campaign={campaign} canManageCampaigns={canManageCampaigns} isConfirmingClose={confirmCloseId === campaign.id} onEdit={onEdit} onAskClose={onAskClose} onCancelClose={onCancelClose} onConfirmClose={onConfirmClose} />
+        <CampaignCard
+          key={campaign.id}
+          campaign={campaign}
+          canManageCampaigns={canManageCampaigns}
+          isConfirmingClose={confirmCloseId === campaign.id}
+          onEdit={onEdit}
+          onAskClose={onAskClose}
+          onCancelClose={onCancelClose}
+          onConfirmClose={onConfirmClose}
+        />
       ))}
     </div>
   )
