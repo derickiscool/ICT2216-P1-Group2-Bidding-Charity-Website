@@ -1,10 +1,13 @@
 import type {
   AuditEvent,
   Bid,
+  Campaign,
   CharityOrganisation,
   Listing,
+  NewCampaignInput,
   PendingRegistration,
   SessionRecord,
+  UpdateCampaignInput,
   User,
   UserRole,
 } from '../types/domain';
@@ -24,7 +27,6 @@ export interface BidForGoodRepository {
   findUserByUsername(username: string): Promise<User | undefined>;
   findUserById(id: number): Promise<User | undefined>;
   findUserByUuid(uuid: string): Promise<User | undefined>;
-  findUserByUsername(username: string): Promise<User | undefined>;
   addUser(input: NewUserInput): Promise<User>;
   updateUser(user: User): Promise<void>;
   toPublicUser(user: User): PublicUser;
@@ -40,10 +42,18 @@ export interface BidForGoodRepository {
   revokeSession(sid: string): Promise<void>;
 
   addCharity(input: NewCharityInput): Promise<CharityOrganisation>;
+  getCharityById(id: number): Promise<CharityOrganisation | undefined>;
   getCharityByUuid(uuid: string): Promise<CharityOrganisation | undefined>;
   getCharityByOwnerUserId(ownerUserId: number): Promise<CharityOrganisation | undefined>;
   listCharities(): Promise<CharityOrganisation[]>;
   updateCharity(record: CharityOrganisation): Promise<void>;
+
+  addCampaign(input: NewCampaignInput): Promise<Campaign>;
+  getCampaignByUuid(uuid: string): Promise<Campaign | undefined>;
+  getCampaignImage(uuid: string): Promise<{ data: Buffer; mime: string } | undefined>;
+  listCampaignsByCharity(charityId: number): Promise<Campaign[]>;
+  updateCampaign(uuid: string, input: UpdateCampaignInput): Promise<Campaign>;
+  closeCampaign(uuid: string): Promise<Campaign>;
 
   addListing(input: NewListingInput): Promise<Listing>;
   getListingById(id: number): Promise<Listing | undefined>;

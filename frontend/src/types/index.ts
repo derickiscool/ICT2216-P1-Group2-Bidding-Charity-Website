@@ -34,12 +34,14 @@ export interface Charity {
 
 export interface Campaign {
   id: number
+  uuid: string
   charity_id: number
   charity?: Charity
   name: string
   description: string
   status: 'active' | 'closed'
   end_date?: string
+  hasImage: boolean
   total_raised: number
   active_auctions: number
   created_at: string

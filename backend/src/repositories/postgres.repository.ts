@@ -2,10 +2,13 @@ import argon2 from 'argon2';
 import type {
   AuditEvent,
   Bid,
+  Campaign,
   CharityOrganisation,
   Listing,
+  NewCampaignInput,
   PendingRegistration,
   SessionRecord,
+  UpdateCampaignInput,
   User,
   UserRole,
 } from '../types/domain';
@@ -457,6 +460,147 @@ const updateCharity = async (record: CharityOrganisation): Promise<void> => {
   );
 };
 
+const getCharityById = async (id: number): Promise<CharityOrganisation | undefined> => {
+  const row = await firstRow<CharityRow>('SELECT * FROM charities WHERE id = $1 LIMIT 1', [id]);
+  return row ? mapCharity(row) : undefined;
+};
+
+interface CampaignListRow {
+  id: number;
+  uuid: string;
+  charity_id: number;
+  name: string;
+  description: string;
+  status: 'active' | 'closed';
+  end_date: string | null;
+  has_image: boolean;
+  total_raised: string;
+  active_auctions: string;
+  created_at: DbDate;
+}
+
+interface CampaignImageRow {
+  image_data: Buffer | null;
+  image_mime: string | null;
+}
+
+const CAMPAIGN_LIST_SQL = `
+  SELECT
+    c.id, c.uuid, c.charity_id, c.name, c.description, c.status, c.end_date,
+    (c.image_data IS NOT NULL) AS has_image,
+    COALESCE((
+      SELECT SUM(l.current_bid) FROM listings l
+      WHERE l.campaign_id = c.id AND l.status = 'sold'
+    ), 0) AS total_raised,
+    COALESCE((
+      SELECT COUNT(*) FROM listings l
+      WHERE l.campaign_id = c.id AND l.status = 'active'
+    ), 0) AS active_auctions,
+    c.created_at
+  FROM campaigns c`;
+
+const mapCampaign = (row: CampaignListRow): Campaign => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  charity_id: Number(row.charity_id),
+  name: row.name,
+  description: row.description,
+  status: row.status,
+  end_date: row.end_date ?? undefined,
+  hasImage: row.has_image,
+  total_raised: Number(row.total_raised),
+  active_auctions: Number(row.active_auctions),
+  created_at: toIso(row.created_at),
+});
+
+const addCampaign = async (input: NewCampaignInput): Promise<Campaign> => {
+  const row = await firstRow<CampaignListRow>(
+    `WITH inserted AS (
+       INSERT INTO campaigns (charity_id, name, description, status, end_date, image_data, image_mime)
+       VALUES ($1, $2, $3, 'active', $4, $5, $6)
+       RETURNING id, uuid, charity_id, name, description, status, end_date, image_data, created_at
+     )
+     SELECT i.id, i.uuid, i.charity_id, i.name, i.description, i.status, i.end_date,
+            (i.image_data IS NOT NULL) AS has_image,
+            0::numeric AS total_raised, 0::bigint AS active_auctions,
+            i.created_at
+     FROM inserted i`,
+    [input.charityId, input.name, input.description, input.endDate ?? null, input.imageData ?? null, input.imageMime ?? null],
+  );
+  if (!row) throw new Error('Failed to create campaign.');
+  return mapCampaign(row);
+};
+
+const getCampaignByUuid = async (uuid: string): Promise<Campaign | undefined> => {
+  const row = await firstRow<CampaignListRow>(
+    `${CAMPAIGN_LIST_SQL} WHERE c.uuid = $1`,
+    [uuid],
+  );
+  return row ? mapCampaign(row) : undefined;
+};
+
+const getCampaignImage = async (uuid: string): Promise<{ data: Buffer; mime: string } | undefined> => {
+  const row = await firstRow<CampaignImageRow>(
+    'SELECT image_data, image_mime FROM campaigns WHERE uuid = $1 LIMIT 1',
+    [uuid],
+  );
+  if (!row || !row.image_data || !row.image_mime) return undefined;
+  return { data: row.image_data, mime: row.image_mime };
+};
+
+const listCampaignsByCharity = async (charityId: number): Promise<Campaign[]> => {
+  const rows = await allRows<CampaignListRow>(
+    `${CAMPAIGN_LIST_SQL} WHERE c.charity_id = $1 ORDER BY c.created_at DESC, c.id DESC`,
+    [charityId],
+  );
+  return rows.map(mapCampaign);
+};
+
+const updateCampaign = async (uuid: string, input: UpdateCampaignInput): Promise<Campaign> => {
+  const imageClause = input.imageData !== undefined
+    ? ', image_data = $5, image_mime = $6'
+    : '';
+  const params: unknown[] = [uuid, input.name, input.description, input.endDate ?? null];
+  if (input.imageData !== undefined) {
+    params.push(input.imageData ?? null, input.imageMime ?? null);
+  }
+  const row = await firstRow<CampaignListRow>(
+    `WITH updated AS (
+       UPDATE campaigns
+       SET name = $2, description = $3, end_date = $4${imageClause}
+       WHERE uuid = $1
+       RETURNING id, uuid, charity_id, name, description, status, end_date, image_data, created_at
+     )
+     SELECT u.id, u.uuid, u.charity_id, u.name, u.description, u.status, u.end_date,
+            (u.image_data IS NOT NULL) AS has_image,
+            COALESCE((SELECT SUM(l.current_bid) FROM listings l WHERE l.campaign_id = u.id AND l.status = 'sold'), 0) AS total_raised,
+            COALESCE((SELECT COUNT(*) FROM listings l WHERE l.campaign_id = u.id AND l.status = 'active'), 0) AS active_auctions,
+            u.created_at
+     FROM updated u`,
+    params,
+  );
+  if (!row) throw new Error('Campaign not found or update failed.');
+  return mapCampaign(row);
+};
+
+const closeCampaign = async (uuid: string): Promise<Campaign> => {
+  const row = await firstRow<CampaignListRow>(
+    `WITH closed AS (
+       UPDATE campaigns SET status = 'closed' WHERE uuid = $1
+       RETURNING id, uuid, charity_id, name, description, status, end_date, image_data, created_at
+     )
+     SELECT c.id, c.uuid, c.charity_id, c.name, c.description, c.status, c.end_date,
+            (c.image_data IS NOT NULL) AS has_image,
+            COALESCE((SELECT SUM(l.current_bid) FROM listings l WHERE l.campaign_id = c.id AND l.status = 'sold'), 0) AS total_raised,
+            COALESCE((SELECT COUNT(*) FROM listings l WHERE l.campaign_id = c.id AND l.status = 'active'), 0) AS active_auctions,
+            c.created_at
+     FROM closed c`,
+    [uuid],
+  );
+  if (!row) throw new Error('Campaign not found.');
+  return mapCampaign(row);
+};
+
 const addListing = async (input: NewListingInput): Promise<Listing> => {
   const row = await firstRow<ListingRow>(
     `INSERT INTO listings
@@ -649,7 +793,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, bids, listings, charities, sessions, pending_registrations, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, bids, listings, campaigns, charities, sessions, pending_registrations, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -673,10 +817,18 @@ export const postgresRepository: BidForGoodRepository = {
   revokeSession,
 
   addCharity,
+  getCharityById,
   getCharityByUuid,
   getCharityByOwnerUserId,
   listCharities,
   updateCharity,
+
+  addCampaign,
+  getCampaignByUuid,
+  getCampaignImage,
+  listCampaignsByCharity,
+  updateCampaign,
+  closeCampaign,
 
   addListing,
   getListingById,
