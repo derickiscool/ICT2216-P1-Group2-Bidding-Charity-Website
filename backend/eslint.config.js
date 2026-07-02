@@ -11,6 +11,9 @@ module.exports = tseslint.config(
   {
     languageOptions: {
       globals: globals.node,
+      parserOptions: {
+        tsconfigRootDir: __dirname,
+      },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],

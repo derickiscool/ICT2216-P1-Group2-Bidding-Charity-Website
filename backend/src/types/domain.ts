@@ -6,13 +6,15 @@ export interface User {
   email: string;
   username: string;
   full_name: string;
-  contact_number?: string;
   roles: UserRole[];
   passwordHash: string;
   is_verified: boolean;
   is_active: boolean;
   failedLoginAttempts: number;
   lockedUntil?: Date;
+  contactNumber?: string;
+  charityId?: number;
+  lastLoginAt?: string;
   created_at: string;
 }
 

@@ -49,14 +49,14 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
     if (taken && taken.id !== user.id) throw badRequest('Username is already taken.', 'USERNAME_TAKEN');
   }
 
-  const previous = { full_name: user.full_name, username: user.username, contact_number: user.contact_number };
+  const previous = { full_name: user.full_name, username: user.username, contactNumber: user.contactNumber };
 
   user.full_name = fullName;
   user.username = username;
-  user.contact_number = contactNumber;
+  user.contactNumber = contactNumber;
 
   await updateUser(user);
-  await audit(req, 'PROFILE_UPDATED', { previous, updated: { full_name: fullName, username, contact_number: contactNumber } }, 'user', user.uuid, user.id);
+  await audit(req, 'PROFILE_UPDATED', { previous, updated: { full_name: fullName, username, contactNumber } }, 'user', user.uuid, user.id);
 
   return toPublicUser(user);
 };
