@@ -526,34 +526,39 @@ type EditCampaignModalProps = {
   onClearImage: () => void
 }
 
-function EditCampaignModal({ campaign, form, errors, onClose, onSave, onChange, onImageChange, onClearImage }: EditCampaignModalProps) {
+function EditCampaignModal({
+  campaign, form, errors, onClose, onSave, onChange, onImageChange, onClearImage,
+}: EditCampaignModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(45, 58, 58, 0.45)' }}>
-      <section className="w-full max-w-2xl bg-white rounded-2xl shadow-xl" style={{ border: `1px solid ${C.beige}` }}>
-        <div className="px-6 py-5 border-b flex items-start justify-between gap-4" style={{ borderColor: C.beige }}>
-          <div>
-            <h2 className="text-lg font-bold" style={{ color: C.slate }}>Edit campaign</h2>
-            <p className="text-sm mt-0.5" style={{ color: C.muted }}>{campaign.name}</p>
-          </div>
-          <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-[#F7F5F0]" aria-label="Close edit campaign modal">
-            <X className="w-5 h-5" style={{ color: C.muted }} />
-          </button>
-        </div>
-
-        <form onSubmit={onSave} noValidate className="px-6 py-6 space-y-5">
-          <TextInput label="Campaign name" value={form.name} error={errors.name} autoComplete="off" onChange={(e) => onChange('name', e.target.value)} />
-          <TextAreaInput label="Campaign description" value={form.description} error={errors.description} note="Do not paste HTML, JavaScript or tracking snippets here." onChange={(e) => onChange('description', e.target.value)} />
-          <ImageUploadInput label="Campaign image" previewUrl={form.image_preview_url} error={errors.image_file} note="Optional. Upload a new image to replace the current preview." onChange={onImageChange} onClear={onClearImage} />
-          <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
-              Cancel
+    <div className="fixed inset-0 z-50 overflow-y-auto px-4 py-8" style={{ background: 'rgba(45, 58, 58, 0.45)' }}>
+      {/* Overlay uses overflow-y-auto so the modal can scroll when the form is taller than the screen. */}
+      <div className="min-h-full flex items-start justify-center">
+        <section className="w-full max-w-2xl bg-white rounded-2xl shadow-xl" style={{ border: `1px solid ${C.beige}` }}>
+          <div className="px-6 py-5 border-b flex items-start justify-between gap-4" style={{ borderColor: C.beige }}>
+            <div>
+              <h2 className="text-lg font-bold" style={{ color: C.slate }}>Edit campaign</h2>
+              <p className="text-sm mt-0.5" style={{ color: C.muted }}>{campaign.name}</p>
+            </div>
+            <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-[#F7F5F0]" aria-label="Close edit campaign modal">
+              <X className="w-5 h-5" style={{ color: C.muted }} />
             </button>
-            <PrimaryButton icon={<Edit3 className="w-4 h-4" />} label="Save changes" />
           </div>
-        </form>
-      </section>
+
+          <form onSubmit={onSave} noValidate className="px-6 py-6 space-y-5">
+            <TextInput label="Campaign name" value={form.name} error={errors.name} autoComplete="off" onChange={(e) => onChange('name', e.target.value)} />
+            <TextAreaInput label="Campaign description" value={form.description} error={errors.description} note="Do not paste HTML, JavaScript or tracking snippets here." onChange={(e) => onChange('description', e.target.value)} />
+            <ImageUploadInput label="Campaign image" previewUrl={form.image_preview_url} error={errors.image_file} note="Optional. Upload a new image to replace the current preview." onChange={onImageChange} onClear={onClearImage} />
+            <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
+                Cancel
+              </button>
+              <PrimaryButton icon={<Edit3 className="w-4 h-4" />} label="Save changes" />
+            </div>
+          </form>
+        </section>
+      </div>
     </div>
   )
 }
