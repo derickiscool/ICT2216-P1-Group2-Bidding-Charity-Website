@@ -400,9 +400,6 @@ export default function CampaignManagementPage() {
 
           <aside className="space-y-6">
             <OverviewCard total={campaigns.length} active={activeCount} closed={closedCount} totalRaised={totalRaised} linkedAuctions={linkedAuctionCount} />
-            <InfoCard title="Why close, not delete?" tone="success">
-              Closed campaigns stay visible in historical auction, payment and donation receipt records.
-            </InfoCard>
             <InfoCard title="Security reminder" tone="warning">
               Frontend checks are for usability. Backend still needs RBAC, ownership checks, sanitisation and audit logging.
             </InfoCard>
