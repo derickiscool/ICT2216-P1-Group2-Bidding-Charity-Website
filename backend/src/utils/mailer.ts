@@ -161,14 +161,21 @@ function createSmtpSession(socket: net.Socket | tls.TLSSocket): SmtpSession {
   return { read, send };
 }
 
-function connectPlain(host: string, port: number, localPort?: number, timeoutMs = 15000): Promise<net.Socket> {
+// Implicit TLS (SMTPS-style) — the socket is encrypted from the first byte,
+// so there's no cleartext window before the greeting and nothing for a
+// STARTTLS-stripping attacker to intercept or downgrade.
+function connectTls(host: string, port: number, localPort?: number, timeoutMs = 15000): Promise<tls.TLSSocket> {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection({ host, port, localPort });
+    // rejectUnauthorized: false — SMTP2GO relay presents a shared-hostname certificate;
+    // true would require explicit CA pinning for mail.smtp2go.com.
+    // @types/node's ConnectionOptions omits localPort, though tls.connect forwards it to net.connect() at runtime.
+    const options: tls.ConnectionOptions & { localPort?: number } = { localPort, servername: host, rejectUnauthorized: false };
+    const socket = tls.connect(port, host, options);
     const timer = setTimeout(() => {
       socket.destroy();
       reject(new Error(`Connect to ${host}:${port} timed out`));
     }, timeoutMs);
-    socket.once("connect", () => {
+    socket.once("secureConnect", () => {
       clearTimeout(timer);
       resolve(socket);
     });
@@ -176,16 +183,6 @@ function connectPlain(host: string, port: number, localPort?: number, timeoutMs 
       clearTimeout(timer);
       reject(err);
     });
-  });
-}
-
-function upgradeToTls(socket: net.Socket, servername: string): Promise<tls.TLSSocket> {
-  return new Promise((resolve, reject) => {
-    // rejectUnauthorized: false — SMTP2GO relay presents a shared-hostname certificate;
-    // true would require explicit CA pinning for mail.smtp2go.com.
-    const tlsSocket = tls.connect({ socket, servername, rejectUnauthorized: false });
-    tlsSocket.once("secureConnect", () => resolve(tlsSocket));
-    tlsSocket.once("error", reject);
   });
 }
 
@@ -229,29 +226,20 @@ async function attemptDelivery(relay: RelayConfig, dkim: DkimConfig, params: Sen
     `.`,
   ].join("\r\n");
 
-  const plainSocket = await connectPlain(host, port, localPort);
-  let activeSocket: net.Socket | tls.TLSSocket = plainSocket;
+  console.log(`[mailer] connecting to ${host}:${port} (implicit TLS) from local port ${localPort}`);
+  const activeSocket = await connectTls(host, port, localPort);
+  console.log(`[mailer] TLS connected, waiting for greeting`);
 
   try {
-    let smtp = createSmtpSession(activeSocket);
+    const smtp = createSmtpSession(activeSocket);
 
     const greeting = await smtp.read();
+    console.log(`[mailer] <<< ${greeting.trim()}`);
     if (!greeting.startsWith("220")) {
       throw new RelayError(`Unexpected greeting: ${greeting.trim()}`);
     }
 
-    const ehloResponse = await smtp.send(`EHLO ${ehloName}`);
-    if (!/STARTTLS/i.test(ehloResponse)) {
-      throw new RelayError(`${host} did not advertise STARTTLS — refusing to send credentials in cleartext`);
-    }
-
-    const startResponse = await smtp.send("STARTTLS");
-    if (!startResponse.startsWith("220")) {
-      throw new RelayError(`STARTTLS rejected: ${startResponse.trim()}`);
-    }
-    activeSocket = await upgradeToTls(plainSocket, host);
-    smtp = createSmtpSession(activeSocket); // fresh session bound to the upgraded socket
-    await smtp.send(`EHLO ${ehloName}`); // re-EHLO per RFC 3207
+    await smtp.send(`EHLO ${ehloName}`);
 
     const authPayload = Buffer.from(`\0${user}\0${pass}`).toString("base64");
     const authResponse = await smtp.send(`AUTH PLAIN ${authPayload}`, "AUTH PLAIN ****");
@@ -316,7 +304,7 @@ function buildMailConfig(): { relay: RelayConfig; dkim: DkimConfig } {
 
   const relay: RelayConfig = {
     host: process.env.SMTP2GO_HOST || 'mail.smtp2go.com',
-    port: parseInt(process.env.SMTP2GO_PORT || '2525', 10),
+    port: parseInt(process.env.SMTP2GO_PORT || '465', 10),
     localPort: parseInt(process.env.SMTP2GO_LOCAL_PORT || '8888', 10),
     user: process.env.SMTP2GO_USER || '',
     pass: process.env.SMTP2GO_PASS || '',
