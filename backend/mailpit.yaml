@@ -16,6 +16,7 @@ services:
       - MP_SMTP_TLS_KEY=sans:localhost
       - MP_SMTP_REQUIRE_STARTTLS=false # Forces STARTTLS upgrade
       - MP_SMTP_REQUIRE_TLS=true      # Set true for implicit TLS instead
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
 
 
 volumes:
