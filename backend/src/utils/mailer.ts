@@ -169,7 +169,7 @@ function connectTls(host: string, port: number, localPort?: number, timeoutMs = 
     // rejectUnauthorized: false — SMTP2GO relay presents a shared-hostname certificate;
     // true would require explicit CA pinning for mail.smtp2go.com.
     // @types/node's ConnectionOptions omits localPort, though tls.connect forwards it to net.connect() at runtime.
-    const options: tls.ConnectionOptions & { localPort?: number } = { localPort, servername: host, rejectUnauthorized: false };
+    const options: tls.ConnectionOptions & { localPort?: number } = { localPort, servername: host, rejectUnauthorized: true };
     const socket = tls.connect(port, host, options);
     const timer = setTimeout(() => {
       socket.destroy();
