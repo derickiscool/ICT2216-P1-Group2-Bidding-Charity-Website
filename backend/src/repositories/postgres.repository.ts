@@ -1,3 +1,4 @@
+import argon2 from 'argon2';
 import type {
   AuditEvent,
   Bid,
@@ -28,6 +29,7 @@ interface UserRow {
   email: string;
   username: string;
   full_name: string;
+  contact_number: string | null;
   roles: UserRole[];
   password_hash: string;
   is_verified: boolean;
@@ -160,6 +162,7 @@ const mapUser = (row: UserRow): User => ({
   email: row.email,
   username: row.username,
   full_name: row.full_name,
+  contact_number: row.contact_number ?? undefined,
   roles: mapRoles(row.roles),
   passwordHash: row.password_hash,
   is_verified: row.is_verified,
@@ -286,6 +289,11 @@ const findUserByUuid = async (uuid: string): Promise<User | undefined> => {
   return row ? mapUser(row) : undefined;
 };
 
+const findUserByUsername = async (username: string): Promise<User | undefined> => {
+  const row = await firstRow<UserRow>('SELECT * FROM users WHERE lower(username) = lower($1) LIMIT 1', [username]);
+  return row ? mapUser(row) : undefined;
+};
+
 const addUser = async (input: NewUserInput): Promise<User> => {
   const row = await firstRow<UserRow>(
     `INSERT INTO users (email, username, full_name, roles, password_hash, is_verified, is_active, failed_login_attempts)
@@ -300,14 +308,16 @@ const addUser = async (input: NewUserInput): Promise<User> => {
 const updateUser = async (user: User): Promise<void> => {
   await query(
     `UPDATE users
-     SET email = $2, username = $3, full_name = $4, roles = $5, password_hash = $6,
-         is_verified = $7, is_active = $8, failed_login_attempts = $9, locked_until = $10
+     SET email = $2, username = $3, full_name = $4, contact_number = $5, roles = $6,
+         password_hash = $7, is_verified = $8, is_active = $9, failed_login_attempts = $10,
+         locked_until = $11
      WHERE id = $1`,
     [
       user.id,
       user.email,
       user.username,
       user.full_name,
+      user.contact_number ?? null,
       user.roles,
       user.passwordHash,
       user.is_verified,
@@ -318,7 +328,7 @@ const updateUser = async (user: User): Promise<void> => {
   );
 };
 
-const savePendingRegistration = async (registration: PendingRegistration): Promise<void> => {
+export const savePendingRegistration = async (registration: PendingRegistration): Promise<void> => {
   await query(
     `INSERT INTO pending_registrations
        (id, email, username, full_name, password_hash, roles, otp_hash, expires_at, attempts, created_at)
@@ -348,7 +358,7 @@ const savePendingRegistration = async (registration: PendingRegistration): Promi
   );
 };
 
-const getPendingRegistration = async (email: string): Promise<PendingRegistration | undefined> => {
+export const getPendingRegistration = async (email: string): Promise<PendingRegistration | undefined> => {
   const row = await firstRow<PendingRegistrationRow>('SELECT * FROM pending_registrations WHERE lower(email) = lower($1) LIMIT 1', [email]);
   return row ? mapPendingRegistration(row) : undefined;
 };
@@ -574,10 +584,61 @@ const listAuditEvents = async (): Promise<AuditEvent[]> => {
   return rows.map(mapAuditEvent);
 };
 
+export const seedDemoData = async (): Promise<void> => {
+  const existing = await firstRow<{ count: string }>('SELECT COUNT(*)::text AS count FROM users');
+  if (existing && Number(existing.count) > 0) return;
+
+  const passwordHash = await argon2.hash('S3cure!Pass2026', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 });
+  const demoUsers: Array<Pick<User, 'email' | 'username' | 'full_name' | 'roles'>> = [
+    { email: 'admin@bidforgood.test', username: 'admin', full_name: 'Demo Admin', roles: ['admin'] },
+    { email: 'donor@bidforgood.test', username: 'donor', full_name: 'Demo Donor', roles: ['donor'] },
+    { email: 'bidder@bidforgood.test', username: 'bidder', full_name: 'Demo Bidder', roles: ['bidder'] },
+    { email: 'charity@bidforgood.test', username: 'charity', full_name: 'Demo Charity', roles: ['charity'] },
+  ];
+  const userIds: Record<string, number> = {};
+  for (const demoUser of demoUsers) {
+    const user = await addUser({ ...demoUser, passwordHash, is_verified: true });
+    userIds[demoUser.email] = user.id;
+  }
+
+  const demoListings: Array<NewListingInput & { current_bid: number }> = [
+    {
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Signed Premier League Jersey',
+      description: 'Signed jersey donated for charity fundraising.', condition: 'good', category: 'Sports', images: [],
+      starting_price: 1000, current_bid: 1250, status: 'active', start_time: new Date().toISOString(),
+      end_time: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), charityName: "Children's Hospital Trust", min_increment: 50,
+    },
+    {
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Private Dining Experience',
+      description: 'Private dining session for a good cause.', condition: 'new', category: 'Experiences', images: [],
+      starting_price: 2000, current_bid: 3800, status: 'active', start_time: new Date().toISOString(),
+      end_time: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(), charityName: 'Food Bank Singapore', min_increment: 100,
+    },
+    {
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Pending Vintage Camera',
+      description: 'Pending approval; must not appear in public search.', condition: 'fair', category: 'Collectibles', images: [],
+      starting_price: 400, current_bid: 400, status: 'pending', start_time: new Date().toISOString(),
+      end_time: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), charityName: 'Arts for Youth', min_increment: 25,
+    },
+  ];
+  for (const { current_bid, ...listingInput } of demoListings) {
+    const listing = await addListing(listingInput);
+    if (current_bid !== listing.starting_price) {
+      await query('UPDATE listings SET current_bid = $2 WHERE id = $1', [listing.id, current_bid]);
+    }
+  }
+};
+
+export const resetRepositoryForTests = async (): Promise<void> => {
+  await query('TRUNCATE TABLE audit_events, bids, listings, charities, sessions, pending_registrations, users RESTART IDENTITY CASCADE');
+  await seedDemoData();
+};
+
 export const postgresRepository: BidForGoodRepository = {
   findUserByEmail,
   findUserById,
   findUserByUuid,
+  findUserByUsername,
   addUser,
   updateUser,
   toPublicUser,

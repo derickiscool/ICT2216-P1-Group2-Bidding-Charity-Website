@@ -10,7 +10,7 @@ import {
 import {
   getPendingRegistration,
   savePendingRegistration,
-} from '../../repositories/inMemory.repository';
+} from '../../repositories/postgres.repository';
 import { readDevOtpForTest } from '../../services/otpDelivery.service';
 
 beforeAll(startServer);
