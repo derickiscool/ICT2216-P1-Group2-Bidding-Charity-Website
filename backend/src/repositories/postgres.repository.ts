@@ -35,6 +35,7 @@ interface UserRow {
   is_active: boolean;
   failed_login_attempts: number;
   locked_until: DbDate | null;
+  contact_number: string | null;
   charity_id: number | null;
   last_login_at: DbDate | null;
   created_at: DbDate;
@@ -169,6 +170,7 @@ const mapUser = (row: UserRow): User => ({
   is_active: row.is_active,
   failedLoginAttempts: Number(row.failed_login_attempts),
   lockedUntil: optionalDate(row.locked_until),
+  contactNumber: row.contact_number ?? undefined,
   charityId: optionalNumber(row.charity_id),
   lastLoginAt: optionalIso(row.last_login_at),
   created_at: toIso(row.created_at),
@@ -310,15 +312,16 @@ const addUser = async (input: NewUserInput): Promise<User> => {
 const updateUser = async (user: User): Promise<void> => {
   await query(
     `UPDATE users
-     SET email = $2, username = $3, full_name = $4, roles = $5, password_hash = $6,
-         is_verified = $7, is_active = $8, failed_login_attempts = $9, locked_until = $10,
-         charity_id = $11, last_login_at = $12
+     SET email = $2, username = $3, full_name = $4, contact_number = $5, roles = $6,
+         password_hash = $7, is_verified = $8, is_active = $9, failed_login_attempts = $10,
+         locked_until = $11, charity_id = $12, last_login_at = $13
      WHERE id = $1`,
     [
       user.id,
       user.email,
       user.username,
       user.full_name,
+      user.contactNumber ?? null,
       user.roles,
       user.passwordHash,
       user.is_verified,

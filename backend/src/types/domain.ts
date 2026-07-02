@@ -12,6 +12,7 @@ export interface User {
   is_active: boolean;
   failedLoginAttempts: number;
   lockedUntil?: Date;
+  contactNumber?: string;
   charityId?: number;
   lastLoginAt?: string;
   created_at: string;
