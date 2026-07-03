@@ -55,3 +55,9 @@ export const reviewCharity = async (uuid: string, decision: 'approved' | 'reject
 };
 
 export const getCharities = async (): Promise<CharityOrganisation[]> => listCharities();
+
+// Public-facing: only expose approved organisations so donors can select them when creating listings.
+export const getApprovedCharities = async (): Promise<CharityOrganisation[]> => {
+  const all = await listCharities();
+  return all.filter(c => c.status === 'approved');
+};

@@ -49,9 +49,11 @@ export interface BidForGoodRepository {
   updateCharity(record: CharityOrganisation): Promise<void>;
 
   addCampaign(input: NewCampaignInput): Promise<Campaign>;
+  getCampaignById(id: number): Promise<Campaign | undefined>;
   getCampaignByUuid(uuid: string): Promise<Campaign | undefined>;
   getCampaignImage(uuid: string): Promise<{ data: Buffer; mime: string } | undefined>;
   listCampaignsByCharity(charityId: number): Promise<Campaign[]>;
+  listAllActiveCampaigns(): Promise<Campaign[]>;
   updateCampaign(uuid: string, input: UpdateCampaignInput): Promise<Campaign>;
   closeCampaign(uuid: string): Promise<Campaign>;
 

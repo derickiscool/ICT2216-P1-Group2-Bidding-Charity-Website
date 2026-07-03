@@ -556,6 +556,20 @@ const listCampaignsByCharity = async (charityId: number): Promise<Campaign[]> =>
   return rows.map(mapCampaign);
 };
 
+// Public: all active campaigns across all charities (for the donor listing creation form).
+const listAllActiveCampaigns = async (): Promise<Campaign[]> => {
+  const rows = await allRows<CampaignListRow>(
+    `${CAMPAIGN_LIST_SQL} WHERE c.status = 'active' ORDER BY c.name ASC, c.id ASC`,
+  );
+  return rows.map(mapCampaign);
+};
+
+// Look up a campaign by numeric ID (used in listing.service.ts to resolve charityName).
+const getCampaignById = async (id: number): Promise<Campaign | undefined> => {
+  const row = await firstRow<CampaignListRow>(`${CAMPAIGN_LIST_SQL} WHERE c.id = $1 LIMIT 1`, [id]);
+  return row ? mapCampaign(row) : undefined;
+};
+
 const updateCampaign = async (uuid: string, input: UpdateCampaignInput): Promise<Campaign> => {
   const imageClause = input.imageData !== undefined
     ? ', image_data = $5, image_mime = $6'
@@ -764,6 +778,23 @@ export const seedDemoData = async (): Promise<void> => {
     userIds[demoUser.email] = user.id;
   }
 
+  // Create a demo charity and campaign for listings to link to
+  const charity = await addCharity({
+    ownerUserId: userIds['charity@bidforgood.test'],
+    organisationName: "Children's Hospital Trust",
+    description: "Provides medical care for children.",
+    documentName: "test-doc.pdf",
+    documentMime: "application/pdf",
+    documentSha256: "testhash",
+  });
+  await query("UPDATE charities SET status = 'approved' WHERE id = $1", [charity.id]);
+  
+  const campaign = await addCampaign({
+    charityId: charity.id,
+    name: "Winter Fundraising 2026",
+    description: "Raising funds for winter.",
+  });
+
   const demoListings: Array<NewListingInput & { current_bid: number }> = [
     {
       donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Signed Premier League Jersey',
@@ -824,9 +855,11 @@ export const postgresRepository: BidForGoodRepository = {
   updateCharity,
 
   addCampaign,
+  getCampaignById,
   getCampaignByUuid,
   getCampaignImage,
   listCampaignsByCharity,
+  listAllActiveCampaigns,
   updateCampaign,
   closeCampaign,
 
