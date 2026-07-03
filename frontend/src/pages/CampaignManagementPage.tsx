@@ -334,7 +334,7 @@ export default function CampaignManagementPage() {
         {message && <Alert msg={message} />}
 
         <div className="grid lg:grid-cols-[1fr_340px] gap-6 mt-6">
-          <main className="space-y-6">
+          <div className="space-y-6">
             <Card icon={<Plus className="w-5 h-5" />} title="Create campaign" desc="Set up a fundraising campaign that auction listings can support.">
               <form onSubmit={saveCreateCampaign} noValidate className="space-y-5">
                 <TextInput label="Campaign name" value={createForm.name} error={createErrors.name} disabled={!canManageCampaigns || creating} autoComplete="off" placeholder="e.g. Build Schools in Rural Communities" onChange={(e) => updateCreateField('name', e.target.value)} />
@@ -363,7 +363,7 @@ export default function CampaignManagementPage() {
                 <CampaignGrid campaigns={filteredCampaigns} canManageCampaigns={canManageCampaigns} confirmCloseId={confirmCloseId} closingId={closingId} onEdit={startEdit} onAskClose={setConfirmCloseId} onCancelClose={() => setConfirmCloseId(null)} onConfirmClose={closeCampaign} />
               )}
             </Card>
-          </main>
+          </div>
 
           <aside className="space-y-6">
             <OverviewCard total={campaigns.length} active={activeCount} closed={closedCount} totalRaised={totalRaised} linkedAuctions={linkedAuctionCount} />
@@ -416,7 +416,7 @@ function CampaignGrid({ campaigns, canManageCampaigns, confirmCloseId, closingId
   }
 
   return (
-    <div className="grid xl:grid-cols-2 gap-4">
+    <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-4">
       {campaigns.map((campaign) => (
         <CampaignCard key={campaign.uuid} campaign={campaign} canManageCampaigns={canManageCampaigns} isConfirmingClose={confirmCloseId === campaign.uuid} isClosing={closingId === campaign.uuid} onEdit={onEdit} onAskClose={onAskClose} onCancelClose={onCancelClose} onConfirmClose={onConfirmClose} />
       ))}
@@ -499,32 +499,34 @@ type EditCampaignModalProps = {
 
 function EditCampaignModal({ campaign, form, errors, saving, onClose, onSave, onChange, onImageChange, onClearImage }: EditCampaignModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(45, 58, 58, 0.45)' }}>
-      <section className="w-full max-w-2xl bg-white rounded-2xl shadow-xl" style={{ border: `1px solid ${C.beige}` }}>
-        <div className="px-6 py-5 border-b flex items-start justify-between gap-4" style={{ borderColor: C.beige }}>
-          <div>
-            <h2 className="text-lg font-bold" style={{ color: C.slate }}>Edit campaign</h2>
-            <p className="text-sm mt-0.5" style={{ color: C.muted }}>{campaign.name}</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-xl hover:bg-[#F7F5F0]" aria-label="Close edit campaign modal">
-            <X className="w-5 h-5" style={{ color: C.muted }} />
-          </button>
-        </div>
-
-        <form onSubmit={onSave} noValidate className="px-6 py-6 space-y-5">
-          <TextInput label="Campaign name" value={form.name} error={errors.name} disabled={saving} autoComplete="off" onChange={(e) => onChange('name', e.target.value)} />
-          <TextAreaInput label="Campaign description" value={form.description} error={errors.description} disabled={saving} note="Do not paste HTML, JavaScript or tracking snippets here." onChange={(e) => onChange('description', e.target.value)} />
-          <ImageUploadInput label="Campaign image" previewUrl={form.image_preview_url} error={errors.image_file} disabled={saving} note="Optional. Upload a new image to replace the current preview." onChange={onImageChange} onClear={onClearImage} />
-          <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} disabled={saving} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
-              Cancel
+    <div className="fixed inset-0 z-50 overflow-y-auto px-4 py-8" style={{ background: 'rgba(45, 58, 58, 0.45)' }}>
+      <div className="min-h-full flex items-start justify-center">
+        <section className="w-full max-w-2xl bg-white rounded-2xl shadow-xl" style={{ border: `1px solid ${C.beige}` }}>
+          <div className="px-6 py-5 border-b flex items-start justify-between gap-4" style={{ borderColor: C.beige }}>
+            <div>
+              <h2 className="text-lg font-bold" style={{ color: C.slate }}>Edit campaign</h2>
+              <p className="text-sm mt-0.5" style={{ color: C.muted }}>{campaign.name}</p>
+            </div>
+            <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-xl hover:bg-[#F7F5F0]" aria-label="Close edit campaign modal">
+              <X className="w-5 h-5" style={{ color: C.muted }} />
             </button>
-            <PrimaryButton disabled={saving} icon={saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />} label={saving ? 'Saving...' : 'Save changes'} />
           </div>
-        </form>
-      </section>
+
+          <form onSubmit={onSave} noValidate className="px-6 py-6 space-y-5">
+            <TextInput label="Campaign name" value={form.name} error={errors.name} disabled={saving} autoComplete="off" onChange={(e) => onChange('name', e.target.value)} />
+            <TextAreaInput label="Campaign description" value={form.description} error={errors.description} disabled={saving} note="Do not paste HTML, JavaScript or tracking snippets here." onChange={(e) => onChange('description', e.target.value)} />
+            <ImageUploadInput label="Campaign image" previewUrl={form.image_preview_url} error={errors.image_file} disabled={saving} note="Optional. Upload a new image to replace the current preview." onChange={onImageChange} onClear={onClearImage} />
+            <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} disabled={saving} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
+                Cancel
+              </button>
+              <PrimaryButton disabled={saving} icon={saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />} label={saving ? 'Saving...' : 'Save changes'} />
+            </div>
+          </form>
+        </section>
+      </div>
     </div>
   )
 }
