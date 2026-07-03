@@ -31,6 +31,37 @@ export interface PendingRegistration {
   createdAt: Date;
 }
 
+export interface Campaign {
+  id: number;
+  uuid: string;
+  charity_id: number;
+  name: string;
+  description: string;
+  status: 'active' | 'closed';
+  end_date?: string;
+  hasImage: boolean;
+  total_raised: number;
+  active_auctions: number;
+  created_at: string;
+}
+
+export type NewCampaignInput = {
+  charityId: number;
+  name: string;
+  description: string;
+  endDate?: string;
+  imageData?: Buffer;
+  imageMime?: string;
+};
+
+export type UpdateCampaignInput = {
+  name: string;
+  description: string;
+  endDate?: string;
+  imageData?: Buffer | null;
+  imageMime?: string | null;
+};
+
 export type CharityStatus = 'pending' | 'approved' | 'rejected';
 export interface CharityOrganisation {
   id: number;

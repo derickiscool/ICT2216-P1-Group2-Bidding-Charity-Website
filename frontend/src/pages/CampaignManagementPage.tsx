@@ -12,10 +12,11 @@
   Security note:
   Backend must still enforce RBAC, charity ownership, input validation, sanitisation and audit logging.
 */
-import { useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { AlertCircle, CalendarDays, CheckCircle2, Edit3, Eye, Flag, HeartHandshake, ImageIcon, Lock, Plus, Search, Target, Upload, X, XCircle } from 'lucide-react'
+import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { AlertCircle, CalendarDays, CheckCircle2, Edit3, Eye, Flag, HeartHandshake, ImageIcon, Loader2, Lock, Plus, Search, Target, Upload, X, XCircle } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
-import type { Campaign } from '../types'
+import api from '../services/api'
+import type { ApiError, Campaign } from '../types'
 
 const C = {
   slate: '#2D3A3A', emerald: '#047857', emeraldDark: '#065F46', emeraldLight: '#ECFDF5',
@@ -27,8 +28,12 @@ const C = {
 type CampaignStatus = Campaign['status']
 type AlertMsg = { type: 'success' | 'error'; text: string } | null
 
-// Local extension because the current shared Campaign type does not yet include a campaign image field.
 type CampaignWithImage = Campaign & { image_url?: string }
+
+interface CampaignListResponse {
+  campaigns: CampaignWithImage[]
+  canManageCampaigns: boolean
+}
 
 interface CampaignForm {
   name: string
@@ -43,27 +48,9 @@ type CampaignFormErrors = Partial<Record<CampaignField | 'image_file', string>>
 
 const emptyForm: CampaignForm = { name: '', description: '', end_date: '', image_file: null, image_preview_url: '' }
 
-/*
-  Mock campaigns are only here so the page can be developed and reviewed before backend integration.
-  Field names follow the existing Campaign type in src/types/index.ts.
-*/
-const mockCampaigns: CampaignWithImage[] = [
-  {
-    id: 1, charity_id: 1, name: 'Build Schools in Rural Communities',
-    description: 'Help us construct 10 new primary schools in underserved rural areas. Every auction item donated raises direct funds for construction and teacher training.',
-    status: 'active', end_date: '2026-12-31', total_raised: 18250, active_auctions: 12, created_at: '2026-06-18T10:30:00.000Z',
-  },
-  {
-    id: 2, charity_id: 1, name: "Girls' Education Initiative 2026",
-    description: 'Supporting 500 young women through secondary school with scholarships, mentorship and safe learning environments in three countries.',
-    status: 'active', end_date: '2026-10-15', total_raised: 9750, active_auctions: 7, created_at: '2026-06-20T14:10:00.000Z',
-  },
-  {
-    id: 3, charity_id: 1, name: 'Emergency Relief — Flood Recovery',
-    description: 'Emergency funding for school reconstruction after devastating flooding destroyed infrastructure across four districts.',
-    status: 'closed', end_date: '2026-05-30', total_raised: 22100, active_auctions: 0, created_at: '2026-04-05T09:15:00.000Z',
-  },
-]
+function apiErrMsg(err: unknown, fallback: string): string {
+  return (err as ApiError)?.message || fallback
+}
 
 function todayForInput() {
   const today = new Date()
@@ -145,40 +132,60 @@ function clearKnownError(errors: CampaignFormErrors, field: CampaignField): Camp
 
 export default function CampaignManagementPage() {
   const { user } = useAuthStore()
-  const [campaigns, setCampaigns] = useState<CampaignWithImage[]>(mockCampaigns)
+  const [campaigns, setCampaigns] = useState<CampaignWithImage[]>([])
+  const [loading, setLoading] = useState(false)
+  const [canManageCampaigns, setCanManageCampaigns] = useState(false)
   const [createForm, setCreateForm] = useState<CampaignForm>(emptyForm)
   const [editForm, setEditForm] = useState<CampaignForm>(emptyForm)
   const [createErrors, setCreateErrors] = useState<CampaignFormErrors>({})
   const [editErrors, setEditErrors] = useState<CampaignFormErrors>({})
   const [message, setMessage] = useState<AlertMsg>(null)
   const [editingCampaign, setEditingCampaign] = useState<CampaignWithImage | null>(null)
-  const [confirmCloseId, setConfirmCloseId] = useState<number | null>(null)
+  const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [closingId, setClosingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | CampaignStatus>('all')
-  const roles = user?.roles ?? []
-  const isAdmin = roles.includes('admin')
-  const isCharityOrg = roles.includes('charity')
-  const isCharityStaff = roles.includes('charity_staff')
 
-  /*
-    Temporary approval check following the style used by Staff Management.
-    In the final backend, user.is_verified should be replaced/combined with actual charity approval status.
-  */
-  const canManageCampaigns = isAdmin || ((isCharityOrg || isCharityStaff) && user?.is_verified === true)
+  const roles = user?.roles ?? []
+  const hasManageRole = roles.includes('admin') || roles.includes('charity') || roles.includes('charity_staff')
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setCampaigns([])
+      setCanManageCampaigns(false)
+      setLoading(true)
+      try {
+        const res = await api.get<CampaignListResponse>('/charities/campaigns')
+        if (cancelled) return
+        setCampaigns(res.data.campaigns)
+        setCanManageCampaigns(res.data.canManageCampaigns)
+      } catch (err) {
+        if (cancelled) return
+        setMessage({ type: 'error', text: apiErrMsg(err, 'Failed to load campaigns.') })
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    if (hasManageRole) void load()
+    return () => { cancelled = true }
+  }, [user?.id, hasManageRole])
 
   const filteredCampaigns = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return campaigns.filter((campaign) => {
-      const matchesStatus = statusFilter === 'all' || campaign.status === statusFilter
-      const matchesSearch = !q || campaign.name.toLowerCase().includes(q) || campaign.description.toLowerCase().includes(q)
+    return campaigns.filter((c) => {
+      const matchesStatus = statusFilter === 'all' || c.status === statusFilter
+      const matchesSearch = !q || c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
       return matchesStatus && matchesSearch
     })
   }, [campaigns, search, statusFilter])
 
-  const activeCount = useMemo(() => campaigns.filter((item) => item.status === 'active').length, [campaigns])
+  const activeCount = useMemo(() => campaigns.filter((c) => c.status === 'active').length, [campaigns])
   const closedCount = campaigns.length - activeCount
-  const totalRaised = useMemo(() => campaigns.reduce((sum, item) => sum + item.total_raised, 0), [campaigns])
-  const linkedAuctionCount = useMemo(() => campaigns.reduce((sum, item) => sum + item.active_auctions, 0), [campaigns])
+  const totalRaised = useMemo(() => campaigns.reduce((sum, c) => sum + c.total_raised, 0), [campaigns])
+  const linkedAuctionCount = useMemo(() => campaigns.reduce((sum, c) => sum + c.active_auctions, 0), [campaigns])
 
   function updateCreateField(field: CampaignField, value: string) {
     setCreateForm((prev) => updateKnownField(prev, field, value))
@@ -195,109 +202,70 @@ export default function CampaignManagementPage() {
   function updateCreateImage(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     setMessage(null)
-    if (!file) {
-      setCreateForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' }))
-      setCreateErrors((prev) => ({ ...prev, image_file: '' }))
-      return
-    }
-
-    const imageError = validateCampaignImage(file)
-    if (imageError) {
-      setCreateErrors((prev) => ({ ...prev, image_file: imageError }))
-      e.target.value = ''
-      return
-    }
-
-    readImageAsDataUrl(file, (previewUrl) => {
-      setCreateForm((prev) => ({ ...prev, image_file: file, image_preview_url: previewUrl }))
-      setCreateErrors((prev) => ({ ...prev, image_file: '' }))
-    })
+    if (!file) { setCreateForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' })); return }
+    const err = validateCampaignImage(file)
+    if (err) { setCreateErrors((prev) => ({ ...prev, image_file: err })); e.target.value = ''; return }
+    readImageAsDataUrl(file, (url) => setCreateForm((prev) => ({ ...prev, image_file: file, image_preview_url: url })))
+    setCreateErrors((prev) => ({ ...prev, image_file: '' }))
   }
 
   function updateEditImage(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     setMessage(null)
-    if (!file) {
-      setEditForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' }))
-      setEditErrors((prev) => ({ ...prev, image_file: '' }))
-      return
-    }
-
-    const imageError = validateCampaignImage(file)
-    if (imageError) {
-      setEditErrors((prev) => ({ ...prev, image_file: imageError }))
-      e.target.value = ''
-      return
-    }
-
-    readImageAsDataUrl(file, (previewUrl) => {
-      setEditForm((prev) => ({ ...prev, image_file: file, image_preview_url: previewUrl }))
-      setEditErrors((prev) => ({ ...prev, image_file: '' }))
-    })
-  }
-
-  function clearCreateImage() {
-    setCreateForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' }))
-    setCreateErrors((prev) => ({ ...prev, image_file: '' }))
-  }
-
-  function clearEditImage() {
-    setEditForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' }))
+    if (!file) { setEditForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' })); return }
+    const err = validateCampaignImage(file)
+    if (err) { setEditErrors((prev) => ({ ...prev, image_file: err })); e.target.value = ''; return }
+    readImageAsDataUrl(file, (url) => setEditForm((prev) => ({ ...prev, image_file: file, image_preview_url: url })))
     setEditErrors((prev) => ({ ...prev, image_file: '' }))
   }
 
-  function validateCampaignForm(form: CampaignForm, editingId: number | null) {
+  function clearCreateImage() { setCreateForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' })) }
+  function clearEditImage() { setEditForm((prev) => ({ ...prev, image_file: null, image_preview_url: '' })) }
+
+  function validateCampaignForm(form: CampaignForm, editingUuid: string | null) {
     const errors: CampaignFormErrors = {}
     const name = normaliseText(form.name)
     const description = normaliseText(form.description)
-
     if (!name) errors.name = 'Campaign name is required.'
     else if (name.length < 5) errors.name = 'Campaign name must be at least 5 characters.'
     else if (name.length > 90) errors.name = 'Campaign name must be 90 characters or less.'
     else if (containsUnsafeMarkup(name)) errors.name = 'Campaign name cannot contain script-like content.'
-    else if (campaigns.some((item) => item.name.toLowerCase() === name.toLowerCase() && item.id !== editingId)) errors.name = 'A campaign with this name already exists.'
-
+    else if (campaigns.some((c) => c.name.toLowerCase() === name.toLowerCase() && c.uuid !== editingUuid)) errors.name = 'A campaign with this name already exists.'
     if (!description) errors.description = 'Campaign description is required.'
     else if (description.length < 20) errors.description = 'Description must be at least 20 characters.'
     else if (description.length > 600) errors.description = 'Description must be 600 characters or less.'
     else if (containsUnsafeMarkup(description)) errors.description = 'Description cannot contain script-like content.'
-
     if (form.end_date && isPastDate(form.end_date)) errors.end_date = 'End date cannot be in the past.'
-    if (form.image_file) {
-      const imageError = validateCampaignImage(form.image_file)
-      if (imageError) errors.image_file = imageError
-    }
+    if (form.image_file) { const e = validateCampaignImage(form.image_file); if (e) errors.image_file = e }
     return errors
   }
 
-  function saveCreateCampaign(e: FormEvent) {
+  async function saveCreateCampaign(e: FormEvent) {
     e.preventDefault()
     setMessage(null)
-
-    if (!canManageCampaigns) {
-      setMessage({ type: 'error', text: 'Your account is not allowed to create campaigns for this organisation.' })
-      return
-    }
-
     const errorMap = validateCampaignForm(createForm, null)
     setCreateErrors(errorMap)
     if (Object.keys(errorMap).length > 0) return
-
-    /*
-      TODO: Replace this local insert with POST /api/charities/campaigns.
-      Backend should attach the new campaign to the authenticated user's approved charity organisation.
-    */
-    const newCampaign: CampaignWithImage = {
-      id: Date.now(), charity_id: 1, name: normaliseText(createForm.name), description: normaliseText(createForm.description),
-      status: 'active', end_date: createForm.end_date || undefined, image_url: createForm.image_preview_url || undefined,
-      total_raised: 0, active_auctions: 0, created_at: new Date().toISOString(),
+    const fd = new FormData()
+    fd.append('name', normaliseText(createForm.name))
+    fd.append('description', normaliseText(createForm.description))
+    if (createForm.end_date) fd.append('end_date', createForm.end_date)
+    if (createForm.image_file) fd.append('image', createForm.image_file)
+    setCreating(true)
+    try {
+      const res = await api.post<CampaignWithImage>('/charities/campaigns', fd)
+      setCampaigns((prev) => [res.data, ...prev])
+      setCreateForm(emptyForm)
+      setCreateErrors({})
+      setStatusFilter('all')
+      setMessage({ type: 'success', text: 'Campaign created successfully.' })
+    } catch (err) {
+      const apiErr = err as ApiError
+      if (apiErr.errors) setCreateErrors(apiErr.errors as CampaignFormErrors)
+      setMessage({ type: 'error', text: apiErrMsg(err, 'Failed to create campaign.') })
+    } finally {
+      setCreating(false)
     }
-
-    setCampaigns((prev) => [newCampaign, ...prev])
-    setCreateForm(emptyForm)
-    setCreateErrors({})
-    setStatusFilter('all')
-    setMessage({ type: 'success', text: 'Campaign created successfully.' })
   }
 
   function startEdit(campaign: CampaignWithImage) {
@@ -305,172 +273,111 @@ export default function CampaignManagementPage() {
     setConfirmCloseId(null)
     setEditErrors({})
     setMessage(null)
-    setEditForm({ name: campaign.name, description: campaign.description, end_date: campaign.end_date ?? '', image_file: null, image_preview_url: campaign.image_url ?? '' })
+    const existingImageUrl = campaign.hasImage ? `/api/charities/campaigns/${campaign.uuid}/image` : ''
+    setEditForm({ name: campaign.name, description: campaign.description, end_date: campaign.end_date ?? '', image_file: null, image_preview_url: existingImageUrl })
   }
 
-  function closeEditModal() {
-    setEditingCampaign(null)
-    setEditForm(emptyForm)
-    setEditErrors({})
-  }
+  function closeEditModal() { setEditingCampaign(null); setEditForm(emptyForm); setEditErrors({}) }
 
-  function saveEditCampaign(e: FormEvent) {
+  async function saveEditCampaign(e: FormEvent) {
     e.preventDefault()
     setMessage(null)
     if (!editingCampaign) return
-
-    if (!canManageCampaigns) {
-      setMessage({ type: 'error', text: 'Your account is not allowed to edit campaigns for this organisation.' })
-      return
-    }
-
-    const errorMap = validateCampaignForm(editForm, editingCampaign.id)
+    const errorMap = validateCampaignForm(editForm, editingCampaign.uuid)
     setEditErrors(errorMap)
     if (Object.keys(errorMap).length > 0) return
-
-    /*
-      TODO: Replace local update with PUT /api/charities/campaigns/:id.
-      Backend must verify the current user belongs to the campaign's charity organisation.
-    */
-    setCampaigns((prev) =>
-      prev.map((campaign) =>
-        campaign.id === editingCampaign.id
-          ? { ...campaign, name: normaliseText(editForm.name), description: normaliseText(editForm.description), end_date: editForm.end_date || undefined, image_url: editForm.image_preview_url || undefined }
-          : campaign,
-      ),
-    )
-
-    closeEditModal()
-    setMessage({ type: 'success', text: 'Campaign updated successfully.' })
-  }
-
-  function closeCampaign(id: number) {
-    if (!canManageCampaigns) {
-      setMessage({ type: 'error', text: 'Your account is not allowed to close campaigns for this organisation.' })
-      return
+    const fd = new FormData()
+    fd.append('name', normaliseText(editForm.name))
+    fd.append('description', normaliseText(editForm.description))
+    if (editForm.end_date) fd.append('end_date', editForm.end_date)
+    if (editForm.image_file) {
+      fd.append('image', editForm.image_file)
+    } else if (!editForm.image_preview_url) {
+      fd.append('remove_image', 'true')
     }
-
-    /*
-      TODO: Replace local status change with PATCH /api/charities/campaigns/:id/close.
-      Closing is used instead of deleting so auction links, receipts and audit trails remain traceable.
-    */
-    setCampaigns((prev) =>
-      prev.map((campaign) =>
-        campaign.id === id
-          ? { ...campaign, status: 'closed', end_date: campaign.end_date ?? todayForInput(), active_auctions: 0 }
-          : campaign,
-      ),
-    )
-    setConfirmCloseId(null)
-    setMessage({ type: 'success', text: 'Campaign closed successfully. Existing records are kept for traceability.' })
+    setSaving(true)
+    try {
+      const res = await api.put<CampaignWithImage>(`/charities/campaigns/${editingCampaign.uuid}`, fd)
+      setCampaigns((prev) => prev.map((c) => (c.uuid === editingCampaign.uuid ? res.data : c)))
+      closeEditModal()
+      setMessage({ type: 'success', text: 'Campaign updated successfully.' })
+    } catch (err) {
+      const apiErr = err as ApiError
+      if (apiErr.errors) setEditErrors(apiErr.errors as CampaignFormErrors)
+      setMessage({ type: 'error', text: apiErrMsg(err, 'Failed to update campaign.') })
+    } finally {
+      setSaving(false)
+    }
   }
+
+  async function closeCampaign(uuid: string) {
+    setClosingId(uuid)
+    try {
+      const res = await api.patch<CampaignWithImage>(`/charities/campaigns/${uuid}/close`)
+      setCampaigns((prev) => prev.map((c) => (c.uuid === uuid ? res.data : c)))
+      setConfirmCloseId(null)
+      setMessage({ type: 'success', text: 'Campaign closed. Records kept for traceability.' })
+    } catch (err) {
+      setMessage({ type: 'error', text: apiErrMsg(err, 'Failed to close campaign.') })
+    } finally {
+      setClosingId(null)
+    }
+  }
+
+  const showApprovalAlert = !loading && hasManageRole && !canManageCampaigns
 
   return (
     <div className="min-h-[calc(100vh-64px)] px-6 py-10" style={{ background: C.linen }}>
       <div className="max-w-6xl mx-auto">
         <Header />
-        {!canManageCampaigns && <Alert msg={{ type: 'error', text: 'Your charity account must be approved before you can manage campaigns.' }} />}
+        {showApprovalAlert && <Alert msg={{ type: 'error', text: 'Your charity account must be approved before you can manage campaigns.' }} />}
         {message && <Alert msg={message} />}
 
-        <div className="space-y-6 mt-6">
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
-            <Card
-              icon={<Plus className="w-5 h-5" />}
-              title="Create campaign"
-              desc="Set up a fundraising campaign that auction listings can support."
-            >
+        <div className="grid lg:grid-cols-[1fr_340px] gap-6 mt-6">
+          <div className="space-y-6">
+            <Card icon={<Plus className="w-5 h-5" />} title="Create campaign" desc="Set up a fundraising campaign that auction listings can support.">
               <form onSubmit={saveCreateCampaign} noValidate className="space-y-5">
-                <TextInput
-                  label="Campaign name"
-                  value={createForm.name}
-                  error={createErrors.name}
-                  disabled={!canManageCampaigns}
-                  autoComplete="off"
-                  placeholder="e.g. Build Schools in Rural Communities"
-                  onChange={(e) => updateCreateField('name', e.target.value)}
-                />
-
-                <TextAreaInput
-                  label="Campaign description"
-                  value={createForm.description}
-                  error={createErrors.description}
-                  disabled={!canManageCampaigns}
-                  placeholder="Explain what this campaign is raising awareness and funds for."
-                  note="Plain text only. Script-like content will be rejected."
-                  onChange={(e) => updateCreateField('description', e.target.value)}
-                />
-
-                <ImageUploadInput
-                  label="Campaign image"
-                  previewUrl={createForm.image_preview_url}
-                  error={createErrors.image_file}
-                  disabled={!canManageCampaigns}
-                  note="Optional. Accepted formats: JPG, PNG or WEBP, up to 2MB."
-                  onChange={updateCreateImage}
-                  onClear={clearCreateImage}
-                />
-
+                <TextInput label="Campaign name" value={createForm.name} error={createErrors.name} disabled={!canManageCampaigns || creating} autoComplete="off" placeholder="e.g. Build Schools in Rural Communities" onChange={(e) => updateCreateField('name', e.target.value)} />
+                <TextAreaInput label="Campaign description" value={createForm.description} error={createErrors.description} disabled={!canManageCampaigns || creating} placeholder="Explain what this campaign is raising awareness and funds for." note="Plain text only. Script-like content will be rejected." onChange={(e) => updateCreateField('description', e.target.value)} />
+                <ImageUploadInput label="Campaign image" previewUrl={createForm.image_preview_url} error={createErrors.image_file} disabled={!canManageCampaigns || creating} note="Optional. Accepted formats: JPG, PNG or WEBP, up to 2MB." onChange={updateCreateImage} onClear={clearCreateImage} />
                 <div className="grid md:grid-cols-2 gap-4 items-end">
-                  <TextInput
-                    label="Optional end date"
-                    type="date"
-                    value={createForm.end_date}
-                    error={createErrors.end_date}
-                    disabled={!canManageCampaigns}
-                    min={todayForInput()}
-                    onChange={(e) => updateCreateField('end_date', e.target.value)}
-                  />
-
+                  <TextInput label="Optional end date" type="date" value={createForm.end_date} error={createErrors.end_date} disabled={!canManageCampaigns || creating} min={todayForInput()} onChange={(e) => updateCreateField('end_date', e.target.value)} />
                   <div className="flex justify-end">
-                    <PrimaryButton
-                      disabled={!canManageCampaigns}
-                      icon={<Plus className="w-4 h-4" />}
-                      label="Create campaign"
-                    />
+                    <PrimaryButton disabled={!canManageCampaigns || creating} icon={creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} label={creating ? 'Creating...' : 'Create campaign'} />
                   </div>
                 </div>
               </form>
             </Card>
 
-            <aside className="space-y-6">
-              <OverviewCard
-                total={campaigns.length}
-                active={activeCount}
-                closed={closedCount}
-                totalRaised={totalRaised}
-                linkedAuctions={linkedAuctionCount}
-              />
-
-              <InfoCard title="Security reminder" tone="warning">
-                Frontend checks are for usability. Backend still needs RBAC, ownership checks, sanitisation and audit logging.
-              </InfoCard>
-            </aside>
+            <Card icon={<HeartHandshake className="w-5 h-5" />} title="Campaign records" desc="Search, edit and close campaigns created by your charity organisation.">
+              <div className="grid md:grid-cols-[1fr_180px] gap-3 mb-5">
+                <SearchBox value={search} onChange={setSearch} />
+                <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+              </div>
+              {loading ? (
+                <div className="text-center py-12" style={{ color: C.muted }}>
+                  <Loader2 className="w-6 h-6 mx-auto mb-3 animate-spin" />
+                  <p className="text-sm">Loading campaigns...</p>
+                </div>
+              ) : (
+                <CampaignGrid campaigns={filteredCampaigns} canManageCampaigns={canManageCampaigns} confirmCloseId={confirmCloseId} closingId={closingId} onEdit={startEdit} onAskClose={setConfirmCloseId} onCancelClose={() => setConfirmCloseId(null)} onConfirmClose={closeCampaign} />
+              )}
+            </Card>
           </div>
 
-          <Card
-            icon={<HeartHandshake className="w-5 h-5" />}
-            title="Campaign records"
-            desc="Search, edit and close campaigns created by your charity organisation."
-          >
-            <div className="grid md:grid-cols-[1fr_180px] gap-3 mb-5">
-              <SearchBox value={search} onChange={setSearch} />
-              <StatusFilter value={statusFilter} onChange={setStatusFilter} />
-            </div>
-
-            <CampaignGrid
-              campaigns={filteredCampaigns}
-              canManageCampaigns={canManageCampaigns}
-              confirmCloseId={confirmCloseId}
-              onEdit={startEdit}
-              onAskClose={setConfirmCloseId}
-              onCancelClose={() => setConfirmCloseId(null)}
-              onConfirmClose={closeCampaign}
-            />
-          </Card>
+          <aside className="space-y-6">
+            <OverviewCard total={campaigns.length} active={activeCount} closed={closedCount} totalRaised={totalRaised} linkedAuctions={linkedAuctionCount} />
+            <InfoCard title="Why close, not delete?" tone="success">
+              Closed campaigns stay visible in historical auction, payment and donation receipt records.
+            </InfoCard>
+            <InfoCard title="Security" tone="success">
+              All campaign changes are protected by authentication, CSRF tokens, RBAC, ownership checks, input sanitisation and audit logging.
+            </InfoCard>
+          </aside>
         </div>
       </div>
 
-      {editingCampaign && <EditCampaignModal campaign={editingCampaign} form={editForm} errors={editErrors} onClose={closeEditModal} onSave={saveEditCampaign} onChange={updateEditField} onImageChange={updateEditImage} onClearImage={clearEditImage} />}
+      {editingCampaign && <EditCampaignModal campaign={editingCampaign} form={editForm} errors={editErrors} saving={saving} onClose={closeEditModal} onSave={saveEditCampaign} onChange={updateEditField} onImageChange={updateEditImage} onClearImage={clearEditImage} />}
     </div>
   )
 }
@@ -489,14 +396,15 @@ function Header() {
 type CampaignGridProps = {
   campaigns: CampaignWithImage[]
   canManageCampaigns: boolean
-  confirmCloseId: number | null
+  confirmCloseId: string | null
+  closingId: string | null
   onEdit: (campaign: CampaignWithImage) => void
-  onAskClose: (id: number) => void
+  onAskClose: (uuid: string) => void
   onCancelClose: () => void
-  onConfirmClose: (id: number) => void
+  onConfirmClose: (uuid: string) => void
 }
 
-function CampaignGrid({ campaigns, canManageCampaigns, confirmCloseId, onEdit, onAskClose, onCancelClose, onConfirmClose }: CampaignGridProps) {
+function CampaignGrid({ campaigns, canManageCampaigns, confirmCloseId, closingId, onEdit, onAskClose, onCancelClose, onConfirmClose }: CampaignGridProps) {
   if (campaigns.length === 0) {
     return (
       <div className="text-center py-12 rounded-2xl" style={{ background: C.linen }}>
@@ -510,16 +418,7 @@ function CampaignGrid({ campaigns, canManageCampaigns, confirmCloseId, onEdit, o
   return (
     <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-4">
       {campaigns.map((campaign) => (
-        <CampaignCard
-          key={campaign.id}
-          campaign={campaign}
-          canManageCampaigns={canManageCampaigns}
-          isConfirmingClose={confirmCloseId === campaign.id}
-          onEdit={onEdit}
-          onAskClose={onAskClose}
-          onCancelClose={onCancelClose}
-          onConfirmClose={onConfirmClose}
-        />
+        <CampaignCard key={campaign.uuid} campaign={campaign} canManageCampaigns={canManageCampaigns} isConfirmingClose={confirmCloseId === campaign.uuid} isClosing={closingId === campaign.uuid} onEdit={onEdit} onAskClose={onAskClose} onCancelClose={onCancelClose} onConfirmClose={onConfirmClose} />
       ))}
     </div>
   )
@@ -529,19 +428,21 @@ type CampaignCardProps = {
   campaign: CampaignWithImage
   canManageCampaigns: boolean
   isConfirmingClose: boolean
+  isClosing: boolean
   onEdit: (campaign: CampaignWithImage) => void
-  onAskClose: (id: number) => void
+  onAskClose: (uuid: string) => void
   onCancelClose: () => void
-  onConfirmClose: (id: number) => void
+  onConfirmClose: (uuid: string) => void
 }
 
-function CampaignCard({ campaign, canManageCampaigns, isConfirmingClose, onEdit, onAskClose, onCancelClose, onConfirmClose }: CampaignCardProps) {
+function CampaignCard({ campaign, canManageCampaigns, isConfirmingClose, isClosing, onEdit, onAskClose, onCancelClose, onConfirmClose }: CampaignCardProps) {
   const isClosed = campaign.status === 'closed'
   const actionsDisabled = !canManageCampaigns || isClosed
+  const imageUrl = campaign.hasImage ? `/api/charities/campaigns/${campaign.uuid}/image` : undefined
 
   return (
     <article className="rounded-2xl p-5 shadow-sm" style={{ background: C.white, border: `1px solid ${C.beige}` }}>
-      <CampaignImage src={campaign.image_url} />
+      <CampaignImage src={imageUrl} />
 
       <div className="flex items-start justify-between gap-3 mt-4">
         <div className="min-w-0">
@@ -565,10 +466,10 @@ function CampaignCard({ campaign, canManageCampaigns, isConfirmingClose, onEdit,
               Close this campaign? This keeps the record but prevents further campaign activity.
             </p>
             <div className="flex flex-wrap justify-end gap-2">
-              <button type="button" onClick={() => onConfirmClose(campaign.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: C.danger }}>
-                Confirm close
+              <button type="button" onClick={() => onConfirmClose(campaign.uuid)} disabled={isClosing} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: C.danger, cursor: isClosing ? 'not-allowed' : 'pointer' }}>
+                {isClosing ? 'Closing...' : 'Confirm close'}
               </button>
-              <button type="button" onClick={onCancelClose} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
+              <button type="button" onClick={onCancelClose} disabled={isClosing} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
                 Cancel
               </button>
             </div>
@@ -576,7 +477,7 @@ function CampaignCard({ campaign, canManageCampaigns, isConfirmingClose, onEdit,
         ) : (
           <div className="flex flex-wrap justify-end gap-2">
             <CampaignActionButton label="Edit" icon={<Edit3 className="w-3.5 h-3.5" />} disabled={actionsDisabled} onClick={() => onEdit(campaign)} />
-            <CampaignActionButton label="Close" icon={<Lock className="w-3.5 h-3.5" />} danger disabled={actionsDisabled} onClick={() => onAskClose(campaign.id)} />
+            <CampaignActionButton label="Close" icon={<Lock className="w-3.5 h-3.5" />} danger disabled={actionsDisabled} onClick={() => onAskClose(campaign.uuid)} />
           </div>
         )}
       </div>
@@ -588,6 +489,7 @@ type EditCampaignModalProps = {
   campaign: CampaignWithImage
   form: CampaignForm
   errors: CampaignFormErrors
+  saving: boolean
   onClose: () => void
   onSave: (e: FormEvent) => void
   onChange: (field: CampaignField, value: string) => void
@@ -595,12 +497,9 @@ type EditCampaignModalProps = {
   onClearImage: () => void
 }
 
-function EditCampaignModal({
-  campaign, form, errors, onClose, onSave, onChange, onImageChange, onClearImage,
-}: EditCampaignModalProps) {
+function EditCampaignModal({ campaign, form, errors, saving, onClose, onSave, onChange, onImageChange, onClearImage }: EditCampaignModalProps) {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto px-4 py-8" style={{ background: 'rgba(45, 58, 58, 0.45)' }}>
-      {/* Overlay uses overflow-y-auto so the modal can scroll when the form is taller than the screen. */}
       <div className="min-h-full flex items-start justify-center">
         <section className="w-full max-w-2xl bg-white rounded-2xl shadow-xl" style={{ border: `1px solid ${C.beige}` }}>
           <div className="px-6 py-5 border-b flex items-start justify-between gap-4" style={{ borderColor: C.beige }}>
@@ -608,22 +507,22 @@ function EditCampaignModal({
               <h2 className="text-lg font-bold" style={{ color: C.slate }}>Edit campaign</h2>
               <p className="text-sm mt-0.5" style={{ color: C.muted }}>{campaign.name}</p>
             </div>
-            <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-[#F7F5F0]" aria-label="Close edit campaign modal">
+            <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-xl hover:bg-[#F7F5F0]" aria-label="Close edit campaign modal">
               <X className="w-5 h-5" style={{ color: C.muted }} />
             </button>
           </div>
 
           <form onSubmit={onSave} noValidate className="px-6 py-6 space-y-5">
-            <TextInput label="Campaign name" value={form.name} error={errors.name} autoComplete="off" onChange={(e) => onChange('name', e.target.value)} />
-            <TextAreaInput label="Campaign description" value={form.description} error={errors.description} note="Do not paste HTML, JavaScript or tracking snippets here." onChange={(e) => onChange('description', e.target.value)} />
-            <ImageUploadInput label="Campaign image" previewUrl={form.image_preview_url} error={errors.image_file} note="Optional. Upload a new image to replace the current preview." onChange={onImageChange} onClear={onClearImage} />
-            <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
+            <TextInput label="Campaign name" value={form.name} error={errors.name} disabled={saving} autoComplete="off" onChange={(e) => onChange('name', e.target.value)} />
+            <TextAreaInput label="Campaign description" value={form.description} error={errors.description} disabled={saving} note="Do not paste HTML, JavaScript or tracking snippets here." onChange={(e) => onChange('description', e.target.value)} />
+            <ImageUploadInput label="Campaign image" previewUrl={form.image_preview_url} error={errors.image_file} disabled={saving} note="Optional. Upload a new image to replace the current preview." onChange={onImageChange} onClear={onClearImage} />
+            <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} disabled={saving} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
 
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
+              <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
                 Cancel
               </button>
-              <PrimaryButton icon={<Edit3 className="w-4 h-4" />} label="Save changes" />
+              <PrimaryButton disabled={saving} icon={saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />} label={saving ? 'Saving...' : 'Save changes'} />
             </div>
           </form>
         </section>
