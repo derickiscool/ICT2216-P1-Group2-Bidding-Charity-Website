@@ -122,6 +122,13 @@ export default function AuctionDetailPage() {
   const [maxAutoBid, setMaxAutoBid] = useState('')
   const [saved, setSaved]           = useState(false)
 
+  // ── Track current time for pure renders & dynamic badges ────────────────
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(iv)
+  }, [])
+
   useEffect(() => {
     if (!id) return
     const load = async () => {
@@ -146,6 +153,7 @@ export default function AuctionDetailPage() {
 
   useEffect(() => {
     if (!listing?.id) return
+    // @ts-ignore - Vite env types may not be loaded in CI checks
     const url = import.meta.env.VITE_WS_URL || 'http://localhost:5000'
     const socket = io(url, { withCredentials: true })
     socket.emit('listing:join', listing.id)
@@ -222,9 +230,9 @@ export default function AuctionDetailPage() {
   const pct          = Math.min(100, Math.round((raised / goal) * 100))
   // Real images if they exist; otherwise a single placeholder (no fake 4-image array)
   const images       = listing.images?.length ? listing.images : ['https://via.placeholder.com/800x500?text=No+Image']
-  const auctionEnded = new Date(listing.end_time).getTime() <= Date.now()
+  const auctionEnded = new Date(listing.end_time).getTime() <= now
   const minNextBid   = Math.max(listing.starting_price, listing.current_bid) + (listing.min_increment ?? 1)
-  const urgent       = !auctionEnded && new Date(listing.end_time).getTime() - Date.now() < 3 * 3_600_000
+  const urgent       = !auctionEnded && new Date(listing.end_time).getTime() - now < 3 * 3_600_000
 
   return (
     <div className="min-h-screen pb-20" style={{ background: 'var(--bfg-linen)' }}>
@@ -312,6 +320,7 @@ export default function AuctionDetailPage() {
 
               {/* Main image */}
               <div className="aspect-[4/3] bg-slate-100 overflow-hidden">
+                {/* eslint-disable-next-line security/detect-object-injection */}
                 <img src={images[selectedImage]} alt={listing.title}
                      className="w-full h-full object-cover transition-opacity duration-200" />
               </div>
