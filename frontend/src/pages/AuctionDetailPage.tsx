@@ -123,7 +123,7 @@ export default function AuctionDetailPage() {
   const [saved, setSaved]           = useState(false)
 
   // ── Track current time for pure renders & dynamic badges ────────────────
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(iv)
@@ -153,7 +153,7 @@ export default function AuctionDetailPage() {
 
   useEffect(() => {
     if (!listing?.id) return
-    // @ts-ignore - Vite env types may not be loaded in CI checks
+    // @ts-expect-error - Vite env types may not be loaded in CI checks
     const url = import.meta.env.VITE_WS_URL || 'http://localhost:5000'
     const socket = io(url, { withCredentials: true })
     socket.emit('listing:join', listing.id)
