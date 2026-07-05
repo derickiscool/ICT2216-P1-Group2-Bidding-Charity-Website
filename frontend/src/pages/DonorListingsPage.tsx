@@ -24,6 +24,19 @@ interface EditForm {
     newImages: File[]
 }
 
+type ListingsResponse = Listing[] | { data?: Listing[]; total?: number }
+
+function getListingsFromResponse(payload: ListingsResponse): Listing[] {
+    if (Array.isArray(payload)) return payload
+    if (Array.isArray(payload.data)) return payload.data
+    return []
+}
+
+function money(value: unknown): string {
+    const amount = Number(value ?? 0)
+    return Number.isFinite(amount) ? amount.toLocaleString() : '0'
+}
+
 function statusStyle(status: Listing['status']) {
     switch (status) {
         case 'active': return { bg: C.emeraldLight, fg: C.emeraldDark, label: 'Active' }
@@ -89,10 +102,11 @@ export default function DonorListingsPage() {
         setGlobalErr('')
 
         try {
-            // Backend returns a plain Listing[] array for /listings/mine.
-            // Example response: [{ uuid, title, description, images, status, ... }]
-            const res = await api.get<Listing[]>('/listings/mine')
-            setListings(res.data)
+            // Handles both possible backend response formats:
+            // 1. Listing[]
+            // 2. { data: Listing[], total: number }
+            const res = await api.get<ListingsResponse>('/listings/mine')
+            setListings(getListingsFromResponse(res.data))
         } catch (err) {
             const ae = err as ApiError
             setGlobalErr(ae.message || 'Unable to load your listings.')
@@ -234,7 +248,6 @@ export default function DonorListingsPage() {
             <div className="max-w-7xl mx-auto">
                 <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-8">
                     <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.18em] mb-2" style={{ color: C.emerald }}>FR07 Donor Listings</p>
                         <h1 className="text-3xl font-black" style={{ color: C.slate }}>My Auction Listings</h1>
                         <p className="text-sm mt-2" style={{ color: C.muted }}>
                             Create, edit, and delete your donated auction items. Active and sold auctions are locked to keep bidding fair.
@@ -331,11 +344,11 @@ export default function DonorListingsPage() {
                                         <div className="grid grid-cols-2 gap-3 text-sm mb-4 mt-auto">
                                             <div>
                                                 <p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Starting Price</p>
-                                                <p className="font-black" style={{ color: C.emerald }}>${listing.starting_price.toLocaleString()}</p>
+                                                <p className="font-black" style={{ color: C.emerald }}>${money(listing.starting_price)}</p>
                                             </div>
                                             <div>
                                                 <p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Current Bid</p>
-                                                <p className="font-black" style={{ color: C.slate }}>${listing.current_bid.toLocaleString()}</p>
+                                                <p className="font-black" style={{ color: C.slate }}>${money(listing.current_bid)}</p>
                                             </div>
                                             <div className="col-span-2">
                                                 <p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Charity</p>
