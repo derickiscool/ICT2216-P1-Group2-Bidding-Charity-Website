@@ -1,9 +1,10 @@
 import type { Request } from 'express';
 import type { Listing, ListingStatus } from '../types/domain';
-import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listPendingListings, updateListing } from '../repositories';
+import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listListings, listPendingListings, updateListing } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
-import { isSafeSearchQuery, roundMoney, sanitizeText } from '../utils/security';
+import { isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
 import { audit } from './audit.service';
+import { MAX_LISTING_IMAGES, MAX_LISTING_IMAGE_BYTES } from '../middleware/upload.middleware';
 
 const LOCKED_FIELDS = new Set([
   'starting_price', 'startingPrice',
@@ -13,6 +14,78 @@ const LOCKED_FIELDS = new Set([
   'min_increment', 'minIncrement',
   'charityName', 'charity_name'
 ]);
+
+const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected'];
+const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected', 'expired', 'cancelled'];
+const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
+
+type UploadedListingImage = Express.Multer.File;
+
+const getUploadedFiles = (req: Request): UploadedListingImage[] => {
+  if (!Array.isArray(req.files)) return [];
+  return req.files as UploadedListingImage[];
+};
+
+const hasJpegSignature = (buffer: Buffer): boolean => buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+
+const hasPngSignature = (buffer: Buffer): boolean => buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+const hasWebpSignature = (buffer: Buffer): boolean => buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+
+const hasValidImageSignature = (file: UploadedListingImage): boolean => {
+  if (file.mimetype === 'image/jpeg') return hasJpegSignature(file.buffer);
+  if (file.mimetype === 'image/png') return hasPngSignature(file.buffer);
+  if (file.mimetype === 'image/webp') return hasWebpSignature(file.buffer);
+  return false;
+};
+
+const imagesFromUploads = (req: Request): string[] => {
+  const files = getUploadedFiles(req);
+  if (files.length > MAX_LISTING_IMAGES) throw badRequest(`A maximum of ${MAX_LISTING_IMAGES} listing images is allowed.`);
+
+  return files.map(file => {
+    if (file.size > MAX_LISTING_IMAGE_BYTES) throw badRequest('Each listing image must be 2MB or smaller.', 'LISTING_IMAGE_TOO_LARGE');
+    if (!hasValidImageSignature(file)) throw badRequest('Uploaded listing image failed file signature validation.', 'INVALID_LISTING_IMAGE_SIGNATURE');
+
+    // Current schema stores listing images as TEXT[]. For this project feature,
+    // uploaded images are saved as data URLs instead of adding a separate file storage service.
+    return `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+  });
+};
+
+const parseExistingImageInput = (raw: unknown): string[] | undefined => {
+  if (raw === undefined) return undefined;
+  if (Array.isArray(raw)) return raw.map(value => safeString(value, 200_000)).filter(Boolean);
+
+  const text = safeString(raw, 1_000_000);
+  if (!text) return [];
+
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed.map(value => safeString(value, 200_000)).filter(Boolean);
+  } catch {
+    // Fallback: allow a single existing image string if the client does not send JSON.
+  }
+
+  return [text];
+};
+
+const buildUpdatedImages = (listing: Listing, body: Record<string, unknown>, req: Request): string[] => {
+  const uploaded = imagesFromUploads(req);
+  const existingInput = parseExistingImageInput(body.existing_images ?? body.existingImages);
+
+  // If no image update was submitted, keep the current image array unchanged.
+  if (existingInput === undefined && uploaded.length === 0) return listing.images;
+
+  const currentImages = new Set(listing.images);
+  const allowedExisting = (existingInput ?? listing.images).filter(image => currentImages.has(image) && SAFE_IMAGE_URL.test(image));
+  return [...allowedExisting, ...uploaded].slice(0, MAX_LISTING_IMAGES);
+};
+
+const ensureOwnerOrAdmin = (listing: Listing, req: Request): void => {
+  const isAdmin = req.user?.roles.includes('admin') ?? false;
+  if (!isAdmin && listing.donor_id !== req.user?.id) throw forbidden('Access denied');
+};
 
 export const createListing = async (body: Record<string, unknown>, req: Request): Promise<Listing> => {
   if (!req.user) throw forbidden();
@@ -37,7 +110,7 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
   if (title.length < 3 || description.length < 10 || category.length < 2) throw badRequest('Listing title, description, and category are required.');
 
   // Validate campaign_id and resolve the charity name from the DB.
-  // In production, we strictly require a valid campaign ID. 
+  // In production, we strictly require a valid campaign ID.
   // For legacy tests that still pass 'charityName' directly, we provide a fallback.
   let campaignId = Number(body.campaign_id);
   let charityName = '';
@@ -74,6 +147,8 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
   const actualDuration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
   if (actualDuration > 720) throw badRequest('Auction duration cannot exceed 30 days (720 hours).');
 
+  const images = imagesFromUploads(req);
+
   const listing = await addListing({
     donor_id: req.user.id,
     campaign_id: campaignId,
@@ -81,7 +156,7 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
     description,
     condition: (['new', 'like_new', 'good', 'fair'].includes(String(body.condition)) ? body.condition : 'good') as Listing['condition'],
     category,
-    images: [],
+    images,
     starting_price: starting,
     reserve_price: reservePrice,
     buy_now_price: buyNowPrice,
@@ -91,14 +166,21 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
     charityName,
     min_increment: minIncrement
   });
-  await audit(req, 'LISTING_CREATED', { title, status, reservePrice, buyNowPrice, charityName }, 'listing', listing.uuid, req.user.id);
+  await audit(req, 'LISTING_CREATED', { title, status, reservePrice, buyNowPrice, charityName, imageCount: images.length }, 'listing', listing.uuid, req.user.id);
   return listing;
 };
 
 export const updateListingDetails = async (uuid: string, body: Record<string, unknown>, req: Request): Promise<Listing> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
-  if (!req.user?.roles.includes('admin') && listing.donor_id !== req.user?.id) throw forbidden('Access denied');
+  ensureOwnerOrAdmin(listing, req);
+
+  const isAdmin = req.user?.roles.includes('admin') ?? false;
+  if (!isAdmin && !DONOR_EDITABLE_STATUSES.includes(listing.status)) {
+    await audit(req, 'LISTING_EDIT_REJECTED_BY_STATUS', { status: listing.status }, 'listing', listing.uuid, req.user?.id);
+    throw forbidden('Only draft, pending, or rejected listings can be edited by the donor.');
+  }
+
   if (listing.status === 'active') {
     const attemptedLocked = Object.keys(body).filter(key => LOCKED_FIELDS.has(key));
     if (attemptedLocked.length > 0) {
@@ -106,12 +188,47 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
       throw forbidden('Auction configuration fields are locked once the auction is active.');
     }
   }
-  if (body.title) listing.title = sanitizeText(body.title, 120);
-  if (body.description) listing.description = sanitizeText(body.description, 1200);
-  if (body.category) listing.category = sanitizeText(body.category, 60);
+
+  const title = body.title !== undefined ? sanitizeText(body.title, 120) : listing.title;
+  const description = body.description !== undefined ? sanitizeText(body.description, 1200) : listing.description;
+  const category = body.category !== undefined ? sanitizeText(body.category, 60) : listing.category;
+  if (title.length < 3 || description.length < 10 || category.length < 2) throw badRequest('Listing title, description, and category are required.');
+
+  listing.title = title;
+  listing.description = description;
+  listing.category = category;
+  if (body.condition && ['new', 'like_new', 'good', 'fair'].includes(String(body.condition))) listing.condition = String(body.condition) as Listing['condition'];
+  listing.images = buildUpdatedImages(listing, body, req);
+
   await updateListing(listing);
-  await audit(req, 'LISTING_UPDATED', { uuid }, 'listing', listing.uuid, req.user?.id);
+  await audit(req, 'LISTING_UPDATED', { uuid, imageCount: listing.images.length }, 'listing', listing.uuid, req.user?.id);
   return listing;
+};
+
+export const deleteListing = async (uuid: string, req: Request): Promise<Listing> => {
+  const listing = await getListingByUuid(uuid);
+  if (!listing) throw notFound('Listing not found');
+  ensureOwnerOrAdmin(listing, req);
+
+  const isAdmin = req.user?.roles.includes('admin') ?? false;
+  if (!isAdmin && !DONOR_DELETABLE_STATUSES.includes(listing.status)) {
+    await audit(req, 'LISTING_DELETE_REJECTED_BY_STATUS', { status: listing.status }, 'listing', listing.uuid, req.user?.id);
+    throw forbidden('Active or sold listings cannot be deleted by the donor.');
+  }
+
+  // Soft-delete by cancelling instead of physically removing the row.
+  // This keeps auditability and prevents orphaned bid/payment records later.
+  listing.status = 'cancelled';
+  await updateListing(listing);
+  await audit(req, 'LISTING_DELETED', { uuid, softDelete: true }, 'listing', listing.uuid, req.user?.id);
+  return listing;
+};
+
+export const listMyListings = async (req: Request): Promise<Listing[]> => {
+  if (!req.user) throw forbidden();
+  const all = await listListings();
+  if (req.user.roles.includes('admin')) return all;
+  return all.filter(listing => listing.donor_id === req.user?.id);
 };
 
 export const approveListing = async (uuid: string, req: Request): Promise<Listing> => {
