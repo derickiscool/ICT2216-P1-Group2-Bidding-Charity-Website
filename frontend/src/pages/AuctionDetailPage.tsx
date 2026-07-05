@@ -122,6 +122,11 @@ export default function AuctionDetailPage() {
   const [maxAutoBid, setMaxAutoBid] = useState('')
   const [saved, setSaved]           = useState(false)
   const processedBids = useRef<Set<number>>(new Set())
+  const listingRef = useRef<Listing | null>(null)
+
+  useEffect(() => {
+    listingRef.current = listing
+  }, [listing])
 
   // ── Track current time for pure renders & dynamic badges ────────────────
   const [now, setNow] = useState(() => Date.now())
@@ -136,6 +141,8 @@ export default function AuctionDetailPage() {
       try {
         const listRes = await api.get<Listing>(`/listings/${id}`)
         setListing(listRes.data)
+        const base = listRes.data.current_bid || listRes.data.starting_price
+        setAmount(String(base + (listRes.data.min_increment ?? 1)))
       } catch (err) {
         setPageError((err as { message?: string }).message || 'Listing not found')
       }
@@ -165,34 +172,22 @@ export default function AuctionDetailPage() {
 
     socket.on('bid:placed', (bid: Bid) => {
       if (!bid.id) return
-      // Check and add to ref atomically to prevent race conditions
       if (processedBids.current.has(bid.id)) return
       processedBids.current.add(bid.id)
 
-      // Genuinely new bid from another user
+      // Legitimate new bid from another user
       setListing(prev => {
         if (!prev) return prev
         return { ...prev, current_bid: bid.amount, bid_count: prev.bid_count + 1 }
       })
       setBidHistory(prev => [bid, ...prev])
+
+      const minInc = listingRef.current?.min_increment ?? 1
+      setAmount(String(bid.amount + minInc))
     })
 
     return () => { socket.disconnect() }
   }, [listing?.id])
-
-  // ── Derive the minimum amount when listing updates ────────────────────────
-  useEffect(() => {
-    if (!listing) return
-    const min = Math.max(listing.starting_price, listing.current_bid) + (listing.min_increment ?? 1)
-    setAmount(prev => {
-      if (!prev) return String(min)
-      const val = Number(prev)
-      if (isNaN(val) || val < min) {
-        return String(min)
-      }
-      return prev
-    })
-  }, [listing?.current_bid, listing?.starting_price, listing?.min_increment])
 
   // ── Place bid ─────────────────────────────────────────────────────────────
   const submitBid = async () => {
@@ -209,16 +204,14 @@ export default function AuctionDetailPage() {
     setSubmitting(true)
     try {
       const res = await api.post<Bid>('/bids', { listing_id: listing.id, amount: amt })
-      
-      // Mark as processed immediately to prevent race conditions with incoming socket events
-      if (res.data.id) {
-        processedBids.current.add(res.data.id)
-      }
-
       setBidMessage(`Bid of $${res.data.amount.toLocaleString()} placed!`)
-      setListing(prev => prev ? { ...prev, current_bid: res.data.amount, bid_count: prev.bid_count + 1 } : prev)
-      // Deduplicated prepend (socket may also broadcast this back to us)
-      setBidHistory(prev => prev.some(b => b.id === res.data.id) ? prev : [res.data, ...prev])
+
+      if (res.data.id && !processedBids.current.has(res.data.id)) {
+        processedBids.current.add(res.data.id)
+        setListing(prev => prev ? { ...prev, current_bid: res.data.amount, bid_count: prev.bid_count + 1 } : prev)
+        setBidHistory(prev => prev.some(b => b.id === res.data.id) ? prev : [res.data, ...prev])
+        setAmount(String(res.data.amount + (listing.min_increment ?? 1)))
+      }
     } catch (err) {
       setBidError((err as { message?: string }).message || 'Bid failed. Please try again.')
     } finally {
