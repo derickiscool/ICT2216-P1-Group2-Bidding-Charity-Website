@@ -84,6 +84,7 @@ import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
 import NotFoundPage from './pages/NotFoundPage'
 import CreateListingPage from './pages/CreateListingPage'
+import DonorListingsPage from './pages/DonorListingsPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -124,6 +125,7 @@ export default function App() {
           {/* ── Donor only ── */}
           <Route element={<RoleProtectedRoute allowedRoles={['donor', 'admin']} />}>
             <Route path="/listings/create" element={<CreateListingPage />} />
+            <Route path="/listings/manage" element={<DonorListingsPage />} />
           </Route>
 
           {/* ── Admin only ── */}

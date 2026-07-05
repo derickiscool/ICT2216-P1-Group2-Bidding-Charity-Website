@@ -21,16 +21,27 @@ export default function DashboardPage() {
             <span className="font-medium text-sm">Overview (WIP)</span>
           </div>
 
-          {/* Create New Listing Button */}
+          {/* Donor listing management shortcuts. */}
           {user?.roles?.includes('donor') && (
-            <Link 
-              to="/listings/create" 
-              className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all shadow-sm hover:-translate-y-0.5"
-              style={{ color: '#047857', background: '#ECFDF5', border: '1px solid #A7F3D0' }}
-            >
-              <PlusCircle className="w-5 h-5" />
-              <span className="text-sm">Create New Listing</span>
-            </Link>
+            <>
+              <Link
+                to="/listings/manage"
+                className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all shadow-sm hover:-translate-y-0.5"
+                style={{ color: '#2D3A3A', background: '#FFFFFF', border: '1px solid #BBB09B' }}
+              >
+                <LayoutDashboard className="w-5 h-5" />
+                <span className="text-sm">My Listings</span>
+              </Link>
+
+              <Link
+                to="/listings/create"
+                className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all shadow-sm hover:-translate-y-0.5"
+                style={{ color: '#047857', background: '#ECFDF5', border: '1px solid #A7F3D0' }}
+              >
+                <PlusCircle className="w-5 h-5" />
+                <span className="text-sm">Create New Listing</span>
+              </Link>
+            </>
           )}
         </nav>
       </aside>
@@ -42,7 +53,7 @@ export default function DashboardPage() {
         
         <div className="mt-16 flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-2xl" style={{ borderColor: '#BBB09B' }}>
           <p className="text-lg font-medium mb-2" style={{ color: '#2D3A3A' }}>Dashboard is empty</p>
-          <p className="text-sm" style={{ color: '#5C6E6E' }}>Select "Create New Listing" in the sidebar to start a charity auction.</p>
+          <p className="text-sm" style={{ color: '#5C6E6E' }}>Select "My Listings" to manage your auction items, or create a new charity auction listing.</p>
         </div>
       </main>
     </div>

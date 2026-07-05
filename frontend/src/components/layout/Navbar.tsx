@@ -63,6 +63,18 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
             {item.label}
           </Link>
         ))}
+        {(user?.roles?.includes('donor') || user?.roles?.includes('admin')) && (
+          <Link
+            to="/listings/manage"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+            style={{ color: '#2D3A3A' }}
+          >
+            <LayoutDashboard className="w-4 h-4" style={{ color: '#047857' }} />
+            My Listings
+          </Link>
+        )}
+
         {(user?.roles?.includes('charity') || user?.roles?.includes('admin')) && (
           <Link
             to="/charity/staff"
@@ -224,6 +236,9 @@ export default function Navbar() {
         <div className="md:hidden border-t px-6 py-4 space-y-2" style={{ background: isHome ? '#2D3A3A' : '#fff', borderColor: '#BBB09B' }}>
           <Link to="/auctions" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Browse Auctions</Link>
           <Link to="/charities" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Charities</Link>
+          {isAuthenticated && (user?.roles?.includes('donor') || user?.roles?.includes('admin')) && (
+            <Link to="/listings/manage" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>My Listings</Link>
+          )}
           {!isAuthenticated && <>
             <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Log In</Link>
             <Link to="/register" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Register</Link>
