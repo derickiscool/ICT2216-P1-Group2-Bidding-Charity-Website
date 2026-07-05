@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import { Clock, Heart, ArrowLeft, Flame, Shield, CheckCircle } from 'lucide-react'
@@ -121,6 +121,7 @@ export default function AuctionDetailPage() {
   const [autoBidOn, setAutoBidOn]   = useState(false)
   const [maxAutoBid, setMaxAutoBid] = useState('')
   const [saved, setSaved]           = useState(false)
+  const processedBids = useRef<Set<number>>(new Set())
 
   // ── Track current time for pure renders & dynamic badges ────────────────
   const [now, setNow] = useState(() => Date.now())
@@ -135,8 +136,6 @@ export default function AuctionDetailPage() {
       try {
         const listRes = await api.get<Listing>(`/listings/${id}`)
         setListing(listRes.data)
-        const base = listRes.data.current_bid || listRes.data.starting_price
-        setAmount(String(base + (listRes.data.min_increment ?? 1)))
       } catch (err) {
         setPageError((err as { message?: string }).message || 'Listing not found')
       }
@@ -147,29 +146,53 @@ export default function AuctionDetailPage() {
   useEffect(() => {
     if (!listing?.id) return
     api.get<Bid[]>(`/bids/listings/${listing.id}`)
-      .then(res => setBidHistory(res.data))
+      .then(res => {
+        setBidHistory(res.data)
+        processedBids.current.clear()
+        res.data.forEach(bid => {
+          if (bid.id) processedBids.current.add(bid.id)
+        })
+      })
       .catch(() => setBidHistory([]))
   }, [listing?.id])
 
   useEffect(() => {
     if (!listing?.id) return
     // @ts-expect-error - Vite env types may not be loaded in CI checks
-    const url = import.meta.env.VITE_WS_URL || 'http://localhost:5000'
+    const url = import.meta.env.VITE_WS_URL || ''
     const socket = io(url, { withCredentials: true })
     socket.emit('listing:join', listing.id)
 
     socket.on('bid:placed', (bid: Bid) => {
+      if (!bid.id) return
+      // Check and add to ref atomically to prevent race conditions
+      if (processedBids.current.has(bid.id)) return
+      processedBids.current.add(bid.id)
+
+      // Genuinely new bid from another user
       setListing(prev => {
         if (!prev) return prev
-        setAmount(String(bid.amount + (prev.min_increment ?? 1)))
         return { ...prev, current_bid: bid.amount, bid_count: prev.bid_count + 1 }
       })
-      // Deduplicated prepend
-      setBidHistory(prev => prev.some(b => b.id === bid.id) ? prev : [bid, ...prev])
+      setBidHistory(prev => [bid, ...prev])
     })
 
     return () => { socket.disconnect() }
   }, [listing?.id])
+
+  // ── Derive the minimum amount when listing updates ────────────────────────
+  useEffect(() => {
+    if (!listing) return
+    const min = Math.max(listing.starting_price, listing.current_bid) + (listing.min_increment ?? 1)
+    setAmount(prev => {
+      if (!prev) return String(min)
+      const val = Number(prev)
+      if (isNaN(val) || val < min) {
+        return String(min)
+      }
+      return prev
+    })
+  }, [listing?.current_bid, listing?.starting_price, listing?.min_increment])
 
   // ── Place bid ─────────────────────────────────────────────────────────────
   const submitBid = async () => {
@@ -186,6 +209,12 @@ export default function AuctionDetailPage() {
     setSubmitting(true)
     try {
       const res = await api.post<Bid>('/bids', { listing_id: listing.id, amount: amt })
+      
+      // Mark as processed immediately to prevent race conditions with incoming socket events
+      if (res.data.id) {
+        processedBids.current.add(res.data.id)
+      }
+
       setBidMessage(`Bid of $${res.data.amount.toLocaleString()} placed!`)
       setListing(prev => prev ? { ...prev, current_bid: res.data.amount, bid_count: prev.bid_count + 1 } : prev)
       // Deduplicated prepend (socket may also broadcast this back to us)
