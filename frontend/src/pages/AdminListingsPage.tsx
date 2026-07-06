@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Package, Loader2, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Package, Loader2, AlertCircle, CheckCircle, ExternalLink, XCircle } from 'lucide-react'
 import api from '../services/api'
 import type { Listing, ApiError } from '../types'
 
@@ -17,6 +17,9 @@ export default function AdminListingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [approving, setApproving] = useState<string | null>(null)
+  const [rejectUuid, setRejectUuid] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejecting, setRejecting] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -45,6 +48,21 @@ export default function AdminListingsPage() {
       setError((err as ApiError).message || 'Failed to approve listing.')
     } finally {
       setApproving(null)
+    }
+  }
+
+  const handleReject = async (uuid: string) => {
+    if (!rejectReason.trim()) return
+    setRejecting(uuid)
+    try {
+      await api.post(`/listings/${uuid}/reject`, { reason: rejectReason })
+      setListings(prev => prev.filter(l => l.uuid !== uuid))
+      setRejectUuid(null)
+      setRejectReason('')
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to reject listing.')
+    } finally {
+      setRejecting(null)
     }
   }
 
@@ -109,12 +127,41 @@ export default function AdminListingsPage() {
                             style={{ color: C.emerald, border: '1px solid', borderColor: C.emerald }}>
                             <ExternalLink className="w-3 h-3" /> View
                           </Link>
-                          <button onClick={() => handleApprove(l.uuid!)} disabled={approving === l.uuid}
-                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                            style={{ background: C.emerald }}>
-                            {approving === l.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-                            {approving === l.uuid ? 'Approving...' : 'Approve'}
-                          </button>
+                          {rejectUuid === l.uuid ? (
+                            <form onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleReject(l.uuid!) }}
+                              className="flex items-center gap-2">
+                              <input
+                                type="text" value={rejectReason} autoFocus
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                placeholder="Rejection reason..."
+                                className="w-36 px-2 py-1 text-xs rounded-lg outline-none"
+                                style={{ border: '1px solid', borderColor: C.danger, background: C.dangerLight }}
+                              />
+                              <button type="submit" disabled={!rejectReason.trim() || rejecting === l.uuid}
+                                className="px-2 py-1 text-xs font-bold rounded-lg text-white"
+                                style={{ background: rejecting === l.uuid ? C.muted : C.danger }}>
+                                {rejecting === l.uuid ? '...' : 'Confirm'}
+                              </button>
+                              <button type="button" onClick={() => { setRejectUuid(null); setRejectReason('') }}
+                                className="px-2 py-1 text-xs rounded-lg" style={{ color: C.muted }}>
+                                Cancel
+                              </button>
+                            </form>
+                          ) : (
+                            <>
+                              <button onClick={() => handleApprove(l.uuid!)} disabled={approving === l.uuid || rejecting !== null}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                                style={{ background: C.emerald }}>
+                                {approving === l.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                                {approving === l.uuid ? 'Approving...' : 'Approve'}
+                              </button>
+                              <button onClick={() => setRejectUuid(l.uuid!)} disabled={approving !== null}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                                style={{ background: C.danger }}>
+                                <XCircle className="w-3 h-3" /> Reject
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

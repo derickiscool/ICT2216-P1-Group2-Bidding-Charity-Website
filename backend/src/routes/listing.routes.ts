@@ -3,7 +3,7 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { authenticate, authenticateOptional } from '../middleware/auth.middleware';
 import { requireCsrf } from '../middleware/csrf.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
-import { approve, create, donorListings, getListing, listActive, pending, update } from '../controllers/listing.controller';
+import { approve, create, donorListings, getListing, listActive, pending, reject, update } from '../controllers/listing.controller';
 
 const router = Router();
 router.get('/', asyncHandler(listActive));
@@ -13,4 +13,5 @@ router.post('/', asyncHandler(authenticate), requireCsrf, requireRole('donor', '
 router.patch('/:uuid', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), asyncHandler(update));
 router.get('/admin/pending', asyncHandler(authenticate), requireRole('admin'), asyncHandler(pending));
 router.post('/:uuid/approve', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(approve));
+router.post('/:uuid/reject', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(reject));
 export default router;

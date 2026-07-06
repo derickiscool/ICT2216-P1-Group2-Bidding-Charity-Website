@@ -125,6 +125,16 @@ export const approveListing = async (uuid: string, req: Request): Promise<Listin
   return listing;
 };
 
+export const rejectListing = async (uuid: string, reason: string | undefined, req: Request): Promise<Listing> => {
+  const listing = await getListingByUuid(uuid);
+  if (!listing) throw notFound('Listing not found');
+  if (listing.status !== 'pending') throw badRequest('Only pending listings can be rejected.');
+  listing.status = 'rejected';
+  await updateListing(listing);
+  await audit(req, 'LISTING_REJECTED', { uuid, reason: sanitizeText(reason ?? '', 300) }, 'listing', listing.uuid, req.user?.id);
+  return listing;
+};
+
 export const searchPublicListings = async (query: Record<string, unknown>): Promise<Listing[]> => {
   const q = sanitizeText(query.q ?? query.search, 80);
   const category = sanitizeText(query.category, 60);
