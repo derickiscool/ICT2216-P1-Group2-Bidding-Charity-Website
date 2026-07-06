@@ -6,6 +6,8 @@ import type {
   Campaign,
   CharityOrganisation,
   Listing,
+  Payment,
+  PaymentWithListing,
   NewCampaignInput,
   PendingRegistration,
   SessionRecord,
@@ -21,6 +23,7 @@ import type {
   NewBidInput,
   NewCharityInput,
   NewListingInput,
+  NewPaymentInput,
   NewUserInput,
   PublicUser,
 } from './repository.types';
@@ -64,6 +67,7 @@ interface SessionRow {
   jti_hash: string;
   csrf_token_hash: string;
   expires_at: DbDate;
+  absolute_expires_at: DbDate;
   revoked_at: DbDate | null;
   created_at: DbDate;
   last_seen_at: DbDate;
@@ -118,6 +122,28 @@ interface BidRow {
   amount: number | string;
   is_auto_bid: boolean;
   created_at: DbDate;
+}
+
+interface PaymentRow {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  amount: number | string;
+  payment_ref: string;
+  escrow_state: 'not_held' | 'held' | 'released' | 'refunded';
+  status: 'pending' | 'successful' | 'failed' | 'expired';
+  payment_deadline: DbDate;
+  offered_at: DbDate;
+  paid_at: DbDate | null;
+  created_at: DbDate;
+  updated_at: DbDate;
+}
+
+interface PaymentWithListingRow extends PaymentRow {
+  listing_uuid: string;
+  listing_title: string;
+  charity_name: string;
 }
 
 interface AuditEventRow {
@@ -199,6 +225,7 @@ const mapSession = (row: SessionRow): SessionRecord => ({
   jtiHash: row.jti_hash,
   csrfTokenHash: row.csrf_token_hash,
   expiresAt: toDate(row.expires_at),
+  absoluteExpiresAt: toDate(row.absolute_expires_at),
   revokedAt: optionalDate(row.revoked_at),
   createdAt: toDate(row.created_at),
   lastSeenAt: toDate(row.last_seen_at),
@@ -253,6 +280,29 @@ const mapBid = (row: BidRow): Bid => ({
   amount: Number(row.amount),
   is_auto_bid: row.is_auto_bid,
   created_at: toIso(row.created_at),
+});
+
+const mapPayment = (row: PaymentRow): Payment => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  listing_id: Number(row.listing_id),
+  bidder_id: Number(row.bidder_id),
+  amount: Number(row.amount),
+  payment_ref: row.payment_ref,
+  escrow_state: row.escrow_state,
+  status: row.status,
+  payment_deadline: toIso(row.payment_deadline),
+  offered_at: toIso(row.offered_at),
+  paid_at: optionalIso(row.paid_at),
+  created_at: toIso(row.created_at),
+  updated_at: toIso(row.updated_at),
+});
+
+const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing => ({
+  ...mapPayment(row),
+  listing_uuid: row.listing_uuid,
+  listing_title: row.listing_title,
+  charity_name: row.charity_name,
 });
 
 const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
@@ -387,8 +437,8 @@ const removePendingRegistration = async (email: string): Promise<void> => {
 
 const addSession = async (record: SessionRecord): Promise<void> => {
   await query(
-    `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, revoked_at, created_at, last_seen_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, absolute_expires_at, revoked_at, created_at, last_seen_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (sid) DO UPDATE SET
        user_id = EXCLUDED.user_id,
        jti_hash = EXCLUDED.jti_hash,
@@ -396,7 +446,7 @@ const addSession = async (record: SessionRecord): Promise<void> => {
        expires_at = EXCLUDED.expires_at,
        revoked_at = EXCLUDED.revoked_at,
        last_seen_at = EXCLUDED.last_seen_at`,
-    [record.sid, record.userId, record.jtiHash, record.csrfTokenHash, record.expiresAt, record.revokedAt ?? null, record.createdAt, record.lastSeenAt],
+    [record.sid, record.userId, record.jtiHash, record.csrfTokenHash, record.expiresAt, record.absoluteExpiresAt, record.revokedAt ?? null, record.createdAt, record.lastSeenAt],
   );
 };
 
@@ -759,6 +809,95 @@ const withListingLock = async <T>(listingId: number, fn: () => Promise<T>): Prom
     return fn();
   });
 
+const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
+  const row = await firstRow<PaymentRow>(
+    `INSERT INTO payments
+       (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING *`,
+    [
+      input.listing_id,
+      input.bidder_id,
+      input.amount,
+      input.payment_ref,
+      input.escrow_state,
+      input.status,
+      input.payment_deadline,
+      input.offered_at,
+      input.paid_at ?? null,
+    ],
+  );
+  if (!row) throw new Error('Failed to create payment offer.');
+  return mapPayment(row);
+};
+
+const updatePayment = async (payment: Payment): Promise<void> => {
+  await query(
+    `UPDATE payments
+     SET listing_id = $2, bidder_id = $3, amount = $4, payment_ref = $5, escrow_state = $6,
+         status = $7, payment_deadline = $8, offered_at = $9, paid_at = $10, updated_at = NOW()
+     WHERE id = $1`,
+    [
+      payment.id,
+      payment.listing_id,
+      payment.bidder_id,
+      payment.amount,
+      payment.payment_ref,
+      payment.escrow_state,
+      payment.status,
+      payment.payment_deadline,
+      payment.offered_at,
+      payment.paid_at ?? null,
+    ],
+  );
+};
+
+const getPaymentByUuid = async (uuid: string): Promise<Payment | undefined> => {
+  const row = await firstRow<PaymentRow>('SELECT * FROM payments WHERE uuid = $1 LIMIT 1', [uuid]);
+  return row ? mapPayment(row) : undefined;
+};
+
+const getPaymentsForListing = async (listingId: number): Promise<Payment[]> => {
+  const rows = await allRows<PaymentRow>('SELECT * FROM payments WHERE listing_id = $1 ORDER BY created_at ASC, id ASC', [listingId]);
+  return rows.map(mapPayment);
+};
+
+const getPendingPaymentForListing = async (listingId: number): Promise<Payment | undefined> => {
+  const row = await firstRow<PaymentRow>(
+    `SELECT * FROM payments
+     WHERE listing_id = $1 AND status = 'pending'
+     ORDER BY payment_deadline ASC, id ASC
+     LIMIT 1`,
+    [listingId],
+  );
+  return row ? mapPayment(row) : undefined;
+};
+
+const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListing[]> => {
+  const rows = await allRows<PaymentWithListingRow>(
+    `SELECT
+       p.*,
+       l.uuid AS listing_uuid,
+       l.title AS listing_title,
+       l.charity_name AS charity_name
+     FROM payments p
+     INNER JOIN listings l ON l.id = p.listing_id
+     WHERE p.bidder_id = $1
+     ORDER BY
+       CASE p.status WHEN 'pending' THEN 0 WHEN 'successful' THEN 1 ELSE 2 END,
+       p.payment_deadline ASC,
+       p.created_at DESC`,
+    [bidderId],
+  );
+  return rows.map(mapPaymentWithListing);
+};
+
+const withPaymentLock = async <T>(paymentId: number, fn: () => Promise<T>): Promise<T> =>
+  withTransaction(async () => {
+    await query('SELECT id FROM payments WHERE id = $1 FOR UPDATE', [paymentId]);
+    return fn();
+  });
+
 const appendAuditEvent = async (event: NewAuditEventInput): Promise<AuditEvent> =>
   withTransaction(async () => {
     await query('LOCK TABLE audit_events IN SHARE ROW EXCLUSIVE MODE');
@@ -858,7 +997,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, bids, listings, campaigns, charities, sessions, pending_registrations, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, payments, bids, listings, campaigns, charities, sessions, pending_registrations, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -911,6 +1050,14 @@ export const postgresRepository: BidForGoodRepository = {
   getBidsForListing,
   getBidsByBidder,
   withListingLock,
+
+  addPayment,
+  updatePayment,
+  getPaymentByUuid,
+  getPaymentsForListing,
+  getPendingPaymentForListing,
+  listPaymentsByBidder,
+  withPaymentLock,
 
   appendAuditEvent,
   listAuditEvents,

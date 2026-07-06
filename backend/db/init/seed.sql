@@ -153,4 +153,17 @@ WHERE NOT EXISTS (
   SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Professional Photography Session') AND amount = 350
 );
 
+-- FR14 demo payment offer for a closed auction. This lets the bidder account
+-- immediately see a pending payment deadline at /payments after seeding.
+INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at)
+SELECT (SELECT id FROM listings WHERE title = 'Antique Pocket Watch'),
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'),
+       750,
+       'DEMO-POCKET-WATCH-001',
+       'not_held',
+       'pending',
+       NOW() + INTERVAL '24 hours',
+       NOW()
+WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-POCKET-WATCH-001');
+
 COMMIT;
