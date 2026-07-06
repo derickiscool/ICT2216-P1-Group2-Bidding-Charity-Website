@@ -14,15 +14,15 @@ const C = {
 const money = (value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const statusBadge = (status: string) => {
-  const colors: Record<string, { bg: string; text: string }> = {
-    draft: { bg: '#F3F4F6', text: '#6B7280' },
-    pending: { bg: '#FEF3C7', text: '#92400E' },
-    active: { bg: '#ECFDF5', text: '#047857' },
-    sold: { bg: '#DBEAFE', text: '#1E40AF' },
-    expired: { bg: '#FEE2E2', text: '#991B1B' },
-    cancelled: { bg: '#FEE2E2', text: '#991B1B' },
-  }
-  const style = colors[status] || colors.draft
+  const colors = new Map<string, { bg: string; text: string }>([
+    ['draft', { bg: '#F3F4F6', text: '#6B7280' }],
+    ['pending', { bg: '#FEF3C7', text: '#92400E' }],
+    ['active', { bg: '#ECFDF5', text: '#047857' }],
+    ['sold', { bg: '#DBEAFE', text: '#1E40AF' }],
+    ['expired', { bg: '#FEE2E2', text: '#991B1B' }],
+    ['cancelled', { bg: '#FEE2E2', text: '#991B1B' }],
+  ])
+  const style = colors.get(status) ?? colors.get('draft')!
   return (
     <span className="text-xs font-bold px-2.5 py-1 rounded-full"
       style={{ background: style.bg, color: style.text }}>

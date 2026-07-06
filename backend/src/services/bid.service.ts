@@ -4,6 +4,7 @@ import { addBid, getBidsByBidder, getBidsForListing, getListingById, updateListi
 import { badRequest, forbidden, notFound, tooManyRequests } from '../utils/errors';
 import { roundMoney } from '../utils/security';
 import { audit } from './audit.service';
+import { closeExpiredAuctions } from './payment.service';
 
 const bidderVelocity = new Map<string, number[]>();
 
@@ -26,7 +27,10 @@ export const placeBid = async (listingIdInput: number, amountInput: number, req:
   return withListingLock(listingId, async () => {
     const listing = await getListingById(listingId);
     if (!listing || listing.status !== 'active') throw notFound('Active listing not found');
-    if (new Date(listing.end_time).getTime() <= Date.now()) throw badRequest('Auction has ended.');
+    if (new Date(listing.end_time).getTime() <= Date.now()) {
+      await closeExpiredAuctions();
+      throw badRequest('Auction has ended.');
+    }
     if (listing.donor_id === req.user?.id) throw forbidden('Donors cannot bid on their own listings.');
     const minimum = roundMoney(Math.max(listing.starting_price, listing.current_bid) + listing.min_increment);
     if (amount < minimum) {

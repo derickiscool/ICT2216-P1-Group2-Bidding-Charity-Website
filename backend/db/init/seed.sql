@@ -166,4 +166,13 @@ SELECT (SELECT id FROM listings WHERE title = 'Antique Pocket Watch'),
        NOW()
 WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-POCKET-WATCH-001');
 
+-- Test listing that has already ended — useful for testing auction auto-close
+-- without waiting. Login as admin, POST /api/listings/:uuid/force-close.
+INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, charity_name, min_increment)
+SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Test Auction - Already Ended',
+       'This listing ended an hour ago. Use admin force-close to test the payment flow.', 'good', 'Collectibles', ARRAY[]::TEXT[],
+       100, 100, 0, 'active', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour',
+       'Children''s Hospital Trust', 10
+WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = 'Test Auction - Already Ended');
+
 COMMIT;

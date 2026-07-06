@@ -11,14 +11,14 @@ const C = {
 }
 
 const roleBadge = (role: string) => {
-  const colors: Record<string, { bg: string; text: string }> = {
-    admin: { bg: '#FEE2E2', text: '#991B1B' },
-    donor: { bg: '#DBEAFE', text: '#1E40AF' },
-    bidder: { bg: '#ECFDF5', text: '#047857' },
-    charity: { bg: '#FEF3C7', text: '#92400E' },
-    charity_staff: { bg: '#F3E8FF', text: '#6B21A8' },
-  }
-  const s = colors[role] || { bg: '#F3F4F6', text: '#6B7280' }
+  const colors = new Map<string, { bg: string; text: string }>([
+    ['admin', { bg: '#FEE2E2', text: '#991B1B' }],
+    ['donor', { bg: '#DBEAFE', text: '#1E40AF' }],
+    ['bidder', { bg: '#ECFDF5', text: '#047857' }],
+    ['charity', { bg: '#FEF3C7', text: '#92400E' }],
+    ['charity_staff', { bg: '#F3E8FF', text: '#6B21A8' }],
+  ])
+  const s = colors.get(role) ?? { bg: '#F3F4F6', text: '#6B7280' }
   return (
     <span key={role} className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.text }}>
       {role.replace('_', ' ')}

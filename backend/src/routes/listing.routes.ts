@@ -8,6 +8,7 @@ import {
   approve,
   create,
   donorListings,
+  forceClose,
   getListing,
   listActive,
   listMine,
@@ -34,6 +35,7 @@ router.delete('/:uuid', asyncHandler(authenticate), requireCsrf, requireRole('do
 
 router.post('/:uuid/approve', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(approve));
 router.post('/:uuid/reject', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(reject));
+router.post('/:uuid/force-close', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(forceClose));
 router.get('/:uuid', asyncHandler(authenticateOptional), asyncHandler(getListing));
 
 export default router;

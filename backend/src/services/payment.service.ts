@@ -5,6 +5,7 @@ import {
   addPayment,
   getBidsForListing,
   getListingById,
+  getListingByUuid,
   getPaymentByUuid,
   getPaymentsForListing,
   getPendingPaymentForListing,
@@ -270,4 +271,25 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
 
     return payment;
   });
+};
+
+export const closeExpiredAuctions = async (forceUuid?: string): Promise<number> => {
+  let processed = 0;
+
+  // When forceUuid is provided, close that specific listing regardless of end_time.
+  // Used by the admin force-close endpoint for testing the full flow instantly.
+  if (forceUuid) {
+    const listing = await getListingByUuid(forceUuid);
+    if (!listing || listing.status !== 'active') throw notFound('Active listing not found.');
+    if (await closeEndedActiveListing(listing.id)) processed += 1;
+  } else {
+    const active = await listActiveListings();
+    for (const listing of active) {
+      if (new Date(listing.end_time).getTime() <= Date.now()) {
+        if (await closeEndedActiveListing(listing.id)) processed += 1;
+      }
+    }
+  }
+
+  return processed;
 };

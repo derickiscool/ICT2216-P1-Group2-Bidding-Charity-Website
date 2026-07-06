@@ -12,12 +12,12 @@ const C = {
 }
 
 const statusBadge = (status: string) => {
-  const colors: Record<string, { bg: string; text: string }> = {
-    pending: { bg: '#FEF3C7', text: '#92400E' },
-    approved: { bg: '#ECFDF5', text: '#047857' },
-    rejected: { bg: '#FEE2E2', text: '#991B1B' },
-  }
-  const s = colors[status] || colors.pending
+  const colors = new Map<string, { bg: string; text: string }>([
+    ['pending', { bg: '#FEF3C7', text: '#92400E' }],
+    ['approved', { bg: '#ECFDF5', text: '#047857' }],
+    ['rejected', { bg: '#FEE2E2', text: '#991B1B' }],
+  ])
+  const s = colors.get(status) ?? colors.get('pending')!
   return (
     <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: s.bg, color: s.text }}>
       {status.charAt(0).toUpperCase() + status.slice(1)}
