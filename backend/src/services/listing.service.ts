@@ -217,6 +217,13 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
   if (body.condition && ['new', 'like_new', 'good', 'fair'].includes(String(body.condition))) listing.condition = String(body.condition) as Listing['condition'];
   listing.images = buildUpdatedImages(listing, body, req);
 
+  // A donor editing a rejected listing is resubmitting it: move it back into the review
+  // queue, otherwise the admin pending list never surfaces it again and the edit is moot.
+  if (!isAdmin && listing.status === 'rejected') {
+    listing.status = 'pending';
+    await audit(req, 'LISTING_RESUBMITTED_FOR_REVIEW', { uuid, previousStatus: 'rejected' }, 'listing', listing.uuid, req.user?.id);
+  }
+
   await updateListing(listing);
   await audit(req, 'LISTING_UPDATED', { uuid, imageCount: listing.images.length }, 'listing', listing.uuid, req.user?.id);
   return listing;
@@ -253,6 +260,12 @@ export const approveListing = async (uuid: string, req: Request): Promise<Listin
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
   if (listing.status !== 'pending') throw badRequest('Only pending listings can be approved.');
+  // Approval resets start_time to now, so the end_time must still be in the future —
+  // otherwise the listing would go active with an already-elapsed window and be swept
+  // straight to 'expired' on the next deadline pass, never becoming biddable.
+  if (new Date(listing.end_time).getTime() <= Date.now()) {
+    throw badRequest('This listing\'s auction end time has already passed. Ask the donor to update the auction window before approval.', 'LISTING_WINDOW_EXPIRED');
+  }
   listing.status = 'active';
   listing.start_time = new Date().toISOString();
   await updateListing(listing);

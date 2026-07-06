@@ -216,7 +216,9 @@ export default function DonorListingsPage() {
         setEditForm(prev => ({ ...prev, newImages: prev.newImages.filter((_, i) => i !== index) }))
     }
 
-    const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|on\w+\s*=|<\s*iframe/i.test(value)
+    // Anchored to an attribute-like boundary so ordinary prose containing "on" mid-word
+    // (e.g. "donation = 100%") isn't misflagged; the backend mirrors this pattern.
+    const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|[\s"'<]on\w+\s*=|<\s*iframe/i.test(value)
 
     const validateEdit = () => {
         const e: Record<string, string> = {}
@@ -359,12 +361,13 @@ export default function DonorListingsPage() {
                         {filteredListings.map(listing => {
                             const status = statusStyle(listing.status)
                             const image = listing.images?.[0]
+                            const safeImage = image && isSafeImageSrc(image) ? image : undefined
 
                             return (
                                 <article key={listing.uuid ?? listing.id} className="rounded-2xl overflow-hidden shadow-sm flex flex-col" style={{ background: C.white, border: `1px solid ${C.beige}` }}>
                                     <div className="h-44 bg-slate-100 relative flex items-center justify-center overflow-hidden">
-                                        {image ? (
-                                            <img src={image} alt={listing.title} className="w-full h-full object-cover" />
+                                        {safeImage ? (
+                                            <img src={safeImage} alt={listing.title} className="w-full h-full object-cover" />
                                         ) : (
                                             <div className="flex flex-col items-center gap-2" style={{ color: C.muted }}>
                                                 <ImageIcon className="w-8 h-8" />

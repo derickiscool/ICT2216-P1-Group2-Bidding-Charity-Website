@@ -138,7 +138,9 @@ export default function CreateListingPage() {
 
   const removeImage = (index: number) => setImages(prev => prev.filter((_, i) => i !== index))
 
-  const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|on\w+\s*=|<\s*iframe/i.test(value)
+  // Anchored to an attribute-like boundary so ordinary prose containing "on" mid-word
+  // (e.g. "donation = 100%") isn't misflagged; the backend mirrors this pattern.
+  const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|[\s"'<]on\w+\s*=|<\s*iframe/i.test(value)
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -156,7 +158,7 @@ export default function CreateListingPage() {
 
     if (form.reserve_price) {
       const rp = Number(form.reserve_price)
-      if (isNaN(rp) || rp < price) e.reserve_price = 'Reserve price must be higher than starting price.'
+      if (isNaN(rp) || rp < price) e.reserve_price = 'Reserve price must be equal to or higher than the starting price.'
     }
     if (form.buy_now_price) {
       const bn = Number(form.buy_now_price)
