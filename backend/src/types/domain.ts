@@ -148,6 +148,7 @@ export interface SessionRecord {
   jtiHash: string;
   csrfTokenHash: string;
   expiresAt: Date;
+  absoluteExpiresAt: Date;
   revokedAt?: Date;
   createdAt: Date;
   lastSeenAt: Date;

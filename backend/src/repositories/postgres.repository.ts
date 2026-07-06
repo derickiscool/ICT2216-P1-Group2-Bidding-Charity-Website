@@ -66,6 +66,7 @@ interface SessionRow {
   jti_hash: string;
   csrf_token_hash: string;
   expires_at: DbDate;
+  absolute_expires_at: DbDate;
   revoked_at: DbDate | null;
   created_at: DbDate;
   last_seen_at: DbDate;
@@ -223,6 +224,7 @@ const mapSession = (row: SessionRow): SessionRecord => ({
   jtiHash: row.jti_hash,
   csrfTokenHash: row.csrf_token_hash,
   expiresAt: toDate(row.expires_at),
+  absoluteExpiresAt: toDate(row.absolute_expires_at),
   revokedAt: optionalDate(row.revoked_at),
   createdAt: toDate(row.created_at),
   lastSeenAt: toDate(row.last_seen_at),
@@ -434,8 +436,8 @@ const removePendingRegistration = async (email: string): Promise<void> => {
 
 const addSession = async (record: SessionRecord): Promise<void> => {
   await query(
-    `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, revoked_at, created_at, last_seen_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, absolute_expires_at, revoked_at, created_at, last_seen_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (sid) DO UPDATE SET
        user_id = EXCLUDED.user_id,
        jti_hash = EXCLUDED.jti_hash,
@@ -443,7 +445,7 @@ const addSession = async (record: SessionRecord): Promise<void> => {
        expires_at = EXCLUDED.expires_at,
        revoked_at = EXCLUDED.revoked_at,
        last_seen_at = EXCLUDED.last_seen_at`,
-    [record.sid, record.userId, record.jtiHash, record.csrfTokenHash, record.expiresAt, record.revokedAt ?? null, record.createdAt, record.lastSeenAt],
+    [record.sid, record.userId, record.jtiHash, record.csrfTokenHash, record.expiresAt, record.absoluteExpiresAt, record.revokedAt ?? null, record.createdAt, record.lastSeenAt],
   );
 };
 
