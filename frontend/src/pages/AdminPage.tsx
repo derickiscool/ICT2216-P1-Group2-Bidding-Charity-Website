@@ -113,7 +113,7 @@ export default function AdminPage() {
         </div>
 
         {/* Quick links */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Link to="/admin/charities"
             className="rounded-2xl p-6 bg-white block hover:shadow-md transition-shadow"
             style={{ border: '1px solid', borderColor: C.beige }}>
@@ -151,6 +151,19 @@ export default function AdminPage() {
             <h3 className="font-bold" style={{ color: C.slate }}>Audit Log</h3>
             <p className="text-sm mt-1" style={{ color: C.muted }}>
               View all security events
+            </p>
+          </Link>
+          <Link to="/admin/users"
+            className="rounded-2xl p-6 bg-white block hover:shadow-md transition-shadow"
+            style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#F3E8FF' }}>
+                <Users className="w-5 h-5" style={{ color: '#6B21A8' }} />
+              </div>
+            </div>
+            <h3 className="font-bold" style={{ color: C.slate }}>User Management</h3>
+            <p className="text-sm mt-1" style={{ color: C.muted }}>
+              {stats?.totalUsers ?? 0} registered users
             </p>
           </Link>
         </div>

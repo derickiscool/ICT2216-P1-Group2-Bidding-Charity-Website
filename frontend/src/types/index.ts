@@ -4,6 +4,7 @@ export type UserRole = 'bidder' | 'donor' | 'charity_staff' | 'charity' | 'admin
 
 export interface User {
   id: number
+  uuid?: string
   email: string
   username: string
   full_name: string

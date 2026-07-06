@@ -67,6 +67,8 @@ export interface BidForGoodRepository {
   listPendingListings(): Promise<Listing[]>;
   listListingsByDonor(donorId: number): Promise<Listing[]>;
 
+  listUsers(): Promise<User[]>;
+
   addBid(input: NewBidInput): Promise<Bid>;
   getBidsForListing(listingId: number): Promise<Bid[]>;
   getBidsByBidder(bidderId: number): Promise<BidWithListing[]>;

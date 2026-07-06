@@ -40,6 +40,7 @@ export const {
   listActiveListings,
   listPendingListings,
   listListingsByDonor,
+  listUsers,
   addBid,
   getBidsForListing,
   getBidsByBidder,

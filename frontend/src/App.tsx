@@ -87,6 +87,7 @@ import CreateListingPage from './pages/CreateListingPage'
 import AdminCharitiesPage from './pages/AdminCharitiesPage'
 import AdminListingsPage from './pages/AdminListingsPage'
 import AdminAuditPage from './pages/AdminAuditPage'
+import AdminUsersPage from './pages/AdminUsersPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -135,6 +136,7 @@ export default function App() {
             <Route path="/admin/charities" element={<AdminCharitiesPage />} />
             <Route path="/admin/listings" element={<AdminListingsPage />} />
             <Route path="/admin/audit" element={<AdminAuditPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
           </Route>
 
           {/* ── 404 ── */}
