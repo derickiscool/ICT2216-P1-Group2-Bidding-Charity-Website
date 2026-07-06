@@ -249,6 +249,20 @@ export interface CharityOrganisation {
   created_at: string
 }
 
+export interface Receipt {
+  id: number
+  uuid: string
+  payment_id: number
+  listing_id: number
+  bidder_id: number
+  item_title: string
+  amount: number
+  charity_name: string
+  receipt_ref: string
+  integrity_hash: string
+  generated_at: string
+}
+
 export interface AuditEvent {
   id: number
   timestamp: string

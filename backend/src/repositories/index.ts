@@ -53,6 +53,10 @@ export const {
   getDeliveryByListingId,
   updateDelivery,
 
+  addReceipt,
+  getReceiptByUuid,
+  getReceiptsByBidder,
+
   addPayment,
   updatePayment,
   getPaymentByUuid,

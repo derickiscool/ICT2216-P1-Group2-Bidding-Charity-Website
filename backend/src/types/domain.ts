@@ -159,6 +159,20 @@ export interface Delivery {
   created_at: string;
 }
 
+export interface Receipt {
+  id: number;
+  uuid: string;
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+  generated_at: string;
+}
+
 export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired';
 export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded';
 

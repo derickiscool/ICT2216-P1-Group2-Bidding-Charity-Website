@@ -6,6 +6,7 @@ import type {
   CharityOrganisation,
   Delivery,
   Listing,
+  Receipt,
   Payment,
   PaymentWithListing,
   NewCampaignInput,
@@ -87,6 +88,19 @@ export interface BidForGoodRepository {
   addDelivery(listingId: number): Promise<Delivery>;
   getDeliveryByListingId(listingId: number): Promise<Delivery | undefined>;
   updateDelivery(delivery: Delivery): Promise<void>;
+
+  addReceipt(input: {
+    payment_id: number;
+    listing_id: number;
+    bidder_id: number;
+    item_title: string;
+    amount: number;
+    charity_name: string;
+    receipt_ref: string;
+    integrity_hash: string;
+  }): Promise<Receipt>;
+  getReceiptByUuid(uuid: string): Promise<Receipt | undefined>;
+  getReceiptsByBidder(bidderId: number): Promise<Receipt[]>;
 
   addPayment(input: NewPaymentInput): Promise<Payment>;
   updatePayment(payment: Payment): Promise<void>;

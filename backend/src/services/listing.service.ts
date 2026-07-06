@@ -1,7 +1,6 @@
 import type { Request } from 'express';
 import type { Delivery, Listing, ListingStatus } from '../types/domain';
 import { addDelivery, addListing, getCampaignById, getCharityById, getDeliveryByListingId, getListingByUuid, getPaymentsForListing, listActiveListings, listListings, listListingsByDonor, listPendingListings, updateDelivery, updateListing } from '../repositories';
-import type { Payment } from '../types/domain';
 import { badRequest, forbidden, notFound } from '../utils/errors';
 import { isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
 import { audit } from './audit.service';

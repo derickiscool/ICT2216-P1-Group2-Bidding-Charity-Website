@@ -9,6 +9,7 @@ import type {
   Listing,
   Payment,
   PaymentWithListing,
+  Receipt,
   NewCampaignInput,
   PasswordResetToken,
   PendingRegistration,
@@ -180,6 +181,20 @@ interface AuditEventRow {
   current_hash: string;
 }
 
+interface ReceiptRow {
+  id: number;
+  uuid: string;
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number | string;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+  generated_at: DbDate;
+}
+
 const USER_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
 
 const firstRow = async <T>(sql: string, params?: unknown[]): Promise<T | undefined> => {
@@ -341,6 +356,20 @@ const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing =
   listing_uuid: row.listing_uuid,
   listing_title: row.listing_title,
   charity_name: row.charity_name,
+});
+
+const mapReceipt = (row: ReceiptRow): Receipt => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  payment_id: Number(row.payment_id),
+  listing_id: Number(row.listing_id),
+  bidder_id: Number(row.bidder_id),
+  item_title: row.item_title,
+  amount: Number(row.amount),
+  charity_name: row.charity_name,
+  receipt_ref: row.receipt_ref,
+  integrity_hash: row.integrity_hash,
+  generated_at: toIso(row.generated_at),
 });
 
 const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
@@ -892,6 +921,35 @@ const updateDelivery = async (delivery: Delivery): Promise<void> => {
   );
 };
 
+const addReceipt = async (input: {
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+}): Promise<Receipt> => {
+  const row = await firstRow<ReceiptRow>(
+    `INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [input.payment_id, input.listing_id, input.bidder_id, input.item_title, input.amount, input.charity_name, input.receipt_ref, input.integrity_hash],
+  );
+  if (!row) throw new Error('Failed to create receipt.');
+  return mapReceipt(row);
+};
+
+const getReceiptByUuid = async (uuid: string): Promise<Receipt | undefined> => {
+  const row = await firstRow<ReceiptRow>('SELECT * FROM receipts WHERE uuid = $1 LIMIT 1', [uuid]);
+  return row ? mapReceipt(row) : undefined;
+};
+
+const getReceiptsByBidder = async (bidderId: number): Promise<Receipt[]> => {
+  const rows = await allRows<ReceiptRow>('SELECT * FROM receipts WHERE bidder_id = $1 ORDER BY generated_at DESC, id DESC', [bidderId]);
+  return rows.map(mapReceipt);
+};
+
 const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
   const row = await firstRow<PaymentRow>(
     `INSERT INTO payments
@@ -1142,6 +1200,10 @@ export const postgresRepository: BidForGoodRepository = {
   addDelivery,
   getDeliveryByListingId,
   updateDelivery,
+
+  addReceipt,
+  getReceiptByUuid,
+  getReceiptsByBidder,
 
   addPayment,
   updatePayment,

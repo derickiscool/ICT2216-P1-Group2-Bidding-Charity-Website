@@ -283,6 +283,14 @@ export const releaseEscrowForListing = async (listingId: number, req: Request): 
   await updPayment(heldPayment);
 
   await audit(req, 'ESCROW_RELEASED', { listingId, amount: heldPayment.amount }, 'payment', heldPayment.uuid, req.user?.id);
+
+  // Generate receipt on escrow release
+  const { generateReceipt: genReceipt } = await import('./receipt.service');
+  const { getListingById: getListing } = await import('../repositories');
+  const listing = await getListing(listingId);
+  if (listing) {
+    await genReceipt(heldPayment, listing, req.user?.username ?? 'bidder').catch(() => {});
+  }
 };
 
 export const closeExpiredAuctions = async (forceUuid?: string): Promise<number> => {

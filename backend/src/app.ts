@@ -9,6 +9,7 @@ import bidRoutes from './routes/bid.routes';
 import paymentRoutes from './routes/payment.routes';
 import adminRoutes from './routes/admin.routes';
 import charityRoutes from './routes/charity.routes';
+import receiptRoutes from './routes/receipt.routes';
 import profileRoutes from './routes/profile.routes';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { securityHeaders } from './middleware/securityHeaders.middleware';
@@ -33,6 +34,7 @@ export const createApp = () => {
   app.use('/api/payments', paymentRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/charities', charityRoutes);
+  app.use('/api/receipts', receiptRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

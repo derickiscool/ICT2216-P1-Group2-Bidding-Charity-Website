@@ -93,6 +93,7 @@ import DonorListingsPage from './pages/DonorListingsPage'
 import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import ReceiptPage from './pages/ReceiptPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -151,6 +152,11 @@ export default function App() {
             <Route path="/admin/audit" element={<AdminAuditPage />} />
             <Route path="/admin/active-listings" element={<AdminActiveListingsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
+          </Route>
+
+          {/* ── Auth required (any role) ── */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/receipts/:uuid" element={<ReceiptPage />} />
           </Route>
 
           {/* ── 404 ── */}

@@ -166,4 +166,20 @@ SELECT (SELECT id FROM listings WHERE title = 'Antique Pocket Watch'),
        NOW()
 WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-POCKET-WATCH-001');
 
+-- Demo completed payment for receipt testing (Signed Premier League Jersey)
+INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
+SELECT (SELECT id FROM listings WHERE title = 'Signed Premier League Jersey'),
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'),
+       1250, 'DEMO-RECEIPT-001', 'released', 'successful',
+       NOW() - INTERVAL '1 hour', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour'
+WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-RECEIPT-001');
+
+-- Demo receipt for the completed payment
+INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash, generated_at)
+SELECT p.id, p.listing_id, p.bidder_id, l.title, p.amount, l.charity_name,
+       'RCP-DEMO-001', encode(sha256(random()::text::bytea), 'hex'), p.paid_at
+FROM payments p JOIN listings l ON p.listing_id = l.id
+WHERE p.payment_ref = 'DEMO-RECEIPT-001'
+AND NOT EXISTS (SELECT 1 FROM receipts WHERE receipt_ref = 'RCP-DEMO-001');
+
 COMMIT;

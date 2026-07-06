@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Gavel, DollarSign, Target, ExternalLink, Loader2, AlertCircle, CheckCircle, Truck } from 'lucide-react'
+import { Gavel, DollarSign, Target, ExternalLink, Loader2, AlertCircle, CheckCircle, Truck, FileText } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { Bid, BidderStats, ApiError } from '../types'
@@ -29,7 +29,16 @@ export default function BidderDashboard() {
     escrow_state: string
   }
 
+  interface ReceiptItem {
+    uuid: string
+    item_title: string
+    amount: number
+    charity_name: string
+    generated_at: string
+  }
+
   const [paidItems, setPaidItems] = useState<PaidItem[]>([])
+  const [receipts, setReceipts] = useState<ReceiptItem[]>([])
 
   const handleConfirmDelivery = async (listingUuid: string) => {
     setConfirming(listingUuid)
@@ -48,13 +57,15 @@ export default function BidderDashboard() {
       setLoading(true)
       setError(null)
       try {
-        const [bidsRes, paymentsRes] = await Promise.all([
+        const [bidsRes, paymentsRes, receiptsRes] = await Promise.all([
           api.get<{ bids: Bid[]; stats: BidderStats }>('/bids/bidder'),
           api.get<{ data: PaidItem[] }>('/payments/mine').catch(() => ({ data: { data: [] as PaidItem[] } })),
+          api.get<{ data: ReceiptItem[] }>('/receipts/mine').catch(() => ({ data: { data: [] as ReceiptItem[] } })),
         ])
         setBids(bidsRes.data.bids)
         setStats(bidsRes.data.stats)
         setPaidItems((paymentsRes.data.data ?? []).filter(p => p.escrow_state === 'held'))
+        setReceipts(receiptsRes.data.data ?? [])
       } catch (err) {
         const ae = err as ApiError
         setError(ae.message || 'Failed to load dashboard.')
@@ -150,6 +161,33 @@ export default function BidderDashboard() {
                     {confirming === item.listing_uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
                     {confirming === item.listing_uuid ? 'Confirming...' : 'Confirm Delivery'}
                   </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Receipts */}
+        {receipts.length > 0 && (
+          <div className="rounded-2xl bg-white overflow-hidden mb-6" style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: C.beige }}>
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4" style={{ color: C.emerald }} />
+                <h2 className="font-bold" style={{ color: C.slate }}>Donation Receipts</h2>
+              </div>
+            </div>
+            <div className="divide-y" style={{ borderColor: C.beige }}>
+              {receipts.map((r) => (
+                <div key={r.uuid} className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium" style={{ color: C.slate }}>{r.item_title}</p>
+                    <p className="text-xs mt-0.5" style={{ color: C.muted }}>{r.charity_name} · ${r.amount.toLocaleString()}</p>
+                  </div>
+                  <Link to={`/receipts/${r.uuid}`}
+                    className="flex items-center gap-1 px-4 py-2 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90"
+                    style={{ background: C.emerald }}>
+                    <FileText className="w-3 h-3" /> View Receipt
+                  </Link>
                 </div>
               ))}
             </div>
