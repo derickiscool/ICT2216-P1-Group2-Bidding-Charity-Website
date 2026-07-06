@@ -90,13 +90,6 @@ export default function DonorListingsPage() {
     const [editErrors, setEditErrors] = useState<Record<string, string>>({})
     const [imageErr, setImageErr] = useState('')
 
-    const newImagePreviews = useMemo(
-        () => editForm.newImages.map(file => ({ file, url: URL.createObjectURL(file) })),
-        [editForm.newImages]
-    )
-
-    useEffect(() => () => newImagePreviews.forEach(preview => URL.revokeObjectURL(preview.url)), [newImagePreviews])
-
     const fetchListings = useCallback(async () => {
         setIsLoading(true)
         setGlobalErr('')
@@ -321,14 +314,13 @@ export default function DonorListingsPage() {
                             return (
                                 <article key={listing.uuid ?? listing.id} className="rounded-2xl overflow-hidden shadow-sm flex flex-col" style={{ background: C.white, border: `1px solid ${C.beige}` }}>
                                     <div className="h-44 bg-slate-100 relative flex items-center justify-center overflow-hidden">
-                                        {listing.images?.[0] ? (
-                                            <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="flex flex-col items-center gap-2" style={{ color: C.muted }}>
-                                                <ImageIcon className="w-8 h-8" />
-                                                <span className="text-xs">No image</span>
-                                            </div>
-                                        )}
+                                        <div className="flex flex-col items-center gap-2" style={{ color: C.muted }}>
+                                            <ImageIcon className="w-8 h-8" />
+                                            <span className="text-xs">
+                                                {listing.images?.length ? 'Image available' : 'No image'}
+                                            </span>
+                                        </div>
+
                                         <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ background: status.bg, color: status.fg }}>
                                             {status.label}
                                         </span>
@@ -444,16 +436,25 @@ export default function DonorListingsPage() {
                                 {imageErr && <p className="text-xs mt-1 text-red-500">{imageErr}</p>}
 
                                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
-                                    {editForm.existingImages.map(image => (
-                                        <div key={image} className="relative aspect-square rounded-lg overflow-hidden border group" style={{ borderColor: C.beige }}>
-                                            <img src={image} alt="Existing listing" className="w-full h-full object-cover" />
-                                            <button type="button" onClick={() => removeExistingImage(image)} className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100">Remove</button>
+                                    {editForm.existingImages.map((image, index) => (
+                                        <div key={index} className="relative aspect-square rounded-lg overflow-hidden border group bg-gray-100 flex items-center justify-center" style={{ borderColor: C.beige }}>
+                                        <span className="text-xs font-medium text-gray-500 text-center px-2">
+                                            Existing image
+                                        </span>
+                                        <button type="button" onClick={() => removeExistingImage(image)} className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100">
+                                            Remove
+                                        </button>
                                         </div>
                                     ))}
-                                    {newImagePreviews.map((preview, index) => (
-                                        <div key={`${preview.url}-${index}`} className="relative aspect-square rounded-lg overflow-hidden border group" style={{ borderColor: C.beige }}>
-                                            <img src={preview.url.startsWith('blob:') ? preview.url : ''} alt="New listing image preview" className="w-full h-full object-cover" />
-                                            <button type="button" onClick={() => removeNewImage(index)} className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100">Remove</button>
+
+                                    {editForm.newImages.map((_, index) => (
+                                        <div key={index} className="relative aspect-square rounded-lg overflow-hidden border group bg-gray-100 flex items-center justify-center" style={{ borderColor: C.beige }}>
+                                            <span className="text-xs font-medium text-gray-500 text-center px-2">
+                                                New image
+                                            </span>
+                                            <button type="button" onClick={() => removeNewImage(index)} className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100">
+                                                Remove
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
