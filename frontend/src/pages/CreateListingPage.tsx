@@ -319,8 +319,8 @@ export default function CreateListingPage() {
                 {imagePreviews.length > 0 && (
                   <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {imagePreviews.map((img, i) => (
-                      <div key={img.file.name + i} className="relative group rounded-md overflow-hidden bg-gray-100 aspect-square border border-gray-200">
-                        <img src={img.url} alt={img.file.name} className="w-full h-full object-cover" />
+                      <div key={`${img.url}-${i}`} className="relative group rounded-md overflow-hidden">
+                        <img src={img.url.startsWith('blob:') ? img.url : ''} alt="Listing image preview" className="w-full h-full object-cover" />
                         <button type="button" onClick={() => removeImage(i)}
                           className="absolute inset-0 bg-black bg-opacity-50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs">
                           Remove

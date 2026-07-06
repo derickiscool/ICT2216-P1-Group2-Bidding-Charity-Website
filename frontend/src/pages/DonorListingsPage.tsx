@@ -451,8 +451,8 @@ export default function DonorListingsPage() {
                                         </div>
                                     ))}
                                     {newImagePreviews.map((preview, index) => (
-                                        <div key={preview.file.name + index} className="relative aspect-square rounded-lg overflow-hidden border group" style={{ borderColor: C.beige }}>
-                                            <img src={preview.url} alt={preview.file.name} className="w-full h-full object-cover" />
+                                        <div key={`${preview.url}-${index}`} className="relative aspect-square rounded-lg overflow-hidden border group" style={{ borderColor: C.beige }}>
+                                            <img src={preview.url.startsWith('blob:') ? preview.url : ''} alt="New listing image preview" className="w-full h-full object-cover" />
                                             <button type="button" onClick={() => removeNewImage(index)} className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100">Remove</button>
                                         </div>
                                     ))}
