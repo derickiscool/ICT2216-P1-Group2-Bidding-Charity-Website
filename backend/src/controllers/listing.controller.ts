@@ -4,12 +4,12 @@ import {
   createListing,
   deleteListing,
   getPendingListings,
-  getMyListingTrackingDashboard,
   getPublicListing,
   listMyListings,
   searchPublicListings,
   updateListingDetails,
 } from '../services/listing.service';
+import { getMyListingTrackingDashboard } from '../services/listingTracking.service';
 
 export const listActive = async (req: Request, res: Response): Promise<void> => {
   const listings = await searchPublicListings(req.query);
