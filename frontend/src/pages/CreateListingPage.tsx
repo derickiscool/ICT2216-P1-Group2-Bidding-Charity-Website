@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Upload, AlertCircle, CheckCircle2, Loader2, Info } from 'lucide-react'
 import api from '../services/api'
@@ -71,6 +71,10 @@ export default function CreateListingPage() {
 
   const [images, setImages] = useState<File[]>([])
   const [imgError, setImgError] = useState('')
+
+  // Object URLs are used only for local previews; the backend receives the real files.
+  const imagePreviews = useMemo(() => images.map(file => ({ file, url: URL.createObjectURL(file) })), [images])
+  useEffect(() => () => imagePreviews.forEach(preview => URL.revokeObjectURL(preview.url)), [imagePreviews])
 
   const [form, setForm] = useState({
     title: '',
@@ -312,13 +316,11 @@ export default function CreateListingPage() {
                   <p className="text-xs mb-4" style={{ color: C.muted }}>JPG, PNG, or WebP. Max 2MB each.</p>
                 </label>
                 {imgError && <p className="text-xs mt-2 text-red-500">{imgError}</p>}
-                {images.length > 0 && (
+                {imagePreviews.length > 0 && (
                   <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {images.map((_, i) => (
-                      <div key={i} className="relative group rounded-md overflow-hidden bg-gray-100 aspect-square flex items-center justify-center border border-gray-200">
-                        <span className="text-xs font-medium text-gray-500 text-center px-2">
-                          Image selected
-                        </span>
+                    {imagePreviews.map((img, i) => (
+                      <div key={`${img.url}-${i}`} className="relative group rounded-md overflow-hidden bg-gray-100 aspect-square flex items-center justify-center border border-gray-200">
+                        <img src={img.url} alt="Listing image preview" className="w-full h-full object-cover" />
 
                         <button
                           type="button"
