@@ -226,9 +226,14 @@ export default function AuctionDetailPage() {
         <div className="rounded-2xl p-10 text-center bg-white" style={{ border: '1px solid var(--bfg-beige)' }}>
           <p className="text-lg font-bold mb-4" style={{ color: 'var(--bfg-slate)' }}>Listing not found</p>
           <p className="text-sm mb-6" style={{ color: 'var(--bfg-text-muted)' }}>{pageError}</p>
-          <Link to="/auctions" className="px-6 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'var(--bfg-emerald)' }}>
-            Back to Auctions
-          </Link>
+          <div className="flex items-center justify-center gap-3">
+            <Link to="/dashboard" className="px-6 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'var(--bfg-linen)', color: 'var(--bfg-slate)', border: '1px solid var(--bfg-beige)' }}>
+              Dashboard
+            </Link>
+            <Link to="/auctions" className="px-6 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'var(--bfg-emerald)' }}>
+              Browse Auctions
+            </Link>
+          </div>
         </div>
       </div>
     )
@@ -268,11 +273,19 @@ export default function AuctionDetailPage() {
              style={{ background: 'rgba(4,120,87,0.2)' }} />
 
         <div className="relative max-w-[1440px] mx-auto">
-          <Link to="/auctions"
-                className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest mb-5 transition-opacity hover:opacity-70"
-                style={{ color: 'var(--bfg-beige)' }}>
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to Auctions
-          </Link>
+          <div className="flex items-center gap-4 mb-5">
+            <Link to="/dashboard"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--bfg-beige)' }}>
+              Dashboard
+            </Link>
+            <span style={{ color: 'rgba(187,176,155,0.4)' }}>/</span>
+            <Link to="/auctions"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--bfg-beige)' }}>
+              <ArrowLeft className="w-3.5 h-3.5" /> Back to Auctions
+            </Link>
+          </div>
 
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest"

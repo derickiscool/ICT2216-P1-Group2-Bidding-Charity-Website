@@ -174,10 +174,16 @@ export default function DonorDashboard() {
                         {new Date(listing.end_time).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <Link to={`/auctions/${listing.uuid}`}
-                          className="text-xs font-semibold" style={{ color: C.emerald }}>
-                          View →
-                        </Link>
+                        {listing.status === 'pending' ? (
+                          <span className="text-xs" style={{ color: C.muted }}>Pending review</span>
+                        ) : listing.status === 'draft' ? (
+                          <span className="text-xs" style={{ color: C.muted }}>Draft</span>
+                        ) : (
+                          <Link to={`/auctions/${listing.uuid}`}
+                            className="text-xs font-semibold" style={{ color: C.emerald }}>
+                            View →
+                          </Link>
+                        )}
                       </td>
                     </tr>
                   ))}
