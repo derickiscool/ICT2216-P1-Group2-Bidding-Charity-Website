@@ -10,6 +10,7 @@ import {
   getListing,
   listActive,
   listMine,
+  listMineTracking,
   pending,
   remove,
   update,
@@ -21,6 +22,7 @@ const router = Router();
 // Public auction browsing endpoint
 router.get('/', asyncHandler(listActive));
 
+router.get('/mine/tracking', asyncHandler(authenticate), requireRole('donor', 'admin'), asyncHandler(listMineTracking));
 router.get('/mine', asyncHandler(authenticate), requireRole('donor', 'admin'), asyncHandler(listMine));
 router.get('/admin/pending', asyncHandler(authenticate), requireRole('admin'), asyncHandler(pending));
 
