@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Heart, HeartHandshake, Settings, ShieldCheck, Menu, X, Users, CreditCard } from 'lucide-react'
+import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, HeartHandshake, Settings, ShieldCheck, Menu, X, Users, Plus, CreditCard } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 // ─── Avatar dropdown ─────────────────────────────────────────────────────────

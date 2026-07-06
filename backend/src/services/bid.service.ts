@@ -1,6 +1,6 @@
 import type { Request } from 'express';
-import type { Bid } from '../types/domain';
-import { addBid, getBidsForListing, getListingById, updateListing, withListingLock } from '../repositories';
+import type { Bid, BidWithListing } from '../types/domain';
+import { addBid, getBidsByBidder, getBidsForListing, getListingById, updateListing, withListingLock } from '../repositories';
 import { badRequest, forbidden, notFound, tooManyRequests } from '../utils/errors';
 import { roundMoney } from '../utils/security';
 import { audit } from './audit.service';
@@ -44,3 +44,19 @@ export const placeBid = async (listingIdInput: number, amountInput: number, req:
 };
 
 export const listBidsForListing = async (listingId: number): Promise<Bid[]> => getBidsForListing(Number(listingId));
+
+export const getBidderBids = async (bidderId: number): Promise<{ bids: BidWithListing[]; stats: BidderStats }> => {
+  const bids = await getBidsByBidder(bidderId);
+  const stats: BidderStats = {
+    total: bids.length,
+    totalSpent: bids.reduce((sum, b) => sum + b.amount, 0),
+    uniqueListings: new Set(bids.map(b => b.listing_id)).size,
+  };
+  return { bids, stats };
+};
+
+export interface BidderStats {
+  total: number;
+  totalSpent: number;
+  uniqueListings: number;
+}

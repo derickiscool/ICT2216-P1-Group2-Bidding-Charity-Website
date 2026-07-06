@@ -1,6 +1,7 @@
 import type {
   AuditEvent,
   Bid,
+  BidWithListing,
   Campaign,
   CharityOrganisation,
   Listing,
@@ -73,9 +74,13 @@ export interface BidForGoodRepository {
   listListings(): Promise<Listing[]>;
   listActiveListings(): Promise<Listing[]>;
   listPendingListings(): Promise<Listing[]>;
+  listListingsByDonor(donorId: number): Promise<Listing[]>;
+
+  listUsers(): Promise<User[]>;
 
   addBid(input: NewBidInput): Promise<Bid>;
   getBidsForListing(listingId: number): Promise<Bid[]>;
+  getBidsByBidder(bidderId: number): Promise<BidWithListing[]>;
   withListingLock<T>(listingId: number, fn: () => Promise<T>): Promise<T>;
 
   addPayment(input: NewPaymentInput): Promise<Payment>;
