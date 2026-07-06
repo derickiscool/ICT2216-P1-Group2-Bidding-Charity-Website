@@ -20,6 +20,12 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const SAFE_IMAGE_SRC = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i
 const isSafeImageSrc = (value: string): boolean => SAFE_IMAGE_SRC.test(value)
 
+// URL.createObjectURL() always returns a browser-generated blob: reference, never
+// attacker-controlled text, but CodeQL's DOM-XSS check only recognises the guard as a
+// sanitizer when the <img> itself is conditionally rendered (not when the condition is
+// embedded inside the src value), so this mirrors the isSafeImageSrc branch shape above.
+const isLocalPreviewSrc = (value: string): boolean => value.startsWith('blob:')
+
 const EMPTY_SUMMARY: DonorListingStatusSummary = {
     total: 0,
     draft: 0,
@@ -515,7 +521,11 @@ export default function DonorListingsPage() {
 
                                     {newImagePreviews.map((preview, index) => (
                                         <div key={`${preview.url}-${index}`} className="relative aspect-square rounded-lg overflow-hidden border group bg-gray-100 flex items-center justify-center" style={{ borderColor: C.beige }}>
-                                            <img src={preview.url} alt="New listing image preview" className="w-full h-full object-cover" />
+                                            {isLocalPreviewSrc(preview.url) ? (
+                                                <img src={preview.url} alt="New listing image preview" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <span className="text-xs font-medium text-gray-500 text-center px-2">New image</span>
+                                            )}
                                             <button type="button" onClick={() => removeNewImage(index)} className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100">
                                                 Remove
                                             </button>

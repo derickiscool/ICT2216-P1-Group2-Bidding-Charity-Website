@@ -15,6 +15,12 @@ const MAX_IMAGES = 5
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
+// URL.createObjectURL() always returns a browser-generated blob: reference, never
+// attacker-controlled text, but CodeQL's DOM-XSS check only recognises the guard as a
+// sanitizer when the <img> itself is conditionally rendered, not when the condition is
+// embedded inside the src value.
+const isLocalPreviewSrc = (value: string): boolean => value.startsWith('blob:')
+
 function inputSt(hasErr: boolean, extra?: React.CSSProperties): React.CSSProperties {
   return {
     width: '100%', padding: '10px 14px', borderRadius: '8px',
@@ -320,7 +326,11 @@ export default function CreateListingPage() {
                   <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {imagePreviews.map((img, i) => (
                       <div key={`${img.url}-${i}`} className="relative group rounded-md overflow-hidden bg-gray-100 aspect-square flex items-center justify-center border border-gray-200">
-                        <img src={img.url} alt="Listing image preview" className="w-full h-full object-cover" />
+                        {isLocalPreviewSrc(img.url) ? (
+                          <img src={img.url} alt="Listing image preview" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-xs font-medium text-gray-500 text-center px-2">Image selected</span>
+                        )}
 
                         <button
                           type="button"
