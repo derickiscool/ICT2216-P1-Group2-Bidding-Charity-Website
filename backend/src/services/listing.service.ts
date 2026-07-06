@@ -53,16 +53,23 @@ const imagesFromUploads = (req: Request): string[] => {
   });
 };
 
+// Existing images are resent as base64 data URLs (up to MAX_LISTING_IMAGE_BYTES of binary,
+// which base64 inflates by ~4/3). These caps must fit a full-size image, or a real photo
+// gets truncated mid-string here, fails the SAFE_IMAGE_URL/currentImages check in
+// buildUpdatedImages, and is silently dropped even though the donor never touched it.
+const MAX_IMAGE_DATA_URL_CHARS = Math.ceil(MAX_LISTING_IMAGE_BYTES * 1.4);
+const MAX_EXISTING_IMAGES_JSON_CHARS = MAX_IMAGE_DATA_URL_CHARS * MAX_LISTING_IMAGES + 1024;
+
 const parseExistingImageInput = (raw: unknown): string[] | undefined => {
   if (raw === undefined) return undefined;
-  if (Array.isArray(raw)) return raw.map(value => safeString(value, 200_000)).filter(Boolean);
+  if (Array.isArray(raw)) return raw.map(value => safeString(value, MAX_IMAGE_DATA_URL_CHARS)).filter(Boolean);
 
-  const text = safeString(raw, 1_000_000);
+  const text = safeString(raw, MAX_EXISTING_IMAGES_JSON_CHARS);
   if (!text) return [];
 
   try {
     const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) return parsed.map(value => safeString(value, 200_000)).filter(Boolean);
+    if (Array.isArray(parsed)) return parsed.map(value => safeString(value, MAX_IMAGE_DATA_URL_CHARS)).filter(Boolean);
   } catch {
     // Fallback: allow a single existing image string if the client does not send JSON.
   }
