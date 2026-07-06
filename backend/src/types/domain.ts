@@ -148,6 +148,17 @@ export interface BidWithListing extends Bid {
   listingUuid?: string;
 }
 
+export interface Delivery {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  tracking_number?: string;
+  courier?: string;
+  shipped_at?: string;
+  confirmed_at?: string;
+  created_at: string;
+}
+
 export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired';
 export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded';
 

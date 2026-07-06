@@ -87,6 +87,7 @@ import CreateListingPage from './pages/CreateListingPage'
 import AdminCharitiesPage from './pages/AdminCharitiesPage'
 import AdminListingsPage from './pages/AdminListingsPage'
 import AdminAuditPage from './pages/AdminAuditPage'
+import AdminActiveListingsPage from './pages/AdminActiveListingsPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import DonorListingsPage from './pages/DonorListingsPage'
 import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
@@ -148,6 +149,7 @@ export default function App() {
             <Route path="/admin/charities" element={<AdminCharitiesPage />} />
             <Route path="/admin/listings" element={<AdminListingsPage />} />
             <Route path="/admin/audit" element={<AdminAuditPage />} />
+            <Route path="/admin/active-listings" element={<AdminActiveListingsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
           </Route>
 

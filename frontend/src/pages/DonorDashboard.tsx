@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { Package, TrendingUp, Clock, CheckCircle, Plus, Loader2, AlertCircle } from 'lucide-react'
+import { Package, TrendingUp, Clock, CheckCircle, Plus, Loader2, AlertCircle, Truck } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { Listing, DonorStats, ApiError } from '../types'
@@ -37,24 +37,52 @@ export default function DonorDashboard() {
   const [stats, setStats] = useState<DonorStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [shippingUuid, setShippingUuid] = useState<string | null>(null)
+  const [trackingNumber, setTrackingNumber] = useState('')
+  const [courier, setCourier] = useState('')
+  const [shippingLoading, setShippingLoading] = useState<string | null>(null)
+  const [shippingSuccess, setShippingSuccess] = useState<string | null>(null)
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await api.get<{ listings: Listing[]; stats: DonorStats }>('/listings/donor')
-        setListings(res.data.listings)
-        setStats(res.data.stats)
-      } catch (err) {
-        const ae = err as ApiError
-        setError(ae.message || 'Failed to load dashboard.')
-      } finally {
-        setLoading(false)
-      }
+  const load = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api.get<{ listings: Listing[]; stats: DonorStats }>('/listings/donor')
+      setListings(res.data.listings)
+      setStats(res.data.stats)
+    } catch (err) {
+      const ae = err as ApiError
+      setError(ae.message || 'Failed to load dashboard.')
+    } finally {
+      setLoading(false)
     }
-    void load()
-  }, [])
+  }
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { load().catch(() => {}) }, [])
+
+  const handleShipping = async (uuid: string) => {
+    if (!trackingNumber.trim() || !courier.trim()) return
+    setShippingLoading(uuid)
+    try {
+      await api.post(`/listings/${uuid}/shipping`, { tracking_number: trackingNumber, courier })
+      setShippingUuid(null)
+      setTrackingNumber('')
+      setCourier('')
+      setShippingSuccess('Shipping details submitted successfully.')
+      setTimeout(() => setShippingSuccess(null), 3000)
+      await load()
+    } catch (err) {
+      const msg = (err as ApiError).message || 'Failed to submit shipping details.'
+      setError(msg)
+      console.error('Shipping error:', msg)
+    } finally {
+      setShippingLoading(null)
+    }
+  }
+
+  const shipReadyListings = listings.filter(l => l.status === 'sold' && l.can_ship)
+  const unpaidListings = listings.filter(l => l.status === 'sold' && !l.can_ship)
 
   if (loading) {
     return (
@@ -64,20 +92,21 @@ export default function DonorDashboard() {
     )
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: C.linen }}>
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 mx-auto mb-4" style={{ color: C.danger }} />
-          <p style={{ color: C.danger }}>{error}</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen" style={{ background: C.linen }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px 24px' }}>
+        {shippingSuccess && (
+          <div className="flex items-center gap-2 p-4 rounded-xl mb-6" style={{ background: C.emeraldLight, color: C.emerald }}>
+            <CheckCircle className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm">{shippingSuccess}</p>
+          </div>
+        )}
+        {error && (
+          <div className="flex items-center gap-2 p-4 rounded-xl mb-6" style={{ background: C.dangerLight, color: C.danger }}>
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm">{error}</p>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -133,6 +162,83 @@ export default function DonorDashboard() {
             <p className="text-xs" style={{ color: C.muted }}>Total Raised</p>
           </div>
         </div>
+
+        {/* Ready to ship */}
+        {shipReadyListings.length > 0 && (
+          <div className="rounded-2xl bg-white overflow-hidden mb-6" style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.beige }}>
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4" style={{ color: C.emerald }} />
+                <h2 className="font-bold" style={{ color: C.slate }}>Ready to Ship</h2>
+              </div>
+            </div>
+            {shipReadyListings.map((listing) => (
+              <div key={listing.id} className="px-6 py-4 border-t" style={{ borderColor: C.beige }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="font-medium" style={{ color: C.slate }}>{listing.title}</p>
+                    <p className="text-xs mt-0.5" style={{ color: C.muted }}>Sold for {money(listing.current_bid)}</p>
+                  </div>
+                </div>
+                {shippingUuid === listing.uuid ? (
+                  <form onSubmit={(e: FormEvent) => { e.preventDefault(); handleShipping(listing.uuid!) }}
+                    className="flex flex-col sm:flex-row gap-3">
+                    <input type="text" value={trackingNumber} autoFocus required
+                      onChange={(e) => setTrackingNumber(e.target.value)}
+                      placeholder="Tracking number"
+                      className="flex-1 px-3 py-2 text-sm rounded-lg outline-none"
+                      style={{ border: '1px solid', borderColor: C.beige }}
+                    />
+                    <input type="text" value={courier} required
+                      onChange={(e) => setCourier(e.target.value)}
+                      placeholder="Courier (e.g. DHL, FedEx)"
+                      className="flex-1 px-3 py-2 text-sm rounded-lg outline-none"
+                      style={{ border: '1px solid', borderColor: C.beige }}
+                    />
+                    <button type="submit" disabled={shippingLoading === listing.uuid || !trackingNumber.trim() || !courier.trim()}
+                      className="px-4 py-2 text-sm font-bold text-white rounded-lg"
+                      style={{ background: C.emerald }}>
+                      {shippingLoading === listing.uuid ? 'Submitting...' : 'Submit'}
+                    </button>
+                    <button type="button" onClick={() => { setShippingUuid(null); setTrackingNumber(''); setCourier('') }}
+                      className="px-4 py-2 text-sm rounded-lg" style={{ color: C.muted }}>
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <button onClick={() => setShippingUuid(listing.uuid!)}
+                    className="px-4 py-2 text-sm font-bold text-white rounded-lg"
+                    style={{ background: C.emerald }}>
+                    Provide Tracking
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Awaiting buyer payment */}
+        {unpaidListings.length > 0 && (
+          <div className="rounded-2xl bg-white overflow-hidden mb-6" style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.beige }}>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4" style={{ color: '#92400E' }} />
+                <h2 className="font-bold" style={{ color: C.slate }}>Awaiting Buyer Payment</h2>
+              </div>
+            </div>
+            {unpaidListings.map((listing) => (
+              <div key={listing.id} className="px-6 py-4 border-t flex items-center justify-between" style={{ borderColor: C.beige }}>
+                <div>
+                  <p className="font-medium" style={{ color: C.slate }}>{listing.title}</p>
+                  <p className="text-xs mt-0.5" style={{ color: C.muted }}>Sold for {money(listing.current_bid)}</p>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                  Awaiting Payment
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Listings table */}
         <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid', borderColor: C.beige }}>

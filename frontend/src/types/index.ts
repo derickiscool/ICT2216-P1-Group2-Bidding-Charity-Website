@@ -72,6 +72,8 @@ export interface Listing {
   min_increment?: number
   bid_count: number
   status: ListingStatus
+  can_ship?: boolean
+  payment_held?: boolean
   start_time: string
   end_time: string
   winner_id?: number

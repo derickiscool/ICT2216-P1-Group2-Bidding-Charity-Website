@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Gavel, DollarSign, Target, ExternalLink, Loader2, AlertCircle } from 'lucide-react'
+import { Gavel, DollarSign, Target, ExternalLink, Loader2, AlertCircle, CheckCircle, Truck } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { Bid, BidderStats, ApiError } from '../types'
@@ -19,15 +19,42 @@ export default function BidderDashboard() {
   const [stats, setStats] = useState<BidderStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<string | null>(null)
+
+  interface PaidItem {
+    uuid: string
+    listing_uuid: string
+    listing_title: string
+    amount: number
+    escrow_state: string
+  }
+
+  const [paidItems, setPaidItems] = useState<PaidItem[]>([])
+
+  const handleConfirmDelivery = async (listingUuid: string) => {
+    setConfirming(listingUuid)
+    try {
+      await api.post(`/listings/${listingUuid}/confirm-delivery`)
+      setPaidItems(prev => prev.filter(p => p.listing_uuid !== listingUuid))
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to confirm delivery.')
+    } finally {
+      setConfirming(null)
+    }
+  }
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       setError(null)
       try {
-        const res = await api.get<{ bids: Bid[]; stats: BidderStats }>('/bids/bidder')
-        setBids(res.data.bids)
-        setStats(res.data.stats)
+        const [bidsRes, paymentsRes] = await Promise.all([
+          api.get<{ bids: Bid[]; stats: BidderStats }>('/bids/bidder'),
+          api.get<{ data: PaidItem[] }>('/payments/mine').catch(() => ({ data: { data: [] as PaidItem[] } })),
+        ])
+        setBids(bidsRes.data.bids)
+        setStats(bidsRes.data.stats)
+        setPaidItems((paymentsRes.data.data ?? []).filter(p => p.escrow_state === 'held'))
       } catch (err) {
         const ae = err as ApiError
         setError(ae.message || 'Failed to load dashboard.')
@@ -97,6 +124,37 @@ export default function BidderDashboard() {
             <p className="text-xs" style={{ color: C.muted }}>Total Spent</p>
           </div>
         </div>
+
+        {/* Items to confirm delivery */}
+        {paidItems.length > 0 && (
+          <div className="rounded-2xl bg-white overflow-hidden mb-6" style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: C.beige }}>
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4" style={{ color: C.emerald }} />
+                <h2 className="font-bold" style={{ color: C.slate }}>Items to Confirm Delivery</h2>
+              </div>
+            </div>
+            <div className="divide-y" style={{ borderColor: C.beige }}>
+              {paidItems.map((item) => (
+                <div key={item.uuid} className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium" style={{ color: C.slate }}>{item.listing_title}</p>
+                    <p className="text-xs mt-0.5" style={{ color: C.muted }}>Paid {money(item.amount)}</p>
+                  </div>
+                  <button
+                    onClick={() => handleConfirmDelivery(item.listing_uuid)}
+                    disabled={confirming === item.listing_uuid}
+                    className="flex items-center gap-1 px-4 py-2 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    style={{ background: C.emerald }}
+                  >
+                    {confirming === item.listing_uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                    {confirming === item.listing_uuid ? 'Confirming...' : 'Confirm Delivery'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Bid history */}
         <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid', borderColor: C.beige }}>

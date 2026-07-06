@@ -49,6 +49,10 @@ export const {
   getBidsForListing,
   getBidsByBidder,
   withListingLock,
+  addDelivery,
+  getDeliveryByListingId,
+  updateDelivery,
+
   addPayment,
   updatePayment,
   getPaymentByUuid,

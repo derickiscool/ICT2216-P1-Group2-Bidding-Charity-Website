@@ -120,11 +120,11 @@ const expireListingWithoutWinner = async (
   await audit(req, action, { listingId: listing.id, ...payload }, 'listing', listing.uuid, req?.user?.id);
 };
 
-const closeEndedActiveListing = async (listingId: number, req?: Request): Promise<boolean> =>
+const closeEndedActiveListing = async (listingId: number, req?: Request, force = false): Promise<boolean> =>
   withListingLock(listingId, async () => {
     const listing = await getListingById(listingId);
     if (!listing || listing.status !== 'active') return false;
-    if (new Date(listing.end_time).getTime() > Date.now()) return false;
+    if (!force && new Date(listing.end_time).getTime() > Date.now()) return false;
 
     // Idempotency guard: if another worker already created a payment offer, do not
     // create duplicates. Tiny guard, big headache saved. Future-you says thanks.
@@ -273,6 +273,18 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
   });
 };
 
+export const releaseEscrowForListing = async (listingId: number, req: Request): Promise<void> => {
+  const { getPaymentsForListing: getPayments, updatePayment: updPayment } = await import('../repositories');
+  const payments = await getPayments(listingId);
+  const heldPayment = payments.find(p => p.escrow_state === 'held');
+  if (!heldPayment) return;
+
+  heldPayment.escrow_state = 'released';
+  await updPayment(heldPayment);
+
+  await audit(req, 'ESCROW_RELEASED', { listingId, amount: heldPayment.amount }, 'payment', heldPayment.uuid, req.user?.id);
+};
+
 export const closeExpiredAuctions = async (forceUuid?: string): Promise<number> => {
   let processed = 0;
 
@@ -281,7 +293,7 @@ export const closeExpiredAuctions = async (forceUuid?: string): Promise<number> 
   if (forceUuid) {
     const listing = await getListingByUuid(forceUuid);
     if (!listing || listing.status !== 'active') throw notFound('Active listing not found.');
-    if (await closeEndedActiveListing(listing.id)) processed += 1;
+    if (await closeEndedActiveListing(listing.id, undefined, true)) processed += 1;
   } else {
     const active = await listActiveListings();
     for (const listing of active) {

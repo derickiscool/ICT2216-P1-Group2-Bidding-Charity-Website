@@ -166,6 +166,19 @@ export default function AdminPage() {
               {stats?.totalUsers ?? 0} registered users
             </p>
           </Link>
+          <Link to="/admin/active-listings"
+            className="rounded-2xl p-6 bg-white block hover:shadow-md transition-shadow"
+            style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.emeraldLight }}>
+                <Package className="w-5 h-5" style={{ color: C.emerald }} />
+              </div>
+            </div>
+            <h3 className="font-bold" style={{ color: C.slate }}>Active Auctions</h3>
+            <p className="text-sm mt-1" style={{ color: C.muted }}>
+              Force-close any active listing
+            </p>
+          </Link>
         </div>
       </div>
     </div>

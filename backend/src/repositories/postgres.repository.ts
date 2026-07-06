@@ -5,6 +5,7 @@ import type {
   BidWithListing,
   Campaign,
   CharityOrganisation,
+  Delivery,
   Listing,
   Payment,
   PaymentWithListing,
@@ -130,6 +131,17 @@ interface BidRow {
   amount: number | string;
   is_auto_bid: boolean;
   created_at: DbDate;
+}
+
+interface DeliveryRow {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  tracking_number: string | null;
+  courier: string | null;
+  shipped_at: Date | null;
+  confirmed_at: Date | null;
+  created_at: Date;
 }
 
 interface PaymentRow {
@@ -311,6 +323,17 @@ const mapPayment = (row: PaymentRow): Payment => ({
   paid_at: optionalIso(row.paid_at),
   created_at: toIso(row.created_at),
   updated_at: toIso(row.updated_at),
+});
+
+const mapDelivery = (row: DeliveryRow): Delivery => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  listing_id: Number(row.listing_id),
+  tracking_number: row.tracking_number ?? undefined,
+  courier: row.courier ?? undefined,
+  shipped_at: optionalIso(row.shipped_at),
+  confirmed_at: optionalIso(row.confirmed_at),
+  created_at: toIso(row.created_at),
 });
 
 const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing => ({
@@ -846,6 +869,29 @@ const withListingLock = async <T>(listingId: number, fn: () => Promise<T>): Prom
     return fn();
   });
 
+const addDelivery = async (listingId: number): Promise<Delivery> => {
+  const row = await firstRow<DeliveryRow>(
+    'INSERT INTO deliveries (listing_id) VALUES ($1) RETURNING *',
+    [listingId],
+  );
+  if (!row) throw new Error('Failed to create delivery record.');
+  return mapDelivery(row);
+};
+
+const getDeliveryByListingId = async (listingId: number): Promise<Delivery | undefined> => {
+  const row = await firstRow<DeliveryRow>('SELECT * FROM deliveries WHERE listing_id = $1 LIMIT 1', [listingId]);
+  return row ? mapDelivery(row) : undefined;
+};
+
+const updateDelivery = async (delivery: Delivery): Promise<void> => {
+  await query(
+    `UPDATE deliveries
+     SET tracking_number = $2, courier = $3, shipped_at = $4, confirmed_at = $5
+     WHERE id = $1`,
+    [delivery.id, delivery.tracking_number ?? null, delivery.courier ?? null, delivery.shipped_at ?? null, delivery.confirmed_at ?? null],
+  );
+};
+
 const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
   const row = await firstRow<PaymentRow>(
     `INSERT INTO payments
@@ -1092,6 +1138,10 @@ export const postgresRepository: BidForGoodRepository = {
   getBidsForListing,
   getBidsByBidder,
   withListingLock,
+
+  addDelivery,
+  getDeliveryByListingId,
+  updateDelivery,
 
   addPayment,
   updatePayment,

@@ -4,6 +4,7 @@ import type {
   BidWithListing,
   Campaign,
   CharityOrganisation,
+  Delivery,
   Listing,
   Payment,
   PaymentWithListing,
@@ -82,6 +83,10 @@ export interface BidForGoodRepository {
   getBidsForListing(listingId: number): Promise<Bid[]>;
   getBidsByBidder(bidderId: number): Promise<BidWithListing[]>;
   withListingLock<T>(listingId: number, fn: () => Promise<T>): Promise<T>;
+
+  addDelivery(listingId: number): Promise<Delivery>;
+  getDeliveryByListingId(listingId: number): Promise<Delivery | undefined>;
+  updateDelivery(delivery: Delivery): Promise<void>;
 
   addPayment(input: NewPaymentInput): Promise<Payment>;
   updatePayment(payment: Payment): Promise<void>;
