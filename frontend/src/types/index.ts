@@ -99,15 +99,29 @@ export interface AutoBid {
 
 // ─── Payments & Receipts ─────────────────────────────────────────────────────
 
-export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'refunded'
+export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired'
+export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded'
 
 export interface Payment {
   id: number
+  uuid: string
   listing_id: number
   bidder_id: number
   amount: number
+  payment_ref: string
+  escrow_state: EscrowState
   status: PaymentStatus
+  payment_deadline: string
+  offered_at: string
+  paid_at?: string
   created_at: string
+  updated_at: string
+}
+
+export interface PaymentWithListing extends Payment {
+  listing_uuid: string
+  listing_title: string
+  charity_name: string
 }
 
 export interface Receipt {
