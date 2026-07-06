@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, HeartHandshake, Settings, ShieldCheck, Menu, X, Users, Plus, CreditCard } from 'lucide-react'
+import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Heart, HeartHandshake, Settings, ShieldCheck, Menu, X, Users, Plus, CreditCard } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 // ─── Avatar dropdown ─────────────────────────────────────────────────────────
@@ -54,6 +54,9 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
         {[
           { icon: LayoutDashboard, label: 'My Dashboard', to: '/dashboard' },
           { icon: Heart, label: 'Watchlist', to: '/dashboard?tab=watchlist' },
+          ...(user?.roles?.includes('donor')
+            ? [{ icon: Plus, label: 'Donate an Item', to: '/listings/create' }]
+            : []),
           { icon: Settings, label: 'Settings', to: '/profile' },
         ].map(item => (
           <Link key={item.label} to={item.to} onClick={onClose}
