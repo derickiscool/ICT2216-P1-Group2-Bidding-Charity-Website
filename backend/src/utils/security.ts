@@ -81,3 +81,10 @@ export const escapeHtml = (value: string): string => {
 };
 
 export const sanitizeText = (value: unknown, maxLength: number): string => escapeHtml(safeString(value, maxLength));
+
+// Mirrors the client-side check in CreateListingPage.tsx/DonorListingsPage.tsx (SFR07).
+// That check alone only stops the UI form; a direct API call would still reach the
+// backend, so listing text must be rejected here too, not just HTML-escaped.
+const SCRIPT_LIKE_PATTERN = /<\s*script|javascript:|on\w+\s*=|<\s*iframe/i;
+
+export const containsScriptLikeContent = (value: string): boolean => SCRIPT_LIKE_PATTERN.test(value);

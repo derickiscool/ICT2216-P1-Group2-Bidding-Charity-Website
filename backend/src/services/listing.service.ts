@@ -2,7 +2,7 @@ import type { Request } from 'express';
 import type { Listing, ListingStatus } from '../types/domain';
 import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listListings, listPendingListings, updateListing } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
-import { isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
+import { containsScriptLikeContent, isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
 import { audit } from './audit.service';
 import { MAX_LISTING_IMAGES, MAX_LISTING_IMAGE_BYTES } from '../middleware/upload.middleware';
 
@@ -18,6 +18,16 @@ const LOCKED_FIELDS = new Set([
 export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected'];
 export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected', 'expired', 'cancelled'];
 const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
+
+// SFR07: reject (not just escape) title/description text containing script-like content,
+// so the rule holds even for requests that bypass the frontend form entirely.
+const sanitizeListingText = (raw: unknown, maxLength: number, field: string): string => {
+  const text = safeString(raw, maxLength);
+  if (containsScriptLikeContent(text)) {
+    throw badRequest(`Please remove script-like content from the listing ${field}.`, 'UNSAFE_TEXT_CONTENT', { [field]: 'Please remove script-like content.' });
+  }
+  return sanitizeText(text, maxLength);
+};
 
 type UploadedListingImage = Express.Multer.File;
 
@@ -111,8 +121,8 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
   if (reservePrice !== undefined && (!Number.isFinite(reservePrice) || reservePrice < starting)) throw badRequest('Reserve price must be a valid number greater than or equal to the starting price.');
   if (buyNowPrice !== undefined && (!Number.isFinite(buyNowPrice) || buyNowPrice <= starting)) throw badRequest('Buy-Now price must be greater than the starting price.');
 
-  const title = sanitizeText(body.title, 120);
-  const description = sanitizeText(body.description, 1200);
+  const title = sanitizeListingText(body.title, 120, 'title');
+  const description = sanitizeListingText(body.description, 1200, 'description');
   const category = sanitizeText(body.category, 60);
   if (title.length < 3 || description.length < 10 || category.length < 2) throw badRequest('Listing title, description, and category are required.');
 
@@ -196,8 +206,8 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
     }
   }
 
-  const title = body.title !== undefined ? sanitizeText(body.title, 120) : listing.title;
-  const description = body.description !== undefined ? sanitizeText(body.description, 1200) : listing.description;
+  const title = body.title !== undefined ? sanitizeListingText(body.title, 120, 'title') : listing.title;
+  const description = body.description !== undefined ? sanitizeListingText(body.description, 1200, 'description') : listing.description;
   const category = body.category !== undefined ? sanitizeText(body.category, 60) : listing.category;
   if (title.length < 3 || description.length < 10 || category.length < 2) throw badRequest('Listing title, description, and category are required.');
 
