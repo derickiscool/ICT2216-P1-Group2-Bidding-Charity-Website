@@ -15,6 +15,11 @@ const MAX_IMAGES = 5
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
+// Mirrors the backend's SAFE_IMAGE_URL allowlist (listing.service.ts) so stored image
+// strings are validated before ever being assigned to an <img> src.
+const SAFE_IMAGE_SRC = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i
+const isSafeImageSrc = (value: string): boolean => SAFE_IMAGE_SRC.test(value)
+
 const EMPTY_SUMMARY: DonorListingStatusSummary = {
     total: 0,
     draft: 0,
@@ -93,6 +98,15 @@ export default function DonorListingsPage() {
     })
     const [editErrors, setEditErrors] = useState<Record<string, string>>({})
     const [imageErr, setImageErr] = useState('')
+
+    // Local object URLs for newly-picked files only; they never carry attacker-controlled
+    // data since they're generated from File objects the browser itself produced.
+    const newImagePreviews = useMemo(
+        () => editForm.newImages.map(file => ({ file, url: URL.createObjectURL(file) })),
+        [editForm.newImages]
+    )
+
+    useEffect(() => () => newImagePreviews.forEach(preview => URL.revokeObjectURL(preview.url)), [newImagePreviews])
 
     const fetchDashboard = useCallback(async () => {
         setIsLoading(true)
@@ -488,16 +502,20 @@ export default function DonorListingsPage() {
                                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
                                     {editForm.existingImages.map((image, index) => (
                                         <div key={index} className="relative aspect-square rounded-lg overflow-hidden border group bg-gray-100 flex items-center justify-center" style={{ borderColor: C.beige }}>
-                                            <span className="text-xs font-medium text-gray-500 text-center px-2">Existing image</span>
+                                            {isSafeImageSrc(image) ? (
+                                                <img src={image} alt="Existing listing" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <span className="text-xs font-medium text-gray-500 text-center px-2">Existing image</span>
+                                            )}
                                             <button type="button" onClick={() => removeExistingImage(image)} className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100">
                                                 Remove
                                             </button>
                                         </div>
                                     ))}
 
-                                    {editForm.newImages.map((_, index) => (
-                                        <div key={index} className="relative aspect-square rounded-lg overflow-hidden border group bg-gray-100 flex items-center justify-center" style={{ borderColor: C.beige }}>
-                                            <span className="text-xs font-medium text-gray-500 text-center px-2">New image</span>
+                                    {newImagePreviews.map((preview, index) => (
+                                        <div key={`${preview.url}-${index}`} className="relative aspect-square rounded-lg overflow-hidden border group bg-gray-100 flex items-center justify-center" style={{ borderColor: C.beige }}>
+                                            <img src={preview.url} alt="New listing image preview" className="w-full h-full object-cover" />
                                             <button type="button" onClick={() => removeNewImage(index)} className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100">
                                                 Remove
                                             </button>
