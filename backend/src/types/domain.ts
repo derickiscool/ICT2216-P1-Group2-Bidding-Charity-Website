@@ -143,6 +143,11 @@ export interface Bid {
   created_at: string;
 }
 
+export interface BidWithListing extends Bid {
+  listingTitle?: string;
+  listingUuid?: string;
+}
+
 export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired';
 export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded';
 

@@ -84,6 +84,10 @@ import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
 import NotFoundPage from './pages/NotFoundPage'
 import CreateListingPage from './pages/CreateListingPage'
+import AdminCharitiesPage from './pages/AdminCharitiesPage'
+import AdminListingsPage from './pages/AdminListingsPage'
+import AdminAuditPage from './pages/AdminAuditPage'
+import AdminUsersPage from './pages/AdminUsersPage'
 import DonorListingsPage from './pages/DonorListingsPage'
 import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
@@ -141,6 +145,10 @@ export default function App() {
           {/* ── Admin only ── */}
           <Route element={<RoleProtectedRoute allowedRoles={['admin']} />}>
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/charities" element={<AdminCharitiesPage />} />
+            <Route path="/admin/listings" element={<AdminListingsPage />} />
+            <Route path="/admin/audit" element={<AdminAuditPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
           </Route>
 
           {/* ── 404 ── */}

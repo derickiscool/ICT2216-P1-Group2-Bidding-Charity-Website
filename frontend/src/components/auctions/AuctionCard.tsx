@@ -89,7 +89,7 @@ export default function AuctionCard({ auction }: { auction: AuctionLike }) {
           </div>
         </div>
         <Link to={`/auctions/${routeId}`} className="block w-full py-2.5 text-white text-sm font-semibold rounded-xl text-center transition-colors" style={{ background: 'var(--bfg-emerald)' }}>
-          Place Bid
+          View Auction
         </Link>
       </div>
     </div>

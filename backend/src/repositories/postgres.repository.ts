@@ -2,6 +2,7 @@ import argon2 from 'argon2';
 import type {
   AuditEvent,
   Bid,
+  BidWithListing,
   Campaign,
   CharityOrganisation,
   Listing,
@@ -790,6 +791,16 @@ const listPendingListings = async (): Promise<Listing[]> => {
   return rows.map(mapListing);
 };
 
+const listUsers = async (): Promise<User[]> => {
+  const rows = await allRows<UserRow>('SELECT * FROM users ORDER BY created_at DESC, id DESC');
+  return rows.map(mapUser);
+};
+
+const listListingsByDonor = async (donorId: number): Promise<Listing[]> => {
+  const rows = await allRows<ListingRow>('SELECT * FROM listings WHERE donor_id = $1 ORDER BY created_at DESC, id DESC', [donorId]);
+  return rows.map(mapListing);
+};
+
 const addBid = async (input: NewBidInput): Promise<Bid> => {
   const row = await firstRow<BidRow>(
     `INSERT INTO bids (listing_id, bidder_id, bidder_username, amount, is_auto_bid)
@@ -804,6 +815,29 @@ const addBid = async (input: NewBidInput): Promise<Bid> => {
 const getBidsForListing = async (listingId: number): Promise<Bid[]> => {
   const rows = await allRows<BidRow>('SELECT * FROM bids WHERE listing_id = $1 ORDER BY amount DESC, created_at ASC', [listingId]);
   return rows.map(mapBid);
+};
+
+interface BidWithListingRow extends BidRow {
+  listing_title?: string;
+  listing_uuid?: string;
+}
+
+const mapBidWithListing = (row: BidWithListingRow): BidWithListing => ({
+  ...mapBid(row),
+  listingTitle: row.listing_title ?? undefined,
+  listingUuid: row.listing_uuid ?? undefined,
+});
+
+const getBidsByBidder = async (bidderId: number): Promise<BidWithListing[]> => {
+  const rows = await allRows<BidWithListingRow>(
+    `SELECT b.*, l.title AS listing_title, l.uuid AS listing_uuid
+     FROM bids b
+     LEFT JOIN listings l ON b.listing_id = l.id
+     WHERE b.bidder_id = $1
+     ORDER BY b.created_at DESC, b.id DESC`,
+    [bidderId]
+  );
+  return rows.map(mapBidWithListing);
 };
 
 const withListingLock = async <T>(listingId: number, fn: () => Promise<T>): Promise<T> =>
@@ -1051,9 +1085,12 @@ export const postgresRepository: BidForGoodRepository = {
   listListings,
   listActiveListings,
   listPendingListings,
+  listListingsByDonor,
+  listUsers,
 
   addBid,
   getBidsForListing,
+  getBidsByBidder,
   withListingLock,
 
   addPayment,

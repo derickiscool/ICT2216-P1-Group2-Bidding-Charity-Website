@@ -1,6 +1,7 @@
 import type { Request } from 'express';
 import { appendAuditEvent, listAuditEvents } from '../repositories';
 import type { AuditEvent } from '../types/domain';
+import { query } from '../utils/db';
 import { sha256 } from '../utils/security';
 
 export const audit = async (
@@ -25,3 +26,28 @@ export const audit = async (
 };
 
 export const getAuditEvents = async (): Promise<AuditEvent[]> => listAuditEvents();
+
+export const getAdminStats = async (): Promise<AdminStats> => {
+  const [userCount, listingCount, bidCount, pendingCharityCount, pendingListingCount] = await Promise.all([
+    query('SELECT COUNT(*)::int AS count FROM users').then(r => r.rows[0]?.count ?? 0),
+    query('SELECT COUNT(*)::int AS count FROM listings').then(r => r.rows[0]?.count ?? 0),
+    query('SELECT COUNT(*)::int AS count FROM bids').then(r => r.rows[0]?.count ?? 0),
+    query("SELECT COUNT(*)::int AS count FROM charities WHERE status = 'pending'").then(r => r.rows[0]?.count ?? 0),
+    query("SELECT COUNT(*)::int AS count FROM listings WHERE status = 'pending'").then(r => r.rows[0]?.count ?? 0),
+  ]);
+  return {
+    totalUsers: Number(userCount),
+    totalListings: Number(listingCount),
+    totalBids: Number(bidCount),
+    pendingCharities: Number(pendingCharityCount),
+    pendingListings: Number(pendingListingCount),
+  };
+};
+
+export interface AdminStats {
+  totalUsers: number;
+  totalListings: number;
+  totalBids: number;
+  pendingCharities: number;
+  pendingListings: number;
+}

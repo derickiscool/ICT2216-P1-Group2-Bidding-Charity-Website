@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { getApprovedCharities, getCharities, registerCharity, reviewCharity } from '../services/charity.service';
+import { getApprovedCharities, getCharities, getCharityDashboard, registerCharity, reviewCharity } from '../services/charity.service';
 import { listAllActiveCampaigns } from '../repositories';
 
 export const createCharityRegistration = async (req: Request, res: Response): Promise<void> => {
@@ -41,4 +41,9 @@ export const listPublicCampaigns = async (_req: Request, res: Response): Promise
       hasImage: c.hasImage,
     }))
   );
+};
+
+export const charityDashboard = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) return;
+  res.json(await getCharityDashboard(req.user.id));
 };

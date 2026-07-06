@@ -34,7 +34,7 @@ interface RegisterResponse {
 export const useAuthStore = create<AuthStore>((set, get) => ({
   user: null,
   isAuthenticated: false,
-  isLoading: false,
+  isLoading: true,
 
   login: async (email, password) => {
     set({ isLoading: true })
@@ -83,10 +83,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   fetchMe: async () => {
     try {
       const res = await api.get<User>('/auth/me')
-      set({ user: res.data, isAuthenticated: true })
+      set({ user: res.data, isAuthenticated: true, isLoading: false })
     } catch {
       setCsrfToken(null)
-      set({ user: null, isAuthenticated: false })
+      set({ user: null, isAuthenticated: false, isLoading: false })
     }
   },
 

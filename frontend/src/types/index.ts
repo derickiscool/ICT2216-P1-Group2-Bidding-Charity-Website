@@ -4,6 +4,7 @@ export type UserRole = 'bidder' | 'donor' | 'charity_staff' | 'charity' | 'admin
 
 export interface User {
   id: number
+  uuid?: string
   email: string
   username: string
   full_name: string
@@ -113,6 +114,8 @@ export interface Bid {
   amount: number
   is_auto_bid: boolean
   created_at: string
+  listingTitle?: string
+  listingUuid?: string
 }
 
 export interface AutoBid {
@@ -193,4 +196,67 @@ export interface PaginatedResponse<T> {
 export interface ApiError {
   message: string
   errors?: Record<string, string>
+}
+
+// ─── Dashboard Stats ──────────────────────────────────────────────────────────
+
+export interface DonorStats {
+  total: number
+  active: number
+  sold: number
+  pending: number
+  draft: number
+  totalRaised: number
+}
+
+export interface BidderStats {
+  total: number
+  totalSpent: number
+  uniqueListings: number
+}
+
+export interface CharityStats {
+  totalItems: number
+  activeItems: number
+  totalRaised: number
+}
+
+export interface AdminStats {
+  totalUsers: number
+  totalListings: number
+  totalBids: number
+  pendingCharities: number
+  pendingListings: number
+}
+
+export type CharityStatus = 'pending' | 'approved' | 'rejected'
+
+export interface CharityOrganisation {
+  id: number
+  uuid: string
+  ownerUserId: number
+  organisationName: string
+  description: string
+  documentName: string
+  documentMime: string
+  documentSha256: string
+  status: CharityStatus
+  reviewedBy?: number
+  reviewedAt?: string
+  rejectionReason?: string
+  created_at: string
+}
+
+export interface AuditEvent {
+  id: number
+  timestamp: string
+  actorUserId?: number
+  action: string
+  resourceType?: string
+  resourceId?: string
+  ipHash?: string
+  userAgentHash?: string
+  payload: Record<string, unknown>
+  previousHash: string
+  currentHash: string
 }
