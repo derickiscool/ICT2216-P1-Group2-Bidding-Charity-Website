@@ -4,6 +4,8 @@ import type {
   Campaign,
   CharityOrganisation,
   Listing,
+  Payment,
+  PaymentWithListing,
   NewCampaignInput,
   PendingRegistration,
   SessionRecord,
@@ -18,6 +20,7 @@ export type NewUserInput = Omit<User, 'id' | 'uuid' | 'created_at' | 'failedLogi
 export type NewCharityInput = Omit<CharityOrganisation, 'id' | 'uuid' | 'status' | 'created_at'>;
 export type NewListingInput = Omit<Listing, 'id' | 'uuid' | 'created_at' | 'current_bid' | 'bid_count' | 'winner_id'>;
 export type NewBidInput = Omit<Bid, 'id' | 'uuid' | 'created_at'>;
+export type NewPaymentInput = Omit<Payment, 'id' | 'uuid' | 'created_at' | 'updated_at' | 'paid_at'> & { paid_at?: string };
 export type NewAuditEventInput = Omit<AuditEvent, 'id' | 'timestamp' | 'previousHash' | 'currentHash' | 'payload'> & {
   payload?: Record<string, unknown>;
 };
@@ -68,6 +71,14 @@ export interface BidForGoodRepository {
   addBid(input: NewBidInput): Promise<Bid>;
   getBidsForListing(listingId: number): Promise<Bid[]>;
   withListingLock<T>(listingId: number, fn: () => Promise<T>): Promise<T>;
+
+  addPayment(input: NewPaymentInput): Promise<Payment>;
+  updatePayment(payment: Payment): Promise<void>;
+  getPaymentByUuid(uuid: string): Promise<Payment | undefined>;
+  getPaymentsForListing(listingId: number): Promise<Payment[]>;
+  getPendingPaymentForListing(listingId: number): Promise<Payment | undefined>;
+  listPaymentsByBidder(bidderId: number): Promise<PaymentWithListing[]>;
+  withPaymentLock<T>(paymentId: number, fn: () => Promise<T>): Promise<T>;
 
   appendAuditEvent(event: NewAuditEventInput): Promise<AuditEvent>;
   listAuditEvents(): Promise<AuditEvent[]>;
