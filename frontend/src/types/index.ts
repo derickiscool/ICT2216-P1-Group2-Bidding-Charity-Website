@@ -49,7 +49,7 @@ export interface Campaign {
 
 // ─── Listings & Auctions ─────────────────────────────────────────────────────
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled'
+export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected'
 export type ItemCondition = 'new' | 'like_new' | 'good' | 'fair'
 
 export interface Listing {
