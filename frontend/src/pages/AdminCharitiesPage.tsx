@@ -33,23 +33,21 @@ export default function AdminCharitiesPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [actionUuid, setActionUuid] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await api.get<CharityOrganisation[]>('/charities')
-        if (!cancelled) setCharities(res.data)
-      } catch (err) {
-        if (!cancelled) setError((err as ApiError).message || 'Failed to load charities.')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  const load = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api.get<CharityOrganisation[]>('/charities')
+      setCharities(res.data)
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to load charities.')
+    } finally {
+      setLoading(false)
     }
-    load()
-    return () => { cancelled = true }
-  }, [])
+  }
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { load().catch(() => {}) }, [])
 
   const handleApprove = async (uuid: string) => {
     setActionUuid(uuid)

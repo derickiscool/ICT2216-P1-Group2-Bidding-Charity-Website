@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Package, Loader2, AlertCircle, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Package, Loader2, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react'
 import api from '../services/api'
 import type { Listing, ApiError } from '../types'
 
@@ -103,12 +103,19 @@ export default function AdminListingsPage() {
                       <td className="px-6 py-4 text-right hidden md:table-cell font-medium" style={{ color: C.slate }}>{money(l.starting_price)}</td>
                       <td className="px-6 py-4 hidden lg:table-cell" style={{ color: C.muted }}>{l.charityName}</td>
                       <td className="px-6 py-4 text-right">
-                        <button onClick={() => handleApprove(l.uuid!)} disabled={approving === l.uuid}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50 ml-auto"
-                          style={{ background: C.emerald }}>
-                          {approving === l.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-                          {approving === l.uuid ? 'Approving...' : 'Approve'}
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <Link to={`/auctions/${l.uuid}`} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-opacity hover:opacity-80"
+                            style={{ color: C.emerald, border: '1px solid', borderColor: C.emerald }}>
+                            <ExternalLink className="w-3 h-3" /> View
+                          </Link>
+                          <button onClick={() => handleApprove(l.uuid!)} disabled={approving === l.uuid}
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                            style={{ background: C.emerald }}>
+                            {approving === l.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                            {approving === l.uuid ? 'Approving...' : 'Approve'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
