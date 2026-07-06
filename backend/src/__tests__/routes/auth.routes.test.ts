@@ -11,7 +11,12 @@ import {
   getPendingRegistration,
   savePendingRegistration,
 } from '../../repositories/postgres.repository';
-import { readDevOtpForTest } from '../../services/otpDelivery.service';
+import {
+  readDevOtpForTest,
+  readDevResetTokenForTest,
+  clearDevResetTokenForTest,
+} from '../../services/otpDelivery.service';
+import { query } from '../../utils/db';
 
 beforeAll(startServer);
 afterAll(stopServer);
@@ -109,7 +114,7 @@ describe('SFR01 — Registration & Email Verification', () => {
     assert.deepEqual(validNew.body, dup.body);
   });
 
-  test('verifies OTP once, rejects reused OTP, expires old OTP, and locks after three failures', async () => {
+  test('verifies registration OTP once, rejects reused OTP, expires old OTP, and locks after three failures', async () => {
     const email = 'otpuser@example.com';
     const start = await postJson('/api/auth/register', {
       email,
@@ -179,5 +184,90 @@ describe('SFR01 — Registration & Email Verification', () => {
       otp: '000002',
     });
     assert.equal(locked.response.status, 429);
+  });
+});
+
+describe('Password Reset Flow', () => {
+  const email = 'pwreset@example.com';
+  const original = 'correcthorsebatterystaple7';
+  const updated = 'NewStr0ng!Pass2026';
+
+  beforeAll(async () => {
+    await registerVerifiedUser({
+      email,
+      username: 'pwresetuser',
+      full_name: 'PW Reset User',
+      password: original,
+      roles: ['bidder'],
+    });
+  });
+
+  test('always returns the generic message for an unknown email (user enumeration protection)', async () => {
+    const res = await postJson('/api/auth/forgot-password', { email: 'nobody@nowhere.com' });
+    assert.equal(res.response.status, 200);
+    assert.match(res.body.message, /if that email is registered/i);
+  });
+
+  test('suppresses OTP for admin accounts — admin cannot reset password via this flow', async () => {
+    clearDevResetTokenForTest('admin@bidforgood.test');
+    const res = await postJson('/api/auth/forgot-password', { email: 'admin@bidforgood.test' });
+    assert.equal(res.response.status, 200);
+    assert.match(res.body.message, /if that email is registered/i);
+    assert.equal(readDevResetTokenForTest('admin@bidforgood.test'), undefined);
+  });
+
+  test('generates a 6-digit OTP for a valid non-admin account', async () => {
+    clearDevResetTokenForTest(email);
+    const res = await postJson('/api/auth/forgot-password', { email });
+    assert.equal(res.response.status, 200);
+    assert.match(String(readDevResetTokenForTest(email)), /^\d{6}$/);
+  });
+
+  test('rejects reset with a wrong OTP', async () => {
+    await postJson('/api/auth/forgot-password', { email });
+    const res = await postJson('/api/auth/reset-password', {
+      email,
+      token: '000000',
+      password: updated,
+    });
+    assert.equal(res.response.status, 400);
+    assert.equal(res.body.code, 'RESET_OTP_INVALID');
+  });
+
+  test('rejects reset with an expired OTP', async () => {
+    clearDevResetTokenForTest(email);
+    await postJson('/api/auth/forgot-password', { email });
+    await query('UPDATE password_reset_tokens SET expires_at = $1 WHERE email = $2', [
+      new Date(Date.now() - 1000),
+      email,
+    ]);
+    const otp = readDevResetTokenForTest(email);
+    const res = await postJson('/api/auth/reset-password', {
+      email,
+      token: otp,
+      password: updated,
+    });
+    assert.equal(res.response.status, 400);
+    assert.equal(res.body.code, 'RESET_OTP_INVALID');
+  });
+
+  test('resets password successfully and rejects old credentials', async () => {
+    clearDevResetTokenForTest(email);
+    await postJson('/api/auth/forgot-password', { email });
+    const otp = readDevResetTokenForTest(email);
+    assert.match(String(otp), /^\d{6}$/);
+
+    const reset = await postJson('/api/auth/reset-password', {
+      email,
+      token: otp,
+      password: updated,
+    });
+    assert.equal(reset.response.status, 200);
+
+    const oldLogin = await postJson('/api/auth/login', { email, password: original });
+    assert.equal(oldLogin.response.status, 401);
+
+    const newLogin = await postJson('/api/auth/login', { email, password: updated });
+    assert.equal(newLogin.response.status, 200);
   });
 });
