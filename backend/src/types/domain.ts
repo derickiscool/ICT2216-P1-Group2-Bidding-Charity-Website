@@ -146,6 +146,7 @@ export interface PasswordResetToken {
   email: string;
   tokenHash: string;
   expiresAt: Date;
+  attempts: number;
   createdAt: Date;
 }
 

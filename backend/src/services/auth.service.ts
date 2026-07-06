@@ -152,7 +152,8 @@ export const logout = async (sid: string | undefined, req: Request, res: Respons
   await audit(req, 'AUTH_LOGOUT', { sid }, 'session', sid, req.user?.id);
 };
 
-const RESET_OTP_TTL_MS = 15 * 60 * 1000;
+const RESET_OTP_TTL_MS = 3 * 60 * 1000;
+const MAX_RESET_OTP_ATTEMPTS = 5;
 const GENERIC_RESET_MESSAGE = 'If that email is registered, a one-time code has been sent.';
 
 export const requestPasswordReset = async (emailInput: string, req?: Request): Promise<{ message: string }> => {
@@ -171,6 +172,7 @@ export const requestPasswordReset = async (emailInput: string, req?: Request): P
     email,
     tokenHash: sha256(otp),
     expiresAt: new Date(Date.now() + RESET_OTP_TTL_MS),
+    attempts: 0,
     createdAt: new Date(),
   });
   await sendPasswordResetOtp(email, otp);
@@ -187,8 +189,18 @@ export const resetPassword = async (emailInput: string, otpInput: string, newPas
     });
   }
   const record = await getPasswordResetTokenByEmail(email);
-  if (!record || record.expiresAt.getTime() <= Date.now() || record.tokenHash !== sha256(String(otpInput))) {
-    if (record) await removePasswordResetToken(email);
+  if (!record) throw invalid;
+  if (record.expiresAt.getTime() <= Date.now()) {
+    await removePasswordResetToken(email);
+    throw invalid;
+  }
+  if (record.tokenHash !== sha256(String(otpInput))) {
+    record.attempts += 1;
+    if (record.attempts >= MAX_RESET_OTP_ATTEMPTS) {
+      await removePasswordResetToken(email);
+    } else {
+      await savePasswordResetToken(record);
+    }
     throw invalid;
   }
   const user = await findUserByEmail(email);

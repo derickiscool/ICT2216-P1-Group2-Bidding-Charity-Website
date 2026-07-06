@@ -94,9 +94,10 @@ Password Reset Flow
   ✓ always returns the generic message for an unknown email (user enumeration protection)
   ✓ suppresses OTP for admin accounts — admin cannot reset password via this flow
   ✓ generates a 6-digit OTP for a valid non-admin account
-  ✓ rejects reset with a wrong OTP
+  ✓ rejects reset with a wrong OTP but keeps the token for retry
+  ✓ locks out after 5 consecutive wrong OTP attempts
   ✓ rejects reset with an expired OTP
-  ✓ resets password successfully and rejects old credentials
+  ✓ resets password successfully, old password rejected, all sessions revoked
 ```
 
 | Test case | What it verifies |
@@ -104,6 +105,7 @@ Password Reset Flow
 | unknown email | Returns the same generic 200 response regardless of whether the email exists — prevents user enumeration |
 | admin account suppressed | `POST /forgot-password` with an admin email returns 200 but no OTP is generated and no token is stored — admins cannot self-service reset |
 | OTP generated for non-admin | A valid, active, verified non-admin account receives a 6-digit numeric OTP in the dev outbox |
-| wrong OTP | `POST /reset-password` with an incorrect token returns 400 `RESET_OTP_INVALID` and the stored token is consumed |
-| expired OTP | Token is backdated in the DB; the correct OTP is still rejected with 400 `RESET_OTP_INVALID` |
-| successful reset | Valid OTP resets the password; subsequent login with the old password returns 401 and with the new password returns 200 |
+| wrong OTP — token persists | An incorrect token returns 400 `RESET_OTP_INVALID` but the token remains valid so the user can retry; the correct OTP still succeeds on the next attempt |
+| 5-attempt lockout | After 5 consecutive wrong OTP submissions the token is removed; the correct OTP then also fails with 400 `RESET_OTP_INVALID` |
+| expired OTP | Token is backdated in the DB; the correct OTP is still rejected with 400 `RESET_OTP_INVALID` and the token is cleaned up |
+| successful reset + session revocation | Valid OTP resets the password; the pre-existing session receives 401 on `/me`, old password login returns 401, new password login returns 200 |
