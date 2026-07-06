@@ -83,7 +83,7 @@ SFR16 — Admin Session Enforcement
 
 ---
 
-### Password Reset Flow
+### FSR-14 — Password Reset Flow
 
 > Users can reset their forgotten password via a 6-digit OTP delivered to their registered email. Admin accounts are explicitly excluded from this self-service flow.
 
