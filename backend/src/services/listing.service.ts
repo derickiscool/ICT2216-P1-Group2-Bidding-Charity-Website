@@ -138,9 +138,10 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   });
 };
 
-export const getPublicListing = async (uuid: string): Promise<Listing> => {
+export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing> => {
   const listing = await getListingByUuid(uuid);
-  if (!listing || listing.status !== 'active') throw notFound('Listing not found');
+  if (!listing) throw notFound('Listing not found');
+  if (!isAdmin && listing.status !== 'active') throw notFound('Listing not found');
   return listing;
 };
 

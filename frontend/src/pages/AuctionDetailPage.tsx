@@ -287,6 +287,18 @@ export default function AuctionDetailPage() {
             </Link>
           </div>
 
+          {/* ── Admin preview banner ───────────────────────────── */}
+          {user?.roles?.includes('admin') && listing.status !== 'active' && (
+            <div className="mb-5 px-5 py-3 rounded-xl flex items-center gap-3"
+              style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', color: '#92400E' }}>
+              <Shield className="w-4 h-4 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-bold">Preview — {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)} Review</p>
+                <p className="text-xs mt-0.5 opacity-80">Only admins can see this listing. It is not yet visible to the public.</p>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest"
                   style={{ background: 'rgba(187,176,155,0.12)', color: 'var(--bfg-beige)', border: '1px solid rgba(187,176,155,0.2)' }}>

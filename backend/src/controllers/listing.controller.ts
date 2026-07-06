@@ -7,7 +7,8 @@ export const listActive = async (req: Request, res: Response): Promise<void> => 
 };
 
 export const getListing = async (req: Request, res: Response): Promise<void> => {
-  res.json(await getPublicListing(req.params.uuid));
+  const isAdmin = req.user?.roles?.includes('admin') ?? false;
+  res.json(await getPublicListing(req.params.uuid, isAdmin));
 };
 
 export const create = async (req: Request, res: Response): Promise<void> => {
