@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Users, Package, Gavel, Building2, Clock, Loader2, AlertCircle } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
@@ -113,7 +114,7 @@ export default function AdminPage() {
 
         {/* Quick links */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <a href="/admin/charities"
+          <Link to="/admin/charities"
             className="rounded-2xl p-6 bg-white block hover:shadow-md transition-shadow"
             style={{ border: '1px solid', borderColor: C.beige }}>
             <div className="flex items-center gap-3 mb-3">
@@ -125,8 +126,8 @@ export default function AdminPage() {
             <p className="text-sm mt-1" style={{ color: C.muted }}>
               {stats?.pendingCharities ?? 0} charities pending review
             </p>
-          </a>
-          <a href="/listings/admin/pending"
+          </Link>
+          <Link to="/admin/listings"
             className="rounded-2xl p-6 bg-white block hover:shadow-md transition-shadow"
             style={{ border: '1px solid', borderColor: C.beige }}>
             <div className="flex items-center gap-3 mb-3">
@@ -138,8 +139,8 @@ export default function AdminPage() {
             <p className="text-sm mt-1" style={{ color: C.muted }}>
               {stats?.pendingListings ?? 0} listings pending review
             </p>
-          </a>
-          <a href="/admin/audit-events"
+          </Link>
+          <Link to="/admin/audit"
             className="rounded-2xl p-6 bg-white block hover:shadow-md transition-shadow"
             style={{ border: '1px solid', borderColor: C.beige }}>
             <div className="flex items-center gap-3 mb-3">
@@ -151,7 +152,7 @@ export default function AdminPage() {
             <p className="text-sm mt-1" style={{ color: C.muted }}>
               View all security events
             </p>
-          </a>
+          </Link>
         </div>
       </div>
     </div>

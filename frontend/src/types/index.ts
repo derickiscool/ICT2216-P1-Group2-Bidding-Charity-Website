@@ -187,3 +187,35 @@ export interface AdminStats {
   pendingCharities: number
   pendingListings: number
 }
+
+export type CharityStatus = 'pending' | 'approved' | 'rejected'
+
+export interface CharityOrganisation {
+  id: number
+  uuid: string
+  ownerUserId: number
+  organisationName: string
+  description: string
+  documentName: string
+  documentMime: string
+  documentSha256: string
+  status: CharityStatus
+  reviewedBy?: number
+  reviewedAt?: string
+  rejectionReason?: string
+  created_at: string
+}
+
+export interface AuditEvent {
+  id: number
+  timestamp: string
+  actorUserId?: number
+  action: string
+  resourceType?: string
+  resourceId?: string
+  ipHash?: string
+  userAgentHash?: string
+  payload: Record<string, unknown>
+  previousHash: string
+  currentHash: string
+}

@@ -51,49 +51,62 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="p-1.5">
-        {[
-          { icon: LayoutDashboard, label: 'My Dashboard', to: '/dashboard' },
-          ...(user?.roles?.includes('donor') || user?.roles?.includes('admin')
-            ? [{ icon: Plus, label: 'Donate an Item', to: '/listings/create' }]
-            : []),
-          { icon: Settings, label: 'Settings', to: '/profile' },
-        ].map(item => (
-          <Link key={item.label} to={item.to} onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
-            style={{ color: '#2D3A3A' }}>
-            <item.icon className="w-4 h-4" style={{ color: '#5C6E6E' }} />
-            {item.label}
-          </Link>
-        ))}
-        {(user?.roles?.includes('charity') || user?.roles?.includes('admin')) && (
-          <Link
-            to="/charity/staff"
-            onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
-            style={{ color: '#2D3A3A' }}
-          >
-            <Users className="w-4 h-4" style={{ color: '#047857' }} />
-            Staff Management
-          </Link>
-        )}
-        {(user?.roles?.includes('charity') || user?.roles?.includes('charity_staff') || user?.roles?.includes('admin')) && (
-          <Link
-            to="/charity/campaigns"
-            onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
-            style={{ color: '#2D3A3A' }}
-          >
-            <HeartHandshake className="w-4 h-4" style={{ color: '#047857' }} />
-            Campaign Management
-          </Link>
-        )}
-        {user?.roles?.includes('admin') && (
-          <Link to="/admin" onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
-            style={{ color: '#2D3A3A' }}>
-            <ShieldCheck className="w-4 h-4" style={{ color: '#047857' }} />
-            Admin Panel
-          </Link>
+        {user?.roles?.includes('admin') ? (
+          // ── Admin only ──
+          <>
+            <Link to="/admin" onClick={onClose}
+              className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+              style={{ color: '#2D3A3A' }}>
+              <ShieldCheck className="w-4 h-4" style={{ color: '#047857' }} />
+              Admin Panel
+            </Link>
+            <Link to="/profile" onClick={onClose}
+              className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+              style={{ color: '#2D3A3A' }}>
+              <Settings className="w-4 h-4" style={{ color: '#5C6E6E' }} />
+              Settings
+            </Link>
+          </>
+        ) : (
+          // ── Non-admin users ──
+          <>
+            {[
+              { icon: LayoutDashboard, label: 'My Dashboard', to: '/dashboard' },
+              ...(user?.roles?.includes('donor')
+                ? [{ icon: Plus, label: 'Donate an Item', to: '/listings/create' }]
+                : []),
+              { icon: Settings, label: 'Settings', to: '/profile' },
+            ].map(item => (
+              <Link key={item.label} to={item.to} onClick={onClose}
+                className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+                style={{ color: '#2D3A3A' }}>
+                <item.icon className="w-4 h-4" style={{ color: '#5C6E6E' }} />
+                {item.label}
+              </Link>
+            ))}
+            {user?.roles?.includes('charity') && (
+              <Link
+                to="/charity/staff"
+                onClick={onClose}
+                className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+                style={{ color: '#2D3A3A' }}
+              >
+                <Users className="w-4 h-4" style={{ color: '#047857' }} />
+                Staff Management
+              </Link>
+            )}
+            {(user?.roles?.includes('charity') || user?.roles?.includes('charity_staff')) && (
+              <Link
+                to="/charity/campaigns"
+                onClick={onClose}
+                className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+                style={{ color: '#2D3A3A' }}
+              >
+                <HeartHandshake className="w-4 h-4" style={{ color: '#047857' }} />
+                Campaign Management
+              </Link>
+            )}
+          </>
         )}
       </div>
 
