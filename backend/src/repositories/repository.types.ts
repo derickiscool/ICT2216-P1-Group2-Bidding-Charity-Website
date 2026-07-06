@@ -7,6 +7,7 @@ import type {
   Payment,
   PaymentWithListing,
   NewCampaignInput,
+  PasswordResetToken,
   PendingRegistration,
   SessionRecord,
   UpdateCampaignInput,
@@ -43,6 +44,11 @@ export interface BidForGoodRepository {
   getSession(sid: string): Promise<SessionRecord | undefined>;
   updateSession(record: SessionRecord): Promise<void>;
   revokeSession(sid: string): Promise<void>;
+  revokeAllSessionsByUserId(userId: number): Promise<void>;
+
+  savePasswordResetToken(token: PasswordResetToken): Promise<void>;
+  getPasswordResetTokenByEmail(email: string): Promise<PasswordResetToken | undefined>;
+  removePasswordResetToken(email: string): Promise<void>;
 
   addCharity(input: NewCharityInput): Promise<CharityOrganisation>;
   getCharityById(id: number): Promise<CharityOrganisation | undefined>;
