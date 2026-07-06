@@ -170,12 +170,20 @@ export interface PaymentWithListing extends Payment {
   charity_name: string;
 }
 
+export interface PasswordResetToken {
+  email: string;
+  tokenHash: string;
+  expiresAt: Date;
+  createdAt: Date;
+}
+
 export interface SessionRecord {
   sid: string;
   userId: number;
   jtiHash: string;
   csrfTokenHash: string;
   expiresAt: Date;
+  absoluteExpiresAt: Date;
   revokedAt?: Date;
   createdAt: Date;
   lastSeenAt: Date;

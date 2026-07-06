@@ -8,6 +8,7 @@ import type {
   Payment,
   PaymentWithListing,
   NewCampaignInput,
+  PasswordResetToken,
   PendingRegistration,
   SessionRecord,
   UpdateCampaignInput,
@@ -60,12 +61,20 @@ interface PendingRegistrationRow {
   created_at: DbDate;
 }
 
+interface PasswordResetTokenRow {
+  email: string;
+  token_hash: string;
+  expires_at: DbDate;
+  created_at: DbDate;
+}
+
 interface SessionRow {
   sid: string;
   user_id: number;
   jti_hash: string;
   csrf_token_hash: string;
   expires_at: DbDate;
+  absolute_expires_at: DbDate;
   revoked_at: DbDate | null;
   created_at: DbDate;
   last_seen_at: DbDate;
@@ -223,9 +232,17 @@ const mapSession = (row: SessionRow): SessionRecord => ({
   jtiHash: row.jti_hash,
   csrfTokenHash: row.csrf_token_hash,
   expiresAt: toDate(row.expires_at),
+  absoluteExpiresAt: toDate(row.absolute_expires_at),
   revokedAt: optionalDate(row.revoked_at),
   createdAt: toDate(row.created_at),
   lastSeenAt: toDate(row.last_seen_at),
+});
+
+const mapPasswordResetToken = (row: PasswordResetTokenRow): PasswordResetToken => ({
+  email: row.email,
+  tokenHash: row.token_hash,
+  expiresAt: toDate(row.expires_at),
+  createdAt: toDate(row.created_at),
 });
 
 const mapCharity = (row: CharityRow): CharityOrganisation => ({
@@ -434,8 +451,8 @@ const removePendingRegistration = async (email: string): Promise<void> => {
 
 const addSession = async (record: SessionRecord): Promise<void> => {
   await query(
-    `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, revoked_at, created_at, last_seen_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, absolute_expires_at, revoked_at, created_at, last_seen_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (sid) DO UPDATE SET
        user_id = EXCLUDED.user_id,
        jti_hash = EXCLUDED.jti_hash,
@@ -443,7 +460,7 @@ const addSession = async (record: SessionRecord): Promise<void> => {
        expires_at = EXCLUDED.expires_at,
        revoked_at = EXCLUDED.revoked_at,
        last_seen_at = EXCLUDED.last_seen_at`,
-    [record.sid, record.userId, record.jtiHash, record.csrfTokenHash, record.expiresAt, record.revokedAt ?? null, record.createdAt, record.lastSeenAt],
+    [record.sid, record.userId, record.jtiHash, record.csrfTokenHash, record.expiresAt, record.absoluteExpiresAt, record.revokedAt ?? null, record.createdAt, record.lastSeenAt],
   );
 };
 
@@ -456,6 +473,28 @@ const updateSession = async (record: SessionRecord): Promise<void> => addSession
 
 const revokeSession = async (sid: string): Promise<void> => {
   await query('UPDATE sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE sid = $1', [sid]);
+};
+
+const revokeAllSessionsByUserId = async (userId: number): Promise<void> => {
+  await query('UPDATE sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+};
+
+const savePasswordResetToken = async (token: PasswordResetToken): Promise<void> => {
+  await query(
+    `INSERT INTO password_reset_tokens (email, token_hash, expires_at, created_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (email) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = EXCLUDED.created_at`,
+    [token.email, token.tokenHash, token.expiresAt, token.createdAt],
+  );
+};
+
+const getPasswordResetTokenByEmail = async (email: string): Promise<PasswordResetToken | undefined> => {
+  const row = await firstRow<PasswordResetTokenRow>('SELECT * FROM password_reset_tokens WHERE email = $1 LIMIT 1', [email]);
+  return row ? mapPasswordResetToken(row) : undefined;
+};
+
+const removePasswordResetToken = async (email: string): Promise<void> => {
+  await query('DELETE FROM password_reset_tokens WHERE email = $1', [email]);
 };
 
 const addCharity = async (input: NewCharityInput): Promise<CharityOrganisation> => {
@@ -961,7 +1000,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, payments, bids, listings, campaigns, charities, sessions, pending_registrations, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, payments, bids, listings, campaigns, charities, sessions, pending_registrations, password_reset_tokens, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -983,6 +1022,11 @@ export const postgresRepository: BidForGoodRepository = {
   getSession,
   updateSession,
   revokeSession,
+  revokeAllSessionsByUserId,
+
+  savePasswordResetToken,
+  getPasswordResetTokenByEmail,
+  removePasswordResetToken,
 
   addCharity,
   getCharityById,

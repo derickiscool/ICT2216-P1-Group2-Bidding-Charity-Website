@@ -87,6 +87,8 @@ import CreateListingPage from './pages/CreateListingPage'
 import DonorListingsPage from './pages/DonorListingsPage'
 import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
 import CharityListingReviewPage from './pages/CharityListingReviewPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -108,6 +110,8 @@ export default function App() {
           <Route path="/auctions/:id" element={<AuctionDetailPage />} />
           <Route path="/charities" element={<CharitiesPage />} />
           <Route path="/register/charity" element={<RegisterCharityPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* ── Auth required ── */}
           <Route element={<ProtectedRoute />}>
