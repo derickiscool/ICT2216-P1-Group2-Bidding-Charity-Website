@@ -175,9 +175,13 @@ describe('FR12 — Auto-Bidding', () => {
       { cookie: bidderTwo.cookie, 'x-csrf-token': bidderTwo.csrf },
     );
     assert.equal(manualBid.response.status, 201);
-    const manualBidBody = manualBid.body as unknown as { result: { currentBid: number; bids: Array<{ is_auto_bid: boolean }> } };
-    assert.equal(manualBidBody.result.currentBid, 160);
-    assert.equal(manualBidBody.result.bids.some(bid => bid.is_auto_bid), true);
+    const manualBidBody = manualBid.body as unknown as {
+      currentBid: number;
+      bids: Array<{ is_auto_bid: boolean }>;
+    };
+
+    assert.equal(manualBidBody.currentBid, 160);
+    assert.equal(manualBidBody.bids.some(bid => bid.is_auto_bid), true);
 
     const publicBids = await request(`/api/bids/listings/${listing.body.id}`);
     assert.equal(publicBids.response.status, 200);
