@@ -109,6 +109,17 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
             Campaign Management
           </Link>
         )}
+        {(user?.roles?.includes('charity') || user?.roles?.includes('charity_staff')) && (
+          <Link
+            to="/charity/listing-reviews"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+            style={{ color: '#2D3A3A' }}
+          >
+            <ShieldCheck className="w-4 h-4" style={{ color: '#047857' }} />
+            Listing Reviews
+          </Link>
+        )}
         {user?.roles?.includes('admin') && (
           <Link to="/admin" onClick={onClose}
             className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
@@ -253,6 +264,9 @@ export default function Navbar() {
           )}
           {isAuthenticated && (user?.roles?.includes('donor') || user?.roles?.includes('admin')) && (
             <Link to="/listings/manage" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>My Listings</Link>
+          )}
+          {isAuthenticated && (user?.roles?.includes('charity') || user?.roles?.includes('charity_staff')) && (
+            <Link to="/charity/listing-reviews" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Listing Reviews</Link>
           )}
           {!isAuthenticated && <>
             <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Log In</Link>
