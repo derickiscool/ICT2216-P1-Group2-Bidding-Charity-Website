@@ -85,6 +85,7 @@ import AdminPage from './pages/AdminPage'
 import NotFoundPage from './pages/NotFoundPage'
 import CreateListingPage from './pages/CreateListingPage'
 import DonorListingsPage from './pages/DonorListingsPage'
+import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -120,6 +121,11 @@ export default function App() {
 
           <Route element={<RoleProtectedRoute allowedRoles={['charity', 'charity_staff', 'admin']} />}>
             <Route path="/charity/campaigns" element={<CampaignManagementPage />} />
+          </Route>
+
+          {/* ── Bidder only ── */}
+          <Route element={<RoleProtectedRoute allowedRoles={['bidder']} />}>
+            <Route path="/payments" element={<PaymentDeadlinesPage />} />
           </Route>
 
           {/* ── Donor only ── */}

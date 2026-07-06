@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { PlusCircle, LayoutDashboard } from 'lucide-react'
+import { PlusCircle, LayoutDashboard, CreditCard } from 'lucide-react'
 
 export default function DashboardPage() {
   const { user } = useAuthStore()
@@ -20,6 +20,18 @@ export default function DashboardPage() {
             <LayoutDashboard className="w-5 h-5" />
             <span className="font-medium text-sm">Overview (WIP)</span>
           </div>
+
+
+          {user?.roles?.includes('bidder') && (
+            <Link
+              to="/payments"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all shadow-sm hover:-translate-y-0.5"
+              style={{ color: '#047857', background: '#ECFDF5', border: '1px solid #A7F3D0' }}
+            >
+              <CreditCard className="w-5 h-5" />
+              <span className="text-sm">Payment Deadlines</span>
+            </Link>
+          )}
 
           {/* Donor listing management shortcuts. */}
           {user?.roles?.includes('donor') && (
