@@ -973,19 +973,19 @@ export const seedDemoData = async (): Promise<void> => {
 
   const demoListings: Array<NewListingInput & { current_bid: number }> = [
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Signed Premier League Jersey',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Signed Premier League Jersey',
       description: 'Signed jersey donated for charity fundraising.', condition: 'good', category: 'Sports', images: [],
       starting_price: 1000, current_bid: 1250, status: 'active', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), charityName: "Children's Hospital Trust", min_increment: 50,
     },
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Private Dining Experience',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Private Dining Experience',
       description: 'Private dining session for a good cause.', condition: 'new', category: 'Experiences', images: [],
       starting_price: 2000, current_bid: 3800, status: 'active', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(), charityName: 'Food Bank Singapore', min_increment: 100,
     },
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Pending Vintage Camera',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Pending Vintage Camera',
       description: 'Pending approval; must not appear in public search.', condition: 'fair', category: 'Collectibles', images: [],
       starting_price: 400, current_bid: 400, status: 'pending', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), charityName: 'Arts for Youth', min_increment: 25,

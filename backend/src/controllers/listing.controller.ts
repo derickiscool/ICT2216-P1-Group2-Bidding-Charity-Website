@@ -9,6 +9,7 @@ import {
   searchPublicListings,
   updateListingDetails,
 } from '../services/listing.service';
+import { getMyListingTrackingDashboard } from '../services/listingTracking.service';
 
 export const listActive = async (req: Request, res: Response): Promise<void> => {
   const listings = await searchPublicListings(req.query);
@@ -18,6 +19,10 @@ export const listActive = async (req: Request, res: Response): Promise<void> => 
 export const listMine = async (req: Request, res: Response): Promise<void> => {
   const listings = await listMyListings(req);
   res.json({ data: listings, total: listings.length });
+};
+
+export const listMineTracking = async (req: Request, res: Response): Promise<void> => {
+  res.json(await getMyListingTrackingDashboard(req));
 };
 
 export const getListing = async (req: Request, res: Response): Promise<void> => {

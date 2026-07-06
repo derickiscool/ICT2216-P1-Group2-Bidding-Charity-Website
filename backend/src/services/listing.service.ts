@@ -15,8 +15,8 @@ const LOCKED_FIELDS = new Set([
   'charityName', 'charity_name'
 ]);
 
-const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected'];
-const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected', 'expired', 'cancelled'];
+export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected'];
+export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected', 'expired', 'cancelled'];
 const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
 
 type UploadedListingImage = Express.Multer.File;
@@ -226,6 +226,7 @@ export const deleteListing = async (uuid: string, req: Request): Promise<Listing
 
 export const listMyListings = async (req: Request): Promise<Listing[]> => {
   if (!req.user) throw forbidden();
+
   const all = await listListings();
   if (req.user.roles.includes('admin')) return all;
   return all.filter(listing => listing.donor_id === req.user?.id);
