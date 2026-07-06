@@ -522,7 +522,7 @@ export default function DonorListingsPage() {
                                     {newImagePreviews.map((preview, index) => (
                                         <div key={`${preview.url}-${index}`} className="relative aspect-square rounded-lg overflow-hidden border group bg-gray-100 flex items-center justify-center" style={{ borderColor: C.beige }}>
                                             {isLocalPreviewSrc(preview.url) ? (
-                                                <img src={preview.url} alt="New listing image preview" className="w-full h-full object-cover" />
+                                                <img src={preview.url} alt="New listing image preview" className="w-full h-full object-cover" /> // codeql[js/xss-through-dom] preview.url is a browser-generated blob: reference from URL.createObjectURL() on a locally-selected File; never attacker-controlled text.
                                             ) : (
                                                 <span className="text-xs font-medium text-gray-500 text-center px-2">New image</span>
                                             )}

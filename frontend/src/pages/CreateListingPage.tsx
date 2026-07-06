@@ -327,7 +327,7 @@ export default function CreateListingPage() {
                     {imagePreviews.map((img, i) => (
                       <div key={`${img.url}-${i}`} className="relative group rounded-md overflow-hidden bg-gray-100 aspect-square flex items-center justify-center border border-gray-200">
                         {isLocalPreviewSrc(img.url) ? (
-                          <img src={img.url} alt="Listing image preview" className="w-full h-full object-cover" />
+                          <img src={img.url} alt="Listing image preview" className="w-full h-full object-cover" /> // codeql[js/xss-through-dom] img.url is a browser-generated blob: reference from URL.createObjectURL() on a locally-selected File; never attacker-controlled text.
                         ) : (
                           <span className="text-xs font-medium text-gray-500 text-center px-2">Image selected</span>
                         )}
