@@ -242,17 +242,48 @@ export const approveListing = async (uuid: string, req: Request): Promise<Listin
   return listing;
 };
 
+const ALLOWED_SORTS = new Set(['ending_soon', 'newest', 'price_low', 'price_high']);
+const ALLOWED_CONDITIONS = new Set(['new', 'like_new', 'good', 'fair']);
+
 export const searchPublicListings = async (query: Record<string, unknown>): Promise<Listing[]> => {
   const q = sanitizeText(query.q ?? query.search, 80);
   const category = sanitizeText(query.category, 60);
   if (q && !isSafeSearchQuery(q)) throw badRequest('Search query was rejected because it contained malformed or unsafe syntax.', 'UNSAFE_SEARCH_QUERY');
   if (category && !isSafeSearchQuery(category)) throw badRequest('Category filter was rejected because it contained malformed or unsafe syntax.', 'UNSAFE_SEARCH_QUERY');
+
+  const priceMin = query.price_min !== undefined && query.price_min !== '' ? Number(query.price_min) : undefined;
+  const priceMax = query.price_max !== undefined && query.price_max !== '' ? Number(query.price_max) : undefined;
+  const campaignId = query.campaign_id !== undefined && query.campaign_id !== '' ? Number(query.campaign_id) : undefined;
+  const endBefore = typeof query.end_before === 'string' && query.end_before ? new Date(query.end_before) : undefined;
+  const condition = typeof query.condition === 'string' && ALLOWED_CONDITIONS.has(query.condition) ? query.condition : undefined;
+  const sort = typeof query.sort === 'string' && ALLOWED_SORTS.has(query.sort) ? query.sort : 'ending_soon';
+
+  if (priceMin !== undefined && !Number.isFinite(priceMin)) throw badRequest('Invalid minimum price.');
+  if (priceMax !== undefined && !Number.isFinite(priceMax)) throw badRequest('Invalid maximum price.');
+  if (priceMin !== undefined && priceMax !== undefined && priceMin > priceMax) throw badRequest('Minimum price cannot exceed maximum price.');
+  if (campaignId !== undefined && (!Number.isInteger(campaignId) || campaignId < 1)) throw badRequest('Invalid campaign filter.');
+
+  // SFR: listActiveListings() only returns status='active' — draft, pending, rejected,
+  // cancelled, expired and sold listings are never included in search results.
   const active = await listActiveListings();
-  return active.filter(l => {
+
+  const results = active.filter(l => {
     const matchesQ = !q || `${l.title} ${l.description} ${l.charityName}`.toLowerCase().includes(q.toLowerCase());
     const matchesCategory = !category || l.category.toLowerCase() === category.toLowerCase();
-    return matchesQ && matchesCategory;
+    const matchesCondition = !condition || l.condition === condition;
+    const matchesPriceMin = priceMin === undefined || l.current_bid >= priceMin;
+    const matchesPriceMax = priceMax === undefined || l.current_bid <= priceMax;
+    const matchesCampaign = campaignId === undefined || l.campaign_id === campaignId;
+    const matchesEndBefore = !endBefore || new Date(l.end_time) <= endBefore;
+    return matchesQ && matchesCategory && matchesCondition && matchesPriceMin && matchesPriceMax && matchesCampaign && matchesEndBefore;
   });
+
+  if (sort === 'newest') results.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  else if (sort === 'price_low') results.sort((a, b) => a.current_bid - b.current_bid);
+  else if (sort === 'price_high') results.sort((a, b) => b.current_bid - a.current_bid);
+  else results.sort((a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime());
+
+  return results;
 };
 
 export const getPublicListing = async (uuid: string): Promise<Listing> => {
