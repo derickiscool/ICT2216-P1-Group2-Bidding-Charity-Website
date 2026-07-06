@@ -9,6 +9,7 @@ import { unauthorised } from '../utils/errors';
 const ISSUER = 'bidforgood';
 const AUDIENCE = 'bidforgood-web';
 const SESSION_MINUTES = 15;
+const SESSION_ABSOLUTE_HOURS = 8;
 const devJwtSecret = crypto.randomBytes(32).toString('hex');
 
 export interface CreatedSession {
@@ -43,12 +44,14 @@ export const createSession = async (user: Omit<User, 'passwordHash'>): Promise<C
   const jti = randomToken(32);
   const csrfToken = randomToken(32);
   const expiresAt = new Date(Date.now() + SESSION_MINUTES * 60 * 1000);
+  const absoluteExpiresAt = new Date(Date.now() + SESSION_ABSOLUTE_HOURS * 60 * 60 * 1000);
   const record: SessionRecord = {
     sid,
     userId: user.id,
     jtiHash: sha256(jti),
     csrfTokenHash: sha256(csrfToken),
     expiresAt,
+    absoluteExpiresAt,
     createdAt: new Date(),
     lastSeenAt: new Date()
   };
@@ -84,7 +87,7 @@ export const verifySessionToken = async (token: string): Promise<VerifiedSession
   }
   if (!decoded.sid || !decoded.jti || !decoded.sub) throw unauthorised('Authentication required');
   const record = await getSession(String(decoded.sid));
-  if (!record || record.revokedAt || record.expiresAt.getTime() <= Date.now()) throw unauthorised('Authentication required');
+  if (!record || record.revokedAt || record.expiresAt.getTime() <= Date.now() || record.absoluteExpiresAt.getTime() <= Date.now()) throw unauthorised('Authentication required');
   if (record.jtiHash !== sha256(String(decoded.jti))) throw unauthorised('Authentication required');
   record.lastSeenAt = new Date();
   record.expiresAt = new Date(Date.now() + SESSION_MINUTES * 60 * 1000);
