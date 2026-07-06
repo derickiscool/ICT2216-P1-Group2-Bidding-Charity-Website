@@ -11,6 +11,7 @@ import {
   getListing,
   listActive,
   listMine,
+  listMineTracking,
   pending,
   reject,
   remove,
@@ -23,6 +24,7 @@ const router = Router();
 router.get('/', asyncHandler(listActive));
 
 router.get('/donor', asyncHandler(authenticate), requireRole('donor', 'admin'), asyncHandler(donorListings));
+router.get('/mine/tracking', asyncHandler(authenticate), requireRole('donor', 'admin'), asyncHandler(listMineTracking));
 router.get('/mine', asyncHandler(authenticate), requireRole('donor', 'admin'), asyncHandler(listMine));
 router.get('/admin/pending', asyncHandler(authenticate), requireRole('admin'), asyncHandler(pending));
 

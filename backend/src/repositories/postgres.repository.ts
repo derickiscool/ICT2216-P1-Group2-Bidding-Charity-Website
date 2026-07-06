@@ -9,6 +9,7 @@ import type {
   Payment,
   PaymentWithListing,
   NewCampaignInput,
+  PasswordResetToken,
   PendingRegistration,
   SessionRecord,
   UpdateCampaignInput,
@@ -58,6 +59,13 @@ interface PendingRegistrationRow {
   otp_hash: string;
   expires_at: DbDate;
   attempts: number;
+  created_at: DbDate;
+}
+
+interface PasswordResetTokenRow {
+  email: string;
+  token_hash: string;
+  expires_at: DbDate;
   created_at: DbDate;
 }
 
@@ -229,6 +237,13 @@ const mapSession = (row: SessionRow): SessionRecord => ({
   revokedAt: optionalDate(row.revoked_at),
   createdAt: toDate(row.created_at),
   lastSeenAt: toDate(row.last_seen_at),
+});
+
+const mapPasswordResetToken = (row: PasswordResetTokenRow): PasswordResetToken => ({
+  email: row.email,
+  tokenHash: row.token_hash,
+  expiresAt: toDate(row.expires_at),
+  createdAt: toDate(row.created_at),
 });
 
 const mapCharity = (row: CharityRow): CharityOrganisation => ({
@@ -459,6 +474,28 @@ const updateSession = async (record: SessionRecord): Promise<void> => addSession
 
 const revokeSession = async (sid: string): Promise<void> => {
   await query('UPDATE sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE sid = $1', [sid]);
+};
+
+const revokeAllSessionsByUserId = async (userId: number): Promise<void> => {
+  await query('UPDATE sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+};
+
+const savePasswordResetToken = async (token: PasswordResetToken): Promise<void> => {
+  await query(
+    `INSERT INTO password_reset_tokens (email, token_hash, expires_at, created_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (email) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = EXCLUDED.created_at`,
+    [token.email, token.tokenHash, token.expiresAt, token.createdAt],
+  );
+};
+
+const getPasswordResetTokenByEmail = async (email: string): Promise<PasswordResetToken | undefined> => {
+  const row = await firstRow<PasswordResetTokenRow>('SELECT * FROM password_reset_tokens WHERE email = $1 LIMIT 1', [email]);
+  return row ? mapPasswordResetToken(row) : undefined;
+};
+
+const removePasswordResetToken = async (email: string): Promise<void> => {
+  await query('DELETE FROM password_reset_tokens WHERE email = $1', [email]);
 };
 
 const addCharity = async (input: NewCharityInput): Promise<CharityOrganisation> => {
@@ -970,19 +1007,19 @@ export const seedDemoData = async (): Promise<void> => {
 
   const demoListings: Array<NewListingInput & { current_bid: number }> = [
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Signed Premier League Jersey',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Signed Premier League Jersey',
       description: 'Signed jersey donated for charity fundraising.', condition: 'good', category: 'Sports', images: [],
       starting_price: 1000, current_bid: 1250, status: 'active', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), charityName: "Children's Hospital Trust", min_increment: 50,
     },
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Private Dining Experience',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Private Dining Experience',
       description: 'Private dining session for a good cause.', condition: 'new', category: 'Experiences', images: [],
       starting_price: 2000, current_bid: 3800, status: 'active', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(), charityName: 'Food Bank Singapore', min_increment: 100,
     },
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Pending Vintage Camera',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Pending Vintage Camera',
       description: 'Pending approval; must not appear in public search.', condition: 'fair', category: 'Collectibles', images: [],
       starting_price: 400, current_bid: 400, status: 'pending', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), charityName: 'Arts for Youth', min_increment: 25,
@@ -997,7 +1034,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, payments, bids, listings, campaigns, charities, sessions, pending_registrations, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, payments, bids, listings, campaigns, charities, sessions, pending_registrations, password_reset_tokens, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -1019,6 +1056,11 @@ export const postgresRepository: BidForGoodRepository = {
   getSession,
   updateSession,
   revokeSession,
+  revokeAllSessionsByUserId,
+
+  savePasswordResetToken,
+  getPasswordResetTokenByEmail,
+  removePasswordResetToken,
 
   addCharity,
   getCharityById,

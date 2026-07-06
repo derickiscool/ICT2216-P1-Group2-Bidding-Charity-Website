@@ -80,3 +80,30 @@ SFR16 — Admin Session Enforcement
 | bidder session (role mismatch) | A valid but non-admin session receives 403 — authentication alone is not sufficient |
 | valid admin session | A correctly authenticated admin session receives 200 — the happy path works |
 | absolute session lifetime exceeded | When `absolute_expires_at` is wound back to the past in the DB, the same cookie now receives 401 — sliding session refresh cannot extend beyond the hard ceiling set at login |
+
+---
+
+### Password Reset Flow
+
+> Users can reset their forgotten password via a 6-digit OTP delivered to their registered email. Admin accounts are explicitly excluded from this self-service flow.
+
+**Test file:** `backend/src/__tests__/routes/auth.routes.test.ts`
+
+```
+Password Reset Flow
+  ✓ always returns the generic message for an unknown email (user enumeration protection)
+  ✓ suppresses OTP for admin accounts — admin cannot reset password via this flow
+  ✓ generates a 6-digit OTP for a valid non-admin account
+  ✓ rejects reset with a wrong OTP
+  ✓ rejects reset with an expired OTP
+  ✓ resets password successfully and rejects old credentials
+```
+
+| Test case | What it verifies |
+|---|---|
+| unknown email | Returns the same generic 200 response regardless of whether the email exists — prevents user enumeration |
+| admin account suppressed | `POST /forgot-password` with an admin email returns 200 but no OTP is generated and no token is stored — admins cannot self-service reset |
+| OTP generated for non-admin | A valid, active, verified non-admin account receives a 6-digit numeric OTP in the dev outbox |
+| wrong OTP | `POST /reset-password` with an incorrect token returns 400 `RESET_OTP_INVALID` and the stored token is consumed |
+| expired OTP | Token is backdated in the DB; the correct OTP is still rejected with 400 `RESET_OTP_INVALID` |
+| successful reset | Valid OTP resets the password; subsequent login with the old password returns 401 and with the new password returns 200 |

@@ -78,6 +78,32 @@ export interface Listing {
   created_at: string
 }
 
+export interface DonorListingStatusSummary {
+  total: number
+  draft: number
+  pending: number
+  active: number
+  sold: number
+  expired: number
+  cancelled: number
+  rejected: number
+}
+
+export interface DonorListingTrackingItem extends Listing {
+  statusLabel: string
+  statusMessage: string
+  timelineLabel: string
+  canEdit: boolean
+  canDelete: boolean
+  finalBidAmount?: number
+}
+
+export interface DonorListingTrackingResponse {
+  generatedAt: string
+  summary: DonorListingStatusSummary
+  listings: DonorListingTrackingItem[]
+}
+
 // ─── Bids ────────────────────────────────────────────────────────────────────
 
 export interface Bid {
