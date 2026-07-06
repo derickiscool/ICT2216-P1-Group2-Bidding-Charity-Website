@@ -85,12 +85,12 @@ export default function DonorDashboard() {
             <h1 className="text-2xl font-bold" style={{ color: C.slate }}>Donor Dashboard</h1>
             <p className="text-sm mt-1" style={{ color: C.muted }}>Welcome back, {user?.full_name}</p>
           </div>
-          <Link to="/auctions"
+          <Link to="/listings/create"
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
             style={{ background: C.emerald }}
             onMouseEnter={e => (e.currentTarget.style.background = '#035c43')}
             onMouseLeave={e => (e.currentTarget.style.background = C.emerald)}>
-            <Plus className="w-4 h-4" /> Browse Auctions
+            <Plus className="w-4 h-4" /> Donate an Item
           </Link>
         </div>
 
@@ -143,8 +143,8 @@ export default function DonorDashboard() {
             <div className="p-12 text-center">
               <Package className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
               <p style={{ color: C.muted }}>You haven't created any listings yet.</p>
-              <Link to="/auctions" className="inline-block mt-3 text-sm font-semibold" style={{ color: C.emerald }}>
-                Browse auctions →
+              <Link to="/listings/create" className="inline-block mt-3 text-sm font-semibold" style={{ color: C.emerald }}>
+                Donate an Item →
               </Link>
             </div>
           ) : (
