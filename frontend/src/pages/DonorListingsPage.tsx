@@ -263,7 +263,6 @@ export default function DonorListingsPage() {
             <div className="max-w-7xl mx-auto">
                 <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-8">
                     <div>
-                        <p className="text-xs uppercase font-bold tracking-[0.2em]" style={{ color: C.emerald }}>FR10 Donor Tracking</p>
                         <h1 className="text-3xl font-black mt-2" style={{ color: C.slate }}>My Auction Listings</h1>
                         <p className="text-sm mt-2 max-w-2xl" style={{ color: C.muted }}>
                             Track every donated item by lifecycle status. Active and sold auctions are locked to keep bidding fair and traceable.
