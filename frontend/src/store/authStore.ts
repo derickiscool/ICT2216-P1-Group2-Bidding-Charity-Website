@@ -7,6 +7,8 @@ interface AuthStore {
   isAuthenticated: boolean
   isLoading: boolean
   login: (email: string, password: string) => Promise<void>
+  requestLoginOtp: (email: string) => Promise<string>
+  verifyLoginOtp: (email: string, otp: string) => Promise<void>
   logout: () => Promise<void>
   register: (data: RegisterData) => Promise<string>
   verifyRegistration: (email: string, otp: string) => Promise<void>
@@ -40,6 +42,30 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     set({ isLoading: true })
     try {
       const res = await api.post<LoginResponse>('/auth/login', { email, password })
+      setCsrfToken(res.data.csrfToken)
+      set({ user: res.data.user, isAuthenticated: true, isLoading: false })
+    } catch (err) {
+      set({ isLoading: false })
+      throw err
+    }
+  },
+
+  requestLoginOtp: async (email) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.post<{ message: string }>('/auth/login/passwordless/request', { email })
+      set({ isLoading: false })
+      return res.data.message
+    } catch (err) {
+      set({ isLoading: false })
+      throw err
+    }
+  },
+
+  verifyLoginOtp: async (email, otp) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.post<LoginResponse>('/auth/login/passwordless/verify', { email, otp })
       setCsrfToken(res.data.csrfToken)
       set({ user: res.data.user, isAuthenticated: true, isLoading: false })
     } catch (err) {
