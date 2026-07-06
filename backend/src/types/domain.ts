@@ -31,6 +31,15 @@ export interface PendingRegistration {
   createdAt: Date;
 }
 
+export interface LoginOtp {
+  user_id: number;
+  email: string;
+  otpHash: string;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
 export interface Campaign {
   id: number;
   uuid: string;

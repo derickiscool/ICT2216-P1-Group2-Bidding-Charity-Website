@@ -8,6 +8,7 @@ import type {
   PaymentWithListing,
   NewCampaignInput,
   PendingRegistration,
+  LoginOtp,
   SessionRecord,
   UpdateCampaignInput,
   User,
@@ -38,6 +39,10 @@ export interface BidForGoodRepository {
   savePendingRegistration(registration: PendingRegistration): Promise<void>;
   getPendingRegistration(email: string): Promise<PendingRegistration | undefined>;
   removePendingRegistration(email: string): Promise<void>;
+
+  saveLoginOtp(otp: LoginOtp): Promise<void>;
+  getLoginOtp(userId: number): Promise<LoginOtp | undefined>;
+  removeLoginOtp(userId: number): Promise<void>;
 
   addSession(record: SessionRecord): Promise<void>;
   getSession(sid: string): Promise<SessionRecord | undefined>;

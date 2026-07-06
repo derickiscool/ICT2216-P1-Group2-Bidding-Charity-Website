@@ -41,6 +41,17 @@ CREATE TABLE IF NOT EXISTS pending_registrations (
 
 CREATE INDEX IF NOT EXISTS pending_registrations_expires_idx ON pending_registrations (expires_at);
 
+CREATE TABLE IF NOT EXISTS login_otps (
+  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  otp_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS login_otps_expires_idx ON login_otps (expires_at);
+
 CREATE TABLE IF NOT EXISTS sessions (
   sid TEXT PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
