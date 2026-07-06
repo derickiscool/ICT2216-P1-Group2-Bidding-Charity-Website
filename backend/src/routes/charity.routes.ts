@@ -5,7 +5,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { requireCsrf } from '../middleware/csrf.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 import { badRequest } from '../utils/errors';
-import { createCharityRegistration, listPublicCampaigns, listCharityRegistrations, reviewCharityRegistration } from '../controllers/charity.controller';
+import { charityDashboard, createCharityRegistration, listPublicCampaigns, listCharityRegistrations, reviewCharityRegistration } from '../controllers/charity.controller';
 import { createCharityStaff, deactivateCharityStaff, getCharityStaff, updateCharityStaff } from '../controllers/charityStaff.controller';
 import { getCampaignImage, getCampaigns, patchCloseCampaign, postCampaign, putCampaign } from '../controllers/campaign.controller';
 
@@ -29,11 +29,10 @@ const handleImgUpload = (req: Request, res: Response, next: NextFunction): void 
 };
 
 const router = Router();
-
+router.get('/dashboard', asyncHandler(authenticate), requireRole('charity', 'admin'), asyncHandler(charityDashboard));
 router.post('/register', asyncHandler(authenticate), requireCsrf, requireRole('charity', 'admin'), handleDocUpload, asyncHandler(createCharityRegistration));
 // Public: all active campaigns — used by donors on the listing creation form.
 router.get('/campaigns/public', asyncHandler(listPublicCampaigns));
-
 router.get('/', asyncHandler(authenticate), requireRole('admin'), asyncHandler(listCharityRegistrations));
 router.post('/:uuid/review', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(reviewCharityRegistration));
 

@@ -1,50 +1,48 @@
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { PlusCircle, LayoutDashboard } from 'lucide-react'
+import DonorDashboard from './DonorDashboard'
+import BidderDashboard from './BidderDashboard'
+import CharityDashboard from './CharityDashboard'
+
+const C = {
+  slate: '#2D3A3A', emerald: '#047857',
+  beige: '#BBB09B', linen: '#F7F5F0', muted: '#5C6E6E',
+}
 
 export default function DashboardPage() {
   const { user } = useAuthStore()
 
+  if (!user) {
+    return (
+      <div className="container mx-auto px-4 py-12 text-center">
+        <p>Please log in to view your dashboard.</p>
+      </div>
+    )
+  }
+
+  // Route to the correct dashboard based on user roles
+  if (user.roles.includes('donor')) return <DonorDashboard />
+  if (user.roles.includes('charity') || user.roles.includes('charity_staff')) return <CharityDashboard />
+  if (user.roles.includes('bidder')) return <BidderDashboard />
+  if (user.roles.includes('admin')) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: C.linen }}>
+        <div className="text-center max-w-md mx-auto p-8">
+          <p className="text-lg font-bold mb-2" style={{ color: C.slate }}>Admin Dashboard</p>
+          <p className="text-sm mb-6" style={{ color: C.muted }}>Admin dashboards are at the admin panel.</p>
+          <Link to="/admin"
+            className="inline-block px-6 py-3 rounded-xl text-white font-semibold"
+            style={{ background: C.emerald }}>
+            Go to Admin Panel →
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-[calc(100vh-64px)] flex" style={{ background: '#F7F5F0' }}>
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r flex flex-col shadow-sm" style={{ borderColor: '#BBB09B' }}>
-        <div className="p-6 border-b" style={{ borderColor: '#BBB09B' }}>
-          <h2 className="text-lg font-bold" style={{ color: '#2D3A3A' }}>Donor Portal</h2>
-          <p className="text-xs mt-1" style={{ color: '#5C6E6E' }}>Manage your auctions</p>
-        </div>
-        
-        <nav className="flex-1 px-4 py-6 space-y-2">
-          {/* Placeholder for Dashboard Home */}
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 cursor-not-allowed bg-gray-50">
-            <LayoutDashboard className="w-5 h-5" />
-            <span className="font-medium text-sm">Overview (WIP)</span>
-          </div>
-
-          {/* Create New Listing Button */}
-          {user?.roles?.includes('donor') && (
-            <Link 
-              to="/listings/create" 
-              className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all shadow-sm hover:-translate-y-0.5"
-              style={{ color: '#047857', background: '#ECFDF5', border: '1px solid #A7F3D0' }}
-            >
-              <PlusCircle className="w-5 h-5" />
-              <span className="text-sm">Create New Listing</span>
-            </Link>
-          )}
-        </nav>
-      </aside>
-
-      {/* Main Content Area */}
-      <main className="flex-1 p-10">
-        <h1 className="text-3xl font-bold" style={{ color: '#2D3A3A' }}>Dashboard</h1>
-        <p className="mt-2 text-lg" style={{ color: '#5C6E6E' }}>Welcome back, {user?.full_name}</p>
-        
-        <div className="mt-16 flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-2xl" style={{ borderColor: '#BBB09B' }}>
-          <p className="text-lg font-medium mb-2" style={{ color: '#2D3A3A' }}>Dashboard is empty</p>
-          <p className="text-sm" style={{ color: '#5C6E6E' }}>Select "Create New Listing" in the sidebar to start a charity auction.</p>
-        </div>
-      </main>
+    <div className="container mx-auto px-4 py-12 text-center">
+      <p style={{ color: C.muted }}>No dashboard available for your account type.</p>
     </div>
   )
 }

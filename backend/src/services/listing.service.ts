@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { Listing, ListingStatus } from '../types/domain';
-import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listPendingListings, updateListing } from '../repositories';
+import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listListingsByDonor, listPendingListings, updateListing } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
 import { isSafeSearchQuery, roundMoney, sanitizeText } from '../utils/security';
 import { audit } from './audit.service';
@@ -145,3 +145,25 @@ export const getPublicListing = async (uuid: string): Promise<Listing> => {
 };
 
 export const getPendingListings = async (): Promise<Listing[]> => listPendingListings();
+
+export const getDonorListings = async (donorId: number): Promise<{ listings: Listing[]; stats: DonorStats }> => {
+  const listings = await listListingsByDonor(donorId);
+  const stats: DonorStats = {
+    total: listings.length,
+    active: listings.filter(l => l.status === 'active').length,
+    sold: listings.filter(l => l.status === 'sold').length,
+    pending: listings.filter(l => l.status === 'pending').length,
+    draft: listings.filter(l => l.status === 'draft').length,
+    totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
+  };
+  return { listings, stats };
+};
+
+export interface DonorStats {
+  total: number;
+  active: number;
+  sold: number;
+  pending: number;
+  draft: number;
+  totalRaised: number;
+}

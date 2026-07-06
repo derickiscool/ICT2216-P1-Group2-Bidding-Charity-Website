@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { approveListing, createListing, getPendingListings, getPublicListing, searchPublicListings, updateListingDetails } from '../services/listing.service';
+import { approveListing, createListing, getDonorListings, getPendingListings, getPublicListing, searchPublicListings, updateListingDetails } from '../services/listing.service';
 
 export const listActive = async (req: Request, res: Response): Promise<void> => {
   const listings = await searchPublicListings(req.query);
@@ -24,4 +24,9 @@ export const pending = async (_req: Request, res: Response): Promise<void> => {
 
 export const approve = async (req: Request, res: Response): Promise<void> => {
   res.json(await approveListing(req.params.uuid, req));
+};
+
+export const donorListings = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) return;
+  res.json(await getDonorListings(req.user.id));
 };

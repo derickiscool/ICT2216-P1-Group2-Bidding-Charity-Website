@@ -115,6 +115,11 @@ export interface Bid {
   created_at: string;
 }
 
+export interface BidWithListing extends Bid {
+  listingTitle?: string;
+  listingUuid?: string;
+}
+
 export interface SessionRecord {
   sid: string;
   userId: number;
