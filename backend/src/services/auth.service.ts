@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import argon2 from 'argon2';
 import type { Request, Response } from 'express';
 import {
-  addUser, findUserByEmail, findUserByUsername, getPendingRegistration, removePendingRegistration, savePendingRegistration, toPublicUser, updateUser,
+  addUser, findUserByEmail, findUserById, findUserByUsername, getPendingRegistration, removePendingRegistration, savePendingRegistration, toPublicUser, updateUser,
   saveLoginOtp, getLoginOtp, removeLoginOtp,
   savePasswordResetToken, getPasswordResetTokenByEmail, removePasswordResetToken, revokeAllSessionsByUserId,
 } from '../repositories';
@@ -23,6 +23,18 @@ const GENERIC_REGISTRATION_MESSAGE = 'If the account can be registered, a verifi
 const PASSWORD_POLICY_MESSAGE = 'Password must be 8-128 characters and must not match known breached, common, or dictionary passwords.';
 const LOGIN_LOCKOUT_MESSAGE = 'Too many failed login attempts. Please try again later.';
 
+const isUsernameManagedRole = (roles: UserRole[]): boolean => roles.some(role => role === 'bidder' || role === 'donor');
+
+const generateInternalUsername = async (prefix: string): Promise<string> => {
+  // The database still requires a unique username for legacy bid/audit records.
+  // For charity and staff accounts this value is internal only and is never collected from users.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = `${prefix}_${crypto.randomBytes(6).toString('hex')}`.slice(0, 40);
+    if (!(await findUserByUsername(candidate))) return candidate;
+  }
+  throw new Error('Unable to allocate internal username.');
+};
+
 export interface RegisterInput {
   full_name?: string;
   username?: string;
@@ -34,24 +46,31 @@ export interface RegisterInput {
 export const beginRegistration = async (input: RegisterInput, req?: Request): Promise<{ message: string }> => {
   const email = normalizeEmail(input.email ?? '');
   const fullName = safeString(input.full_name, 120);
-  const username = safeString(input.username, 40);
+  const submittedUsername = safeString(input.username, 40);
   const roles: UserRole[] = Array.isArray(input.roles) && input.roles.length > 0
     ? input.roles.filter((r): r is UserRole => VALID_ROLES.has(r)).slice(0, 2)
     : ['bidder'];
   const password = String(input.password ?? '');
   const generic = { message: GENERIC_REGISTRATION_MESSAGE };
+  const usernameManagedByUser = isUsernameManagedRole(roles);
 
   const errors: Record<string, string> = {};
   if (!isValidEmail(email)) errors.email = 'Enter a valid email address.';
   if (fullName.length < 2) errors.full_name = 'Full name is required.';
-  if (!/^[A-Za-z0-9_]{3,40}$/.test(username)) errors.username = 'Username must be 3-40 characters using letters, numbers, or underscores.';
+  if (usernameManagedByUser && !/^[A-Za-z0-9_]{3,40}$/.test(submittedUsername)) {
+    errors.username = 'Username must be 3-40 characters using letters, numbers, or underscores.';
+  }
   if (!isStrongPassword(password)) errors.password = PASSWORD_POLICY_MESSAGE;
   if (roles.length === 0) errors.roles = 'At least one valid role is required.';
 
-  const existingUsername = await findUserByUsername(username);
-  if (existingUsername) errors.username = 'Username is already taken.';
+  if (usernameManagedByUser) {
+    const existingUsername = await findUserByUsername(submittedUsername);
+    if (existingUsername) errors.username = 'Username is already taken.';
+  }
 
   if (Object.keys(errors).length > 0) throw badRequest('Registration input failed validation.', 'VALIDATION_ERROR', errors);
+
+  const username = usernameManagedByUser ? submittedUsername : await generateInternalUsername('acct');
 
   const existing = await findUserByEmail(email);
   if (existing) {
@@ -323,6 +342,7 @@ export const resetPassword = async (emailInput: string, otpInput: string, newPas
     throw invalid;
   }
   user.passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
+  user.mustChangePassword = false;
   user.failedLoginAttempts = 0;
   user.lockedUntil = undefined;
   await resetLoginFailures(email);
@@ -331,4 +351,45 @@ export const resetPassword = async (emailInput: string, otpInput: string, newPas
   await revokeAllSessionsByUserId(user.id);
   await audit(req, 'AUTH_PASSWORD_RESET_COMPLETED', { email }, 'user', user.uuid, user.id);
   return { message: 'Your password has been reset. You can now log in with your new password.' };
+};
+
+export const forceChangePassword = async (
+  userId: number,
+  currentPassword: string,
+  newPassword: string,
+  req?: Request,
+): Promise<{ message: string; user: ReturnType<typeof toPublicUser> }> => {
+  const user = await findUserById(userId);
+  if (!user || !user.is_active || !user.is_verified) throw unauthorised();
+
+  if (!user.mustChangePassword) {
+    return { message: 'Password change is not required for this account.', user: toPublicUser(user) };
+  }
+
+  const errors: Record<string, string> = {};
+  if (!currentPassword) errors.currentPassword = 'Current temporary password is required.';
+  if (!newPassword) errors.newPassword = 'New password is required.';
+  else if (!isStrongPassword(newPassword)) errors.newPassword = PASSWORD_POLICY_MESSAGE;
+  if (Object.keys(errors).length > 0) throw badRequest('Password change validation failed.', 'VALIDATION_ERROR', errors);
+
+  const currentOk = await argon2.verify(user.passwordHash, currentPassword);
+  if (!currentOk) {
+    await audit(req, 'AUTH_FORCE_PASSWORD_CHANGE_FAILED', { reason: 'current_password_mismatch' }, 'user', user.uuid, user.id);
+    throw badRequest('Password change validation failed.', 'VALIDATION_ERROR', { currentPassword: 'Current temporary password is incorrect.' });
+  }
+
+  const samePassword = await argon2.verify(user.passwordHash, newPassword);
+  if (samePassword) {
+    throw badRequest('Password change validation failed.', 'VALIDATION_ERROR', { newPassword: 'New password must be different from the temporary password.' });
+  }
+
+  user.passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
+  user.mustChangePassword = false;
+  user.failedLoginAttempts = 0;
+  user.lockedUntil = undefined;
+  await resetLoginFailures(user.email);
+  await updateUser(user);
+  await audit(req, 'AUTH_FORCE_PASSWORD_CHANGE_COMPLETED', {}, 'user', user.uuid, user.id);
+
+  return { message: 'Password changed successfully.', user: toPublicUser(user) };
 };

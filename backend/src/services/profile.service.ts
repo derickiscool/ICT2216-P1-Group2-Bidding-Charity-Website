@@ -86,8 +86,11 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
   if (fullName.length < 2) errors.full_name = 'Full name must be at least 2 characters.';
   else if (fullName.length > PROFILE_NAME_MAX) errors.full_name = `Full name must be ${PROFILE_NAME_MAX} characters or less.`;
 
-  const username = cleanTextInput(input.username);
-  if (!/^[A-Za-z0-9_]{3,30}$/.test(username)) {
+  // Usernames remain user-facing only for bidder/donor accounts because bids use them as public aliases.
+  // Charity organisation, charity staff, and admin accounts keep internal identifiers that users cannot edit.
+  const usernameEditable = user.roles.includes('bidder') || user.roles.includes('donor');
+  const username = usernameEditable ? cleanTextInput(input.username) : user.username;
+  if (usernameEditable && !/^[A-Za-z0-9_]{3,30}$/.test(username)) {
     errors.username = `Username must be 3-${USERNAME_MAX} characters using letters, numbers, or underscores.`;
   }
 
@@ -99,19 +102,24 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
 
   if (Object.keys(errors).length > 0) throw badRequest('Profile update validation failed.', 'VALIDATION_ERROR', errors);
 
-  if (username.toLowerCase() !== user.username.toLowerCase()) {
+  if (usernameEditable && username.toLowerCase() !== user.username.toLowerCase()) {
     const taken = await findUserByUsername(username);
     if (taken && taken.id !== user.id) throw badRequest('Username is already taken.', 'USERNAME_TAKEN');
   }
 
-  const previous = { full_name: user.full_name, username: user.username, contactNumber: user.contactNumber };
+  const previous = usernameEditable
+    ? { full_name: user.full_name, username: user.username, contactNumber: user.contactNumber }
+    : { full_name: user.full_name, contactNumber: user.contactNumber };
 
   user.full_name = fullName;
-  user.username = username;
+  if (usernameEditable) user.username = username;
   user.contactNumber = contactNumber;
 
   await updateUser(user);
-  await audit(req, 'PROFILE_UPDATED', { previous, updated: { full_name: fullName, username, contactNumber } }, 'user', user.uuid, user.id);
+  await audit(req, 'PROFILE_UPDATED', {
+    previous,
+    updated: usernameEditable ? { full_name: fullName, username, contactNumber } : { full_name: fullName, contactNumber },
+  }, 'user', user.uuid, user.id);
 
   return toPublicUser(user);
 };
@@ -197,6 +205,7 @@ export const changePassword = async (userId: number, input: ChangePasswordInput,
   }
 
   user.passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
+  user.mustChangePassword = false;
   await updateUser(user);
   await removePasswordResetToken(user.email);
   await audit(req, 'PASSWORD_CHANGED', {}, 'user', user.uuid, user.id);

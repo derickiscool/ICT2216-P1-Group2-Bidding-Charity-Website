@@ -1,8 +1,16 @@
+import crypto from 'crypto';
 import argon2 from 'argon2';
 import type { Request } from 'express';
 import {
-  addUser, findUserByEmail, findUserByUsername, findUserByUuid, getCharityByOwnerUserId,
-  listStaffByCharityId, toPublicUser, updateUser, type PublicUser
+  addUser,
+  findUserByEmail,
+  findUserByUsername,
+  findUserByUuid,
+  getCharityByOwnerUserId,
+  listStaffByCharityId,
+  toPublicUser,
+  updateUser,
+  type PublicUser,
 } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
 import { isStrongPassword } from '../utils/breachedPasswords';
@@ -14,7 +22,6 @@ const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, 
 interface ValidatedStaffFields {
   fullName: string;
   email: string;
-  username: string;
 }
 
 const resolveOwnedCharity = async (req: Request) => {
@@ -34,25 +41,31 @@ const validateStaffFields = (body: Record<string, unknown>): ValidatedStaffField
   const errors: Record<string, string> = {};
   const fullName = sanitizeText(body.full_name, 80);
   const email = safeString(body.email, 254).toLowerCase();
-  const username = safeString(body.username, 30);
 
   if (fullName.length < 2) errors.full_name = 'Full name must be at least 2 characters.';
   if (!isValidEmail(email)) errors.email = 'Enter a valid email address.';
-  if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) errors.username = 'Username must be 3-30 characters using letters, numbers, and underscores.';
   if (Object.keys(errors).length > 0) throw badRequest('Staff input failed validation.', 'VALIDATION_ERROR', errors);
 
-  return { fullName, email, username };
+  return { fullName, email };
 };
 
-const assertEmailAndUsernameAvailable = async (email: string, username: string, excludeUserId?: number): Promise<void> => {
+const assertEmailAvailable = async (email: string): Promise<void> => {
   const existingEmail = await findUserByEmail(email);
-  if (existingEmail && existingEmail.id !== excludeUserId) {
-    throw badRequest('This email is already used by another account.', 'VALIDATION_ERROR', { email: 'This email is already used by another account.' });
+  if (existingEmail) {
+    throw badRequest('This email is already used by another account.', 'VALIDATION_ERROR', {
+      email: 'This email is already used by another account.',
+    });
   }
-  const existingUsername = await findUserByUsername(username);
-  if (existingUsername && existingUsername.id !== excludeUserId) {
-    throw badRequest('This username is already used by another account.', 'VALIDATION_ERROR', { username: 'This username is already used by another account.' });
+};
+
+const generateInternalStaffUsername = async (): Promise<string> => {
+  // Users table keeps a unique username for legacy bid/audit data, but FR05 no longer
+  // asks charity organisations to choose usernames for staff. Generate a hidden value instead.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = `staff_${crypto.randomBytes(6).toString('hex')}`;
+    if (!(await findUserByUsername(candidate))) return candidate;
   }
+  throw new Error('Unable to allocate staff account identifier.');
 };
 
 const findOwnedStaffByUuid = async (charityId: number, uuid: string) => {
@@ -74,39 +87,31 @@ export const listManagedStaff = async (req: Request): Promise<{ staff: PublicUse
 export const createManagedStaff = async (req: Request): Promise<PublicUser> => {
   const charity = await resolveOwnedCharity(req);
   requireApprovedCharity(charity);
-  const { fullName, email, username } = validateStaffFields(req.body);
+  const { fullName, email } = validateStaffFields(req.body);
 
   const temporaryPassword = String(req.body.temporaryPassword ?? '');
   if (!isStrongPassword(temporaryPassword)) {
     throw badRequest('Staff input failed validation.', 'VALIDATION_ERROR', {
-      temporaryPassword: 'Temporary password must be 8-128 characters and must not match known breached, common, or dictionary passwords.'
+      temporaryPassword: 'Temporary password must be 8-128 characters and must not match known breached, common, or dictionary passwords.',
     });
   }
 
-  await assertEmailAndUsernameAvailable(email, username);
+  await assertEmailAvailable(email);
 
+  const username = await generateInternalStaffUsername();
   const passwordHash = await argon2.hash(temporaryPassword, ARGON2_OPTIONS);
   const user = await addUser({
-    email, username, full_name: fullName, roles: ['charity_staff'], passwordHash, is_verified: true, charityId: charity.id
+    email,
+    username,
+    full_name: fullName,
+    roles: ['charity_staff'],
+    mustChangePassword: true,
+    passwordHash,
+    is_verified: true,
+    charityId: charity.id,
   });
-  await audit(req, 'CHARITY_STAFF_CREATED', { email, username }, 'user', user.uuid, req.user!.id);
+  await audit(req, 'CHARITY_STAFF_CREATED', { email }, 'user', user.uuid, req.user!.id);
   return toPublicUser(user);
-};
-
-export const updateManagedStaff = async (req: Request, staffUuid: string): Promise<PublicUser> => {
-  const charity = await resolveOwnedCharity(req);
-  requireApprovedCharity(charity);
-  const target = await findOwnedStaffByUuid(charity.id, staffUuid);
-  const { fullName, email, username } = validateStaffFields(req.body);
-
-  await assertEmailAndUsernameAvailable(email, username, target.id);
-
-  target.full_name = fullName;
-  target.email = email;
-  target.username = username;
-  await updateUser(target);
-  await audit(req, 'CHARITY_STAFF_UPDATED', { email, username }, 'user', target.uuid, req.user!.id);
-  return toPublicUser(target);
 };
 
 export const deactivateManagedStaff = async (req: Request, staffUuid: string): Promise<PublicUser> => {
@@ -117,5 +122,16 @@ export const deactivateManagedStaff = async (req: Request, staffUuid: string): P
   target.is_active = false;
   await updateUser(target);
   await audit(req, 'CHARITY_STAFF_DEACTIVATED', {}, 'user', target.uuid, req.user!.id);
+  return toPublicUser(target);
+};
+
+export const reactivateManagedStaff = async (req: Request, staffUuid: string): Promise<PublicUser> => {
+  const charity = await resolveOwnedCharity(req);
+  requireApprovedCharity(charity);
+  const target = await findOwnedStaffByUuid(charity.id, staffUuid);
+
+  target.is_active = true;
+  await updateUser(target);
+  await audit(req, 'CHARITY_STAFF_REACTIVATED', {}, 'user', target.uuid, req.user!.id);
   return toPublicUser(target);
 };

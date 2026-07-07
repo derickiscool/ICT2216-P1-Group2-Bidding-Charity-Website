@@ -2,7 +2,20 @@ import type { NextFunction, Request, Response } from 'express';
 import { findUserById, toPublicUser } from '../repositories';
 import { parseCookieHeader } from '../utils/security';
 import { getSessionCookieName, verifySessionToken } from '../services/session.service';
-import { unauthorised } from '../utils/errors';
+import { forbidden, unauthorised } from '../utils/errors';
+
+
+const PASSWORD_CHANGE_ALLOWED_PATHS = new Set([
+  '/api/auth/me',
+  '/api/auth/logout',
+  '/api/auth/force-change-password',
+]);
+
+const assertPasswordChangeGate = (req: Request): void => {
+  if (!req.user?.mustChangePassword) return;
+  if (PASSWORD_CHANGE_ALLOWED_PATHS.has(req.originalUrl.split('?')[0])) return;
+  throw forbidden('Password change is required before continuing.', 'PASSWORD_CHANGE_REQUIRED');
+};
 
 const getTokenFromRequest = (req: Request): string | undefined => {
   const cookies = parseCookieHeader(req.headers.cookie);
@@ -19,6 +32,7 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
     req.user = toPublicUser(user);
     req.csrfToken = verified.csrfTokenHash;
     req.sessionId = verified.sid;
+    assertPasswordChangeGate(req);
     next();
   } catch (err) {
     next(err);
@@ -35,6 +49,7 @@ export const authenticateOptional = async (req: Request, _res: Response, next: N
     req.user = toPublicUser(user);
     req.csrfToken = verified.csrfTokenHash;
     req.sessionId = verified.sid;
+    assertPasswordChangeGate(req);
     next();
   } catch {
     next();

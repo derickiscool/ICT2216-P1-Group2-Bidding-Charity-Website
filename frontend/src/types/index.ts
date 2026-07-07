@@ -10,6 +10,7 @@ export interface User {
   full_name: string
   contactNumber?: string | null
   roles: UserRole[]
+  mustChangePassword?: boolean
   is_verified: boolean
   is_active: boolean
   created_at: string

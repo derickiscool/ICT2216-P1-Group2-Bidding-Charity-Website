@@ -12,6 +12,7 @@ interface AuthStore {
   logout: () => Promise<void>
   register: (data: RegisterData) => Promise<string>
   verifyRegistration: (email: string, otp: string) => Promise<void>
+  forceChangePassword: (currentPassword: string, newPassword: string) => Promise<string>
   fetchMe: () => Promise<void>
   hasRole: (role: UserRole) => boolean
 }
@@ -19,7 +20,7 @@ interface AuthStore {
 interface RegisterData {
   full_name: string
   email: string
-  username: string
+  username?: string
   password: string
   roles: UserRole[]
 }
@@ -31,6 +32,11 @@ interface LoginResponse {
 
 interface RegisterResponse {
   message: string
+}
+
+interface ForceChangePasswordResponse {
+  message: string
+  user: User
 }
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
@@ -100,6 +106,19 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       await api.post('/auth/register/verify', { email, otp })
       set({ isLoading: false })
+    } catch (err) {
+      set({ isLoading: false })
+      throw err
+    }
+  },
+
+
+  forceChangePassword: async (currentPassword, newPassword) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.post<ForceChangePasswordResponse>('/auth/force-change-password', { currentPassword, newPassword })
+      set({ user: res.data.user, isAuthenticated: true, isLoading: false })
+      return res.data.message
     } catch (err) {
       set({ isLoading: false })
       throw err

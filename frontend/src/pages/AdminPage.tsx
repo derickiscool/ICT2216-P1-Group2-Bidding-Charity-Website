@@ -8,6 +8,8 @@ import {
 import api from '../services/api'
 import type { AdminStats, ApiError, AuditEvent, User, UserRole, CharityOrganisation, Listing } from '../types'
 
+const hasUserFacingUsername = (user: User): boolean => user.roles.some(role => role === 'bidder' || role === 'donor')
+
 const roleBadge = (role: string) => {
   const colors = new Map<string, { bg: string; text: string }>([
     ['admin', { bg: '#FEE2E2', text: '#991B1B' }],
@@ -243,7 +245,7 @@ export default function AdminPage() {
       const q = searchQuery.toLowerCase()
       result = result.filter(u =>
         u.full_name.toLowerCase().includes(q) ||
-        u.username.toLowerCase().includes(q) ||
+        (hasUserFacingUsername(u) && u.username.toLowerCase().includes(q)) ||
         u.email.toLowerCase().includes(q),
       )
     }
@@ -333,15 +335,15 @@ export default function AdminPage() {
 
   // User lookup for audit log
   const userLookup = useMemo(() => {
-    const map = new Map<number, { name: string; username: string }>()
-    users.forEach(u => { if (u.id) map.set(u.id, { name: u.full_name, username: u.username }) })
+    const map = new Map<number, { name: string; username?: string }>()
+    users.forEach(u => { if (u.id) map.set(u.id, { name: u.full_name, username: hasUserFacingUsername(u) ? u.username : undefined }) })
     return map
   }, [users])
 
   const actorName = (userId?: number): string => {
     if (!userId) return 'System'
     const u = userLookup.get(userId)
-    return u ? `${u.name} (@${u.username}) #${userId}` : `#${userId}`
+    return u ? `${u.name}${u.username ? ` (@${u.username})` : ''} #${userId}` : `#${userId}`
   }
 
   // Audits
@@ -356,7 +358,7 @@ export default function AdminPage() {
       const q = auditSearch.toLowerCase()
       result = result.filter(e => {
         const u = e.actorUserId ? userLookup.get(e.actorUserId) : null
-        const userStr = u ? `${u.name} (@${u.username}) #${e.actorUserId}` : `#${e.actorUserId ?? ''}`
+        const userStr = u ? `${u.name}${u.username ? ` (@${u.username})` : ''} #${e.actorUserId}` : `#${e.actorUserId ?? ''}`
         return e.action.toLowerCase().includes(q) ||
           userStr.toLowerCase().includes(q) ||
           (e.resourceType ?? '').toLowerCase().includes(q) ||
@@ -592,7 +594,7 @@ export default function AdminPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr style={{ background: C.linen }}>
-                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Username</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>User</th>
                           <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest hidden md:table-cell" style={{ color: C.muted }}>Email</th>
                           <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Roles</th>
                           <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Status</th>
@@ -605,7 +607,9 @@ export default function AdminPage() {
                           <tr key={u.uuid} className="border-t" style={{ borderColor: C.beige }}>
                             <td className="px-6 py-4">
                               <p className="font-medium" style={{ color: C.slate }}>{u.full_name}</p>
-                              <p className="text-xs mt-0.5" style={{ color: C.muted }}>@{u.username}</p>
+                              {hasUserFacingUsername(u) && (
+                                <p className="text-xs mt-0.5" style={{ color: C.muted }}>@{u.username}</p>
+                              )}
                             </td>
                             <td className="px-6 py-4 hidden md:table-cell text-xs" style={{ color: C.muted }}>{u.email}</td>
                             <td className="px-6 py-4">
@@ -977,4 +981,3 @@ export default function AdminPage() {
     </div>
   )
 }
-

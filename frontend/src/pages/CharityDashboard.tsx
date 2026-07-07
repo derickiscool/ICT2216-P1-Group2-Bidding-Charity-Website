@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Package, Loader2, AlertCircle, Info,
   CheckCircle, Clock, Plus, ExternalLink, RefreshCw, X,
-  HeartHandshake, Users, DollarSign, ListOrdered, Pencil,
+  HeartHandshake, Users, DollarSign, ListOrdered,
 } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
@@ -20,6 +20,7 @@ interface SoldListingWithPayment extends Listing {
 const C = {
   slate: '#2D3A3A', emerald: '#047857', emeraldLight: '#ECFDF5',
   beige: '#BBB09B', linen: '#F7F5F0', muted: '#5C6E6E',
+  warning: '#92400E',
   danger: '#B91C1C', dangerLight: '#FEF2F2', dangerBorder: '#FECACA',
 }
 
@@ -60,10 +61,10 @@ interface StaffAccount {
   uuid: string
   full_name: string
   email: string
-  username: string
   is_active: boolean
   created_at: string
   lastLoginAt?: string
+  mustChangePassword?: boolean
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -328,7 +329,7 @@ export default function CharityDashboard() {
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>Staff Accounts</h1>
-                  <p className="text-sm mt-1" style={{ color: C.muted }}>Manage your charity organisation's staff members</p>
+                  <p className="text-sm mt-1" style={{ color: C.muted }}>Create, deactivate, and reactivate staff accounts for your organisation</p>
                 </div>
                 <Link to="/charity/staff"
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
@@ -365,7 +366,9 @@ export default function CharityDashboard() {
                           <tr key={s.uuid} className="border-t" style={{ borderColor: C.beige }}>
                             <td className="px-6 py-4">
                               <p className="font-medium" style={{ color: C.slate }}>{s.full_name}</p>
-                              <p className="text-xs mt-0.5" style={{ color: C.muted }}>@{s.username}</p>
+                              {s.mustChangePassword && (
+                                <p className="text-xs mt-0.5" style={{ color: C.warning }}>Temporary password pending reset</p>
+                              )}
                             </td>
                             <td className="px-6 py-4 text-xs" style={{ color: C.muted }}>{s.email}</td>
                             <td className="px-6 py-4">
@@ -377,12 +380,7 @@ export default function CharityDashboard() {
                             </td>
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-1">
-                                <Link to="/charity/staff"
-                                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-                                  style={{ color: C.muted }} title="Edit staff">
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </Link>
-                                {s.is_active && (
+                                {s.is_active ? (
                                   <button
                                     onClick={async () => {
                                       try {
@@ -393,8 +391,22 @@ export default function CharityDashboard() {
                                       }
                                     }}
                                     className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-                                    style={{ color: C.danger }} title="Deactivate">
+                                    style={{ color: C.danger }} title="Deactivate staff account">
                                     <X className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await api.patch(`/charities/staff/${s.uuid}/reactivate`)
+                                        await loadData()
+                                      } catch (e) {
+                                        setError((e as ApiError).message || 'Failed to reactivate staff.')
+                                      }
+                                    }}
+                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+                                    style={{ color: C.emerald }} title="Reactivate staff account">
+                                    <RefreshCw className="w-3.5 h-3.5" />
                                   </button>
                                 )}
                               </div>
