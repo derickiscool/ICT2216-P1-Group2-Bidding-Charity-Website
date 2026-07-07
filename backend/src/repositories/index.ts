@@ -68,6 +68,7 @@ export const {
 
   addReceipt,
   getReceiptByUuid,
+  getReceiptByPaymentId,
   getReceiptsByBidder,
 
   addPayment,

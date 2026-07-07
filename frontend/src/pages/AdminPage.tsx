@@ -74,9 +74,10 @@ function PaginationBar({ page, totalPages, totalItems, onPageChange }: {
 
 // ─── Rejection modal ──────────────────────────────────────────────────────────
 
-function RejectModal({ onConfirm, onClose }: {
+function RejectModal({ onConfirm, onClose, label }: {
   onConfirm: (reason: string) => Promise<void>
   onClose: () => void
+  label?: string
 }) {
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
@@ -93,7 +94,7 @@ function RejectModal({ onConfirm, onClose }: {
         </div>
         <div className="px-6 py-5 space-y-4">
           <p className="text-sm" style={{ color: C.muted }}>
-            Please provide a reason for rejecting this item. This will be visible to the submitter.
+            Please provide a reason for rejecting this {label || 'item'}. This will be visible to the submitter.
           </p>
           <textarea value={reason} autoFocus rows={4}
             onChange={e => setReason(e.target.value)}
@@ -181,6 +182,7 @@ export default function AdminPage() {
   const [charities, setCharities] = useState<CharityOrganisation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('all')
@@ -199,6 +201,7 @@ export default function AdminPage() {
 
   // Rejection modal
   const [rejectModal, setRejectModal] = useState<{ type: 'listing' | 'charity'; uuid: string } | null>(null)
+  const [confirmForceClose, setConfirmForceClose] = useState<{ uuid: string; title: string } | null>(null)
 
   // Audit search
   const [auditSearch, setAuditSearch] = useState('')
@@ -207,6 +210,7 @@ export default function AdminPage() {
   const loadData = async () => {
     setLoading(true)
     setError(null)
+    setMessage(null)
     try {
       const [statsRes, auditRes, usersRes, charitiesRes, listingsRes] = await Promise.all([
         api.get<AdminStats>('/admin/stats'),
@@ -269,7 +273,8 @@ export default function AdminPage() {
     setActionLoading(uuid)
     try {
       await api.post(`/listings/${uuid}/approve`)
-      setListingsData(prev => prev.filter(l => l.uuid !== uuid))
+      setMessage('Listing approved successfully.')
+      setListingsData(prev => prev.map(l => l.uuid === uuid ? { ...l, status: 'active' as const } : l))
     } catch (err) {
       setError((err as ApiError).message || 'Failed to approve listing.')
     } finally {
@@ -295,7 +300,9 @@ export default function AdminPage() {
     setActionLoading(uuid)
     try {
       await api.post(`/listings/${uuid}/force-close`)
-      setListingsData(prev => prev.filter(l => l.uuid !== uuid))
+      setMessage('Auction forcefully closed.')
+      setListingsData(prev => prev.map(l => l.uuid === uuid ? { ...l, status: 'sold' as const } : l))
+      setConfirmForceClose(null)
     } catch (err) {
       setError((err as ApiError).message || 'Failed to force close listing.')
     } finally {
@@ -308,7 +315,7 @@ export default function AdminPage() {
     setActionLoading(rejectModal.uuid)
     try {
       await api.post(`/charities/${rejectModal.uuid}/review`, { decision: 'rejected', reason })
-      setCharities(prev => prev.filter(c => c.uuid !== rejectModal.uuid))
+      setCharities(prev => prev.map(c => c.uuid === rejectModal.uuid ? { ...c, status: 'rejected' as const } : c))
       setRejectModal(null)
     } catch (err) {
       setError((err as ApiError).message || 'Failed to reject charity.')
@@ -434,15 +441,21 @@ export default function AdminPage() {
     <div className="min-h-[calc(100vh-64px)]" style={{ background: C.linen }}>
       <div className="flex">
         {/* Desktop sidebar */}
-        <Sidebar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+        <Sidebar tabs={tabs} activeTab={activeTab} onTabChange={(tab) => { setMessage(null); setActiveTab(tab) }} />
 
         {/* Main content */}
         <div className="flex-1 min-w-0 px-4 sm:px-6 py-8">
 
-          {error && (
+           {error && (
             <div className="mb-4 rounded-xl p-3 text-sm font-bold" style={{ background: C.dangerLight, color: C.danger, border: `1px solid ${C.dangerBorder}` }}>
               {error}
               <button onClick={() => setError(null)} className="float-right"><X className="w-4 h-4" /></button>
+            </div>
+          )}
+          {message && (
+            <div className="mb-4 rounded-xl p-3 text-sm font-bold" style={{ background: C.emeraldLight, color: C.emerald, border: `1px solid rgba(4,120,87,0.20)` }}>
+              {message}
+              <button onClick={() => setMessage(null)} className="float-right"><X className="w-4 h-4" /></button>
             </div>
           )}
 
@@ -723,7 +736,7 @@ export default function AdminPage() {
                                     setActionLoading(c.uuid)
                                     try {
                                       await api.post(`/charities/${c.uuid}/review`, { decision: 'approved' })
-                                      setCharities(prev => prev.filter(x => x.uuid !== c.uuid))
+                                      setCharities(prev => prev.map(x => x.uuid === c.uuid ? { ...x, status: 'approved' as const } : x))
                                     } catch (err) {
                                       setError((err as ApiError).message || 'Failed to approve charity.')
                                     } finally {
@@ -854,11 +867,9 @@ export default function AdminPage() {
                                   </>
                                 )}
                                 {l.status === 'active' && (
-                                  <button onClick={() => handleForceClose(l.uuid!)}
-                                    disabled={actionLoading === l.uuid}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white disabled:opacity-50"
+                                  <button onClick={() => setConfirmForceClose({ uuid: l.uuid!, title: l.title })}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90"
                                     style={{ background: C.danger }}>
-                                    {actionLoading === l.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                                     Force Close
                                   </button>
                                 )}
@@ -971,12 +982,49 @@ export default function AdminPage() {
       {/* Rejection modal */}
       {rejectModal && (
         <RejectModal
+          label={rejectModal.type === 'listing' ? 'listing' : 'charity registration'}
           onConfirm={async (reason) => {
             if (rejectModal.type === 'listing') await handleRejectListing(reason)
             else await handleRejectCharity(reason)
           }}
           onClose={() => setRejectModal(null)}
         />
+      )}
+
+      {/* Force close confirmation */}
+      {confirmForceClose && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={() => setConfirmForceClose(null)}>
+          <div className="rounded-2xl bg-white w-full max-w-sm mx-4 overflow-hidden shadow-xl"
+            style={{ border: `1px solid ${C.beige}` }}
+            onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: C.beige }}>
+              <h2 className="font-black text-base" style={{ color: C.slate }}>Force Close Auction</h2>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm" style={{ color: C.slate }}>
+                Are you sure you want to force close <strong>{confirmForceClose.title}</strong>?
+              </p>
+              <p className="text-xs" style={{ color: C.muted }}>
+                This will end the auction immediately and mark it as sold. This action cannot be undone.
+              </p>
+            </div>
+            <div className="px-6 pb-5 flex gap-3">
+              <button onClick={() => setConfirmForceClose(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                style={{ border: `1px solid ${C.beige}`, color: C.slate }}>
+                Cancel
+              </button>
+              <button onClick={() => handleForceClose(confirmForceClose.uuid)}
+                disabled={actionLoading === confirmForceClose.uuid}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+                style={{ background: C.danger }}>
+                {actionLoading === confirmForceClose.uuid ? 'Closing…' : 'Confirm Close'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -1253,7 +1253,7 @@ export default function CharityDashboard() {
                                     Review
                                   </Link>
                                 )}
-                                {l.uuid && (l.status === 'active' || l.status === 'sold') && (
+                                {l.uuid && l.status === 'active' && (
                                   <Link to={`/auctions/${l.uuid}`} target="_blank"
                                     className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
                                     style={{ color: C.muted }} title="View listing">
