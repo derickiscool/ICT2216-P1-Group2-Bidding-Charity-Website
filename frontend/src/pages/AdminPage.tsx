@@ -306,7 +306,7 @@ export default function AdminPage() {
     setActionLoading(rejectModal.uuid)
     try {
       await api.post(`/charities/${rejectModal.uuid}/review`, { decision: 'rejected', reason })
-      setCharities(prev => prev.filter(c => c.uuid !== rejectModal.uuid))
+      setCharities(prev => prev.map(c => c.uuid === rejectModal.uuid ? { ...c, status: 'rejected' as const } : c))
       setRejectModal(null)
     } catch (err) {
       setError((err as ApiError).message || 'Failed to reject charity.')
@@ -719,7 +719,7 @@ export default function AdminPage() {
                                     setActionLoading(c.uuid)
                                     try {
                                       await api.post(`/charities/${c.uuid}/review`, { decision: 'approved' })
-                                      setCharities(prev => prev.filter(x => x.uuid !== c.uuid))
+                                      setCharities(prev => prev.map(x => x.uuid === c.uuid ? { ...x, status: 'approved' as const } : x))
                                     } catch (err) {
                                       setError((err as ApiError).message || 'Failed to approve charity.')
                                     } finally {
