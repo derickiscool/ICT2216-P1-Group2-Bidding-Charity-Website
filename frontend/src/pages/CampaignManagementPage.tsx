@@ -13,7 +13,7 @@
   Backend must still enforce RBAC, charity ownership, input validation, sanitisation and audit logging.
 */
 import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { AlertCircle, CalendarDays, CheckCircle2, Edit3, Eye, Flag, HeartHandshake, ImageIcon, Loader2, Lock, Plus, Search, Target, Upload, X, XCircle } from 'lucide-react'
+import { AlertCircle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Edit3, Eye, Flag, HeartHandshake, ImageIcon, Loader2, Lock, Plus, Search, Target, Upload, X, XCircle } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api from '../services/api'
 import type { ApiError, Campaign } from '../types'
@@ -48,6 +48,11 @@ type CampaignFormErrors = Partial<Record<CampaignField | 'image_file', string>>
 
 const emptyForm: CampaignForm = { name: '', description: '', end_date: '', image_file: null, image_preview_url: '' }
 
+const CAMPAIGNS_PER_PAGE = 6
+
+const END_DATE_HELP_TEXT =
+  'Optional. If selected, the campaign stays active until 11:59 PM Singapore time on that date. Leave blank to keep it open until manually closed.'
+
 function apiErrMsg(err: unknown, fallback: string): string {
   return (err as ApiError)?.message || fallback
 }
@@ -66,10 +71,18 @@ function inputSt(hasErr: boolean, extra?: CSSProperties): CSSProperties {
   }
 }
 
-function formatDate(value?: string) {
+function formatEndDate(value?: string) {
   if (!value) return 'No end date'
-  const parsedDate = value.length === 10 ? new Date(`${value}T00:00:00`) : new Date(value)
-  return parsedDate.toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' })
+  // Campaign end dates are stored as date-only values. The UI makes the
+  // business meaning explicit so users know the selected date includes the
+  // full day, rather than ending at the start of the date.
+  const dateOnly = value.slice(0, 10)
+  const [year, month, day] = dateOnly.split('-').map(Number)
+  const parsedDate = new Date(Date.UTC(year, month - 1, day))
+  const formattedDate = parsedDate.toLocaleDateString('en-SG', {
+    day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
+  })
+  return `${formattedDate}, 11:59 PM SGT`
 }
 
 function formatMoney(value: number) {
@@ -147,6 +160,7 @@ export default function CampaignManagementPage() {
   const [closingId, setClosingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | CampaignStatus>('all')
+  const [currentPage, setCurrentPage] = useState(1)
 
   const roles = user?.roles ?? []
   const hasManageRole = roles.includes('admin') || roles.includes('charity') || roles.includes('charity_staff')
@@ -182,6 +196,13 @@ export default function CampaignManagementPage() {
     })
   }, [campaigns, search, statusFilter])
 
+  const totalCampaignPages = Math.max(1, Math.ceil(filteredCampaigns.length / CAMPAIGNS_PER_PAGE))
+  const safeCurrentPage = Math.min(currentPage, totalCampaignPages)
+  const paginatedCampaigns = useMemo(() => {
+    const start = (safeCurrentPage - 1) * CAMPAIGNS_PER_PAGE
+    return filteredCampaigns.slice(start, start + CAMPAIGNS_PER_PAGE)
+  }, [filteredCampaigns, safeCurrentPage])
+
   const activeCount = useMemo(() => campaigns.filter((c) => c.status === 'active').length, [campaigns])
   const closedCount = campaigns.length - activeCount
   const totalRaised = useMemo(() => campaigns.reduce((sum, c) => sum + c.total_raised, 0), [campaigns])
@@ -197,6 +218,19 @@ export default function CampaignManagementPage() {
     setEditForm((prev) => updateKnownField(prev, field, value))
     setEditErrors((prev) => clearKnownError(prev, field))
     setMessage(null)
+  }
+
+  function updateSearch(value: string) {
+    // Reset the records page when the search text changes so users do not land
+    // on an empty later page after narrowing the campaign list.
+    setSearch(value)
+    setCurrentPage(1)
+  }
+
+  function updateStatusFilter(value: 'all' | CampaignStatus) {
+    // Keep pagination predictable when switching between all/active/closed views.
+    setStatusFilter(value)
+    setCurrentPage(1)
   }
 
   function updateCreateImage(e: ChangeEvent<HTMLInputElement>) {
@@ -258,6 +292,7 @@ export default function CampaignManagementPage() {
       setCreateForm(emptyForm)
       setCreateErrors({})
       setStatusFilter('all')
+      setCurrentPage(1)
       setMessage({ type: 'success', text: 'Campaign created successfully.' })
     } catch (err) {
       const apiErr = err as ApiError
@@ -333,47 +368,42 @@ export default function CampaignManagementPage() {
         {showApprovalAlert && <Alert msg={{ type: 'error', text: 'Your charity account must be approved before you can manage campaigns.' }} />}
         {message && <Alert msg={message} />}
 
-        <div className="grid lg:grid-cols-[1fr_340px] gap-6 mt-6">
-          <div className="space-y-6">
-            <Card icon={<Plus className="w-5 h-5" />} title="Create campaign" desc="Set up a fundraising campaign that auction listings can support.">
-              <form onSubmit={saveCreateCampaign} noValidate className="space-y-5">
-                <TextInput label="Campaign name" value={createForm.name} error={createErrors.name} disabled={!canManageCampaigns || creating} autoComplete="off" placeholder="e.g. Build Schools in Rural Communities" onChange={(e) => updateCreateField('name', e.target.value)} />
-                <TextAreaInput label="Campaign description" value={createForm.description} error={createErrors.description} disabled={!canManageCampaigns || creating} placeholder="Explain what this campaign is raising awareness and funds for." note="Plain text only. Script-like content will be rejected." onChange={(e) => updateCreateField('description', e.target.value)} />
-                <ImageUploadInput label="Campaign image" previewUrl={createForm.image_preview_url} error={createErrors.image_file} disabled={!canManageCampaigns || creating} note="Optional. Accepted formats: JPG, PNG or WEBP, up to 2MB." onChange={updateCreateImage} onClear={clearCreateImage} />
-                <div className="grid md:grid-cols-2 gap-4 items-end">
-                  <TextInput label="Optional end date" type="date" value={createForm.end_date} error={createErrors.end_date} disabled={!canManageCampaigns || creating} min={todayForInput()} onChange={(e) => updateCreateField('end_date', e.target.value)} />
-                  <div className="flex justify-end">
-                    <PrimaryButton disabled={!canManageCampaigns || creating} icon={creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} label={creating ? 'Creating...' : 'Create campaign'} />
-                  </div>
-                </div>
-              </form>
-            </Card>
+        <div className="space-y-6 mt-6">
+          <OverviewCard total={campaigns.length} active={activeCount} closed={closedCount} totalRaised={totalRaised} linkedAuctions={linkedAuctionCount} />
 
-            <Card icon={<HeartHandshake className="w-5 h-5" />} title="Campaign records" desc="Search, edit and close campaigns created by your charity organisation.">
-              <div className="grid md:grid-cols-[1fr_180px] gap-3 mb-5">
-                <SearchBox value={search} onChange={setSearch} />
-                <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+          <Card icon={<Plus className="w-5 h-5" />} title="Create campaign" desc="Set up a fundraising campaign that auction listings can support.">
+            <form onSubmit={saveCreateCampaign} noValidate className="space-y-5">
+              <TextInput label="Campaign name" value={createForm.name} error={createErrors.name} disabled={!canManageCampaigns || creating} autoComplete="off" placeholder="e.g. Build Schools in Rural Communities" onChange={(e) => updateCreateField('name', e.target.value)} />
+              <TextAreaInput label="Campaign description" value={createForm.description} error={createErrors.description} disabled={!canManageCampaigns || creating} placeholder="Explain what this campaign is raising awareness and funds for." note="Plain text only. Script-like content will be rejected." onChange={(e) => updateCreateField('description', e.target.value)} />
+              <ImageUploadInput label="Campaign image" previewUrl={createForm.image_preview_url} error={createErrors.image_file} disabled={!canManageCampaigns || creating} note="Optional. Accepted formats: JPG, PNG or WEBP, up to 2MB." onChange={updateCreateImage} onClear={clearCreateImage} />
+              <div className="grid md:grid-cols-[minmax(0,1fr)_220px] gap-4 items-end">
+                <TextInput label="Optional end date" type="date" value={createForm.end_date} error={createErrors.end_date} note={END_DATE_HELP_TEXT} disabled={!canManageCampaigns || creating} min={todayForInput()} onChange={(e) => updateCreateField('end_date', e.target.value)} />
+                <div className="flex justify-end">
+                  <PrimaryButton disabled={!canManageCampaigns || creating} icon={creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} label={creating ? 'Creating...' : 'Create campaign'} />
+                </div>
               </div>
-              {loading ? (
-                <div className="text-center py-12" style={{ color: C.muted }}>
-                  <Loader2 className="w-6 h-6 mx-auto mb-3 animate-spin" />
-                  <p className="text-sm">Loading campaigns...</p>
-                </div>
-              ) : (
-                <CampaignGrid campaigns={filteredCampaigns} canManageCampaigns={canManageCampaigns} confirmCloseId={confirmCloseId} closingId={closingId} onEdit={startEdit} onAskClose={setConfirmCloseId} onCancelClose={() => setConfirmCloseId(null)} onConfirmClose={closeCampaign} />
-              )}
-            </Card>
-          </div>
+            </form>
+          </Card>
 
-          <aside className="space-y-6">
-            <OverviewCard total={campaigns.length} active={activeCount} closed={closedCount} totalRaised={totalRaised} linkedAuctions={linkedAuctionCount} />
-            <InfoCard title="Why close, not delete?" tone="success">
-              Closed campaigns stay visible in historical auction, payment and donation receipt records.
-            </InfoCard>
-            <InfoCard title="Security" tone="success">
-              All campaign changes are protected by authentication, CSRF tokens, RBAC, ownership checks, input sanitisation and audit logging.
-            </InfoCard>
-          </aside>
+          <Card icon={<HeartHandshake className="w-5 h-5" />} title="Campaign records" desc="Search, edit and close campaigns created by your charity organisation.">
+            <div className="grid md:grid-cols-[1fr_180px] gap-3 mb-5">
+              <SearchBox value={search} onChange={updateSearch} />
+              <StatusFilter value={statusFilter} onChange={updateStatusFilter} />
+            </div>
+            {loading ? (
+              <div className="text-center py-12" style={{ color: C.muted }}>
+                <Loader2 className="w-6 h-6 mx-auto mb-3 animate-spin" />
+                <p className="text-sm">Loading campaigns...</p>
+              </div>
+            ) : (
+              <>
+                <CampaignGrid campaigns={paginatedCampaigns} canManageCampaigns={canManageCampaigns} confirmCloseId={confirmCloseId} closingId={closingId} onEdit={startEdit} onAskClose={setConfirmCloseId} onCancelClose={() => setConfirmCloseId(null)} onConfirmClose={closeCampaign} />
+                {filteredCampaigns.length > 0 && (
+                  <PaginationControls currentPage={safeCurrentPage} totalPages={totalCampaignPages} totalItems={filteredCampaigns.length} pageSize={CAMPAIGNS_PER_PAGE} onPageChange={setCurrentPage} />
+                )}
+              </>
+            )}
+          </Card>
         </div>
       </div>
 
@@ -416,7 +446,7 @@ function CampaignGrid({ campaigns, canManageCampaigns, confirmCloseId, closingId
   }
 
   return (
-    <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
       {campaigns.map((campaign) => (
         <CampaignCard key={campaign.uuid} campaign={campaign} canManageCampaigns={canManageCampaigns} isConfirmingClose={confirmCloseId === campaign.uuid} isClosing={closingId === campaign.uuid} onEdit={onEdit} onAskClose={onAskClose} onCancelClose={onCancelClose} onConfirmClose={onConfirmClose} />
       ))}
@@ -445,15 +475,15 @@ function CampaignCard({ campaign, canManageCampaigns, isConfirmingClose, isClosi
       <CampaignImage src={imageUrl} />
 
       <div className="flex items-start justify-between gap-3 mt-4">
-        <div className="min-w-0">
-          <h3 className="font-bold text-base leading-snug" style={{ color: C.slate }}>{campaign.name}</h3>
-          <p className="text-sm leading-relaxed mt-3" style={{ color: C.muted }}>{campaign.description}</p>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-bold text-base leading-snug break-words" style={{ color: C.slate, overflowWrap: 'anywhere' }}>{campaign.name}</h3>
+          <p className="text-sm leading-relaxed mt-3 break-words" style={{ color: C.muted, overflowWrap: 'anywhere' }}>{campaign.description}</p>
         </div>
         <StatusBadge status={campaign.status} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-5 pt-5 border-t" style={{ borderColor: C.linen }}>
-        <MetaItem icon={<CalendarDays className="w-4 h-4" />} label="End date" value={formatDate(campaign.end_date)} />
+        <MetaItem icon={<CalendarDays className="w-4 h-4" />} label="End date/time" value={formatEndDate(campaign.end_date)} />
         <MetaItem icon={<Target className="w-4 h-4" />} label="Raised" value={formatMoney(campaign.total_raised)} />
         <MetaItem icon={<Eye className="w-4 h-4" />} label="Linked auctions" value={isClosed ? 'Campaign closed' : String(campaign.active_auctions)} />
         <MetaItem icon={<Flag className="w-4 h-4" />} label="Status" value={statusText(campaign.status)} />
@@ -516,7 +546,7 @@ function EditCampaignModal({ campaign, form, errors, saving, onClose, onSave, on
             <TextInput label="Campaign name" value={form.name} error={errors.name} disabled={saving} autoComplete="off" onChange={(e) => onChange('name', e.target.value)} />
             <TextAreaInput label="Campaign description" value={form.description} error={errors.description} disabled={saving} note="Do not paste HTML, JavaScript or tracking snippets here." onChange={(e) => onChange('description', e.target.value)} />
             <ImageUploadInput label="Campaign image" previewUrl={form.image_preview_url} error={errors.image_file} disabled={saving} note="Optional. Upload a new image to replace the current preview." onChange={onImageChange} onClear={onClearImage} />
-            <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} disabled={saving} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
+            <TextInput label="Optional end date" type="date" value={form.end_date} error={errors.end_date} note={END_DATE_HELP_TEXT} disabled={saving} min={todayForInput()} onChange={(e) => onChange('end_date', e.target.value)} />
 
             <div className="flex justify-end gap-3 pt-2">
               <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>
@@ -532,6 +562,8 @@ function EditCampaignModal({ campaign, form, errors, saving, onClose, onSave, on
 }
 
 function OverviewCard({ total, active, closed, totalRaised, linkedAuctions }: { total: number; active: number; closed: number; totalRaised: number; linkedAuctions: number }) {
+  // Full-width summary keeps the campaign records area wide, while preserving
+  // the useful dashboard numbers that were previously shown in the side panel.
   return (
     <section className="bg-white rounded-2xl shadow-sm p-6" style={{ border: `1px solid ${C.beige}` }}>
       <div className="flex items-center gap-3 mb-5">
@@ -541,14 +573,51 @@ function OverviewCard({ total, active, closed, totalRaised, linkedAuctions }: { 
           <p className="text-xs" style={{ color: C.muted }}>For your organisation</p>
         </div>
       </div>
-      <div className="space-y-3 text-sm">
-        <StatusRow label="Total campaigns" value={String(total)} color={C.slate} />
-        <StatusRow label="Active campaigns" value={String(active)} color={C.emerald} />
-        <StatusRow label="Closed campaigns" value={String(closed)} color={C.danger} />
-        <StatusRow label="Linked active auctions" value={String(linkedAuctions)} color={C.blue} />
-        <StatusRow label="Total raised" value={formatMoney(totalRaised)} color={C.emeraldDark} />
+      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
+        <StatusTile label="Total campaigns" value={String(total)} color={C.slate} />
+        <StatusTile label="Active campaigns" value={String(active)} color={C.emerald} />
+        <StatusTile label="Closed campaigns" value={String(closed)} color={C.danger} />
+        <StatusTile label="Linked active auctions" value={String(linkedAuctions)} color={C.blue} />
+        <StatusTile label="Total raised" value={formatMoney(totalRaised)} color={C.emeraldDark} />
       </div>
     </section>
+  )
+}
+
+
+
+function PaginationControls({ currentPage, totalPages, totalItems, pageSize, onPageChange }: { currentPage: number; totalPages: number; totalItems: number; pageSize: number; onPageChange: (page: number) => void }) {
+  const startItem = (currentPage - 1) * pageSize + 1
+  const endItem = Math.min(totalItems, currentPage * pageSize)
+
+  function goToPage(page: number) {
+    // Clamp page numbers so button mashing cannot push the UI outside the
+    // available page range. Tiny guardrail, big peace of mind.
+    onPageChange(Math.min(Math.max(page, 1), totalPages))
+  }
+
+  return (
+    <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-t pt-5" style={{ borderColor: C.linen }}>
+      <p className="text-sm" style={{ color: C.muted }}>
+        Showing <span className="font-semibold" style={{ color: C.slate }}>{startItem}-{endItem}</span> of <span className="font-semibold" style={{ color: C.slate }}>{totalItems}</span> campaign records
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="px-3 py-2 rounded-xl text-sm font-semibold border inline-flex items-center gap-1.5" style={{ borderColor: C.beige, color: currentPage === 1 ? C.muted : C.slate, cursor: currentPage === 1 ? 'not-allowed' : 'pointer', background: C.white }}>
+          <ChevronLeft className="w-4 h-4" /> Previous
+        </button>
+        {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((page) => {
+          const isActive = page === currentPage
+          return (
+            <button key={page} type="button" onClick={() => goToPage(page)} className="w-10 h-10 rounded-xl text-sm font-bold border" style={{ borderColor: isActive ? C.emerald : C.beige, color: isActive ? C.white : C.slate, background: isActive ? C.emerald : C.white }} aria-current={isActive ? 'page' : undefined}>
+              {page}
+            </button>
+          )
+        })}
+        <button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="px-3 py-2 rounded-xl text-sm font-semibold border inline-flex items-center gap-1.5" style={{ borderColor: C.beige, color: currentPage === totalPages ? C.muted : C.slate, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', background: C.white }}>
+          Next <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -722,17 +791,6 @@ function Alert({ msg }: { msg: AlertMsg }) {
   )
 }
 
-function InfoCard({ title, tone, children }: { title: string; tone: 'warning' | 'success'; children: ReactNode }) {
-  const isWarning = tone === 'warning'
-  const color = isWarning ? C.warning : C.emerald
-  return (
-    <section className="rounded-2xl p-5" style={{ background: isWarning ? C.warningLight : C.emeraldLight, border: `1px solid ${isWarning ? '#FDE68A' : '#A7F3D0'}` }}>
-      <h3 className="font-bold text-sm mb-2" style={{ color }}>{title}</h3>
-      <p className="text-sm leading-relaxed" style={{ color }}>{children}</p>
-    </section>
-  )
-}
-
 function PrimaryButton({ icon, label, disabled }: { icon: ReactNode; label: string; disabled?: boolean }) {
   return (
     <button type="submit" disabled={disabled} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2" style={{ background: disabled ? '#6ba88e' : C.emerald, cursor: disabled ? 'not-allowed' : 'pointer' }}>
@@ -777,11 +835,11 @@ function IconBox({ children }: { children: ReactNode }) {
   return <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.emeraldLight, color: C.emerald }}>{children}</div>
 }
 
-function StatusRow({ label, value, color }: { label: string; value: string; color: string }) {
+function StatusTile({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span style={{ color: C.muted }}>{label}</span>
-      <span className="font-semibold" style={{ color }}>{value}</span>
+    <div className="rounded-2xl p-4" style={{ background: C.linen, border: `1px solid ${C.beige}` }}>
+      <p className="text-xs uppercase tracking-wide" style={{ color: C.muted }}>{label}</p>
+      <p className="text-xl font-bold mt-1 break-words" style={{ color, overflowWrap: 'anywhere' }}>{value}</p>
     </div>
   )
 }
