@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertCircle, AtSign, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Mail, Phone, Save, ShieldCheck, UserCircle } from 'lucide-react'
 import api from '../services/api'
@@ -85,10 +85,10 @@ export default function ProfilePage() {
 
   // After a verified email change the backend revokes all sessions, so we clear
   // client auth state and send the user back to the login page to sign in afresh.
-  const handleEmailChanged = async () => {
+  const handleEmailChanged = useCallback(async () => {
     try { await logout() } catch { /* session already revoked server-side */ }
     navigate('/login', { replace: true })
-  }
+  }, [logout, navigate])
 
   const [profileEdits, setProfileEdits] = useState<Partial<ProfileForm>>({})
   const [passwords, setPasswords] = useState<PasswordForm>(emptyPwd)
@@ -393,6 +393,15 @@ function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; on
     setOldEmailOtp(''); setNewEmailOtp(''); setErrs({}); setMsg(null)
   }
 
+  // Once the change is applied the backend has already revoked every session, so force
+  // the client to log out and return to login — with a brief pause so the user can read
+  // the confirmation. The button below is a manual fallback if the timer is interrupted.
+  useEffect(() => {
+    if (stage !== 'done') return
+    const timer = setTimeout(() => { void onChanged() }, 3000)
+    return () => clearTimeout(timer)
+  }, [stage, onChanged])
+
   async function submitRequest(e: FormEvent) {
     e.preventDefault(); setMsg(null); setErrs({})
 
@@ -521,10 +530,11 @@ function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; on
       {stage === 'done' && (
         <div className="space-y-4">
           <Alert msg={msg} />
-          <button type="button" onClick={onChanged}
+          <p className="text-sm" style={{ color: C.muted }}>Redirecting you to the login page…</p>
+          <button type="button" onClick={() => { void onChanged() }}
             className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
             style={{ background: C.emerald, cursor: 'pointer' }}>
-            Continue to login
+            Continue to login now
           </button>
         </div>
       )}
