@@ -34,23 +34,23 @@ function pwdStrength(p: string) {
 export default function RegisterCharityPage() {
   const { register, verifyRegistration, login, isLoading } = useAuthStore()
 
-  const [form, setForm] = useState({ 
-    org_name: '', description: '', 
-    full_name: '', email: '', password: '', confirm: '' 
+  const [form, setForm] = useState({
+    org_name: '', description: '',
+    full_name: '', email: '', password: '', confirm: ''
   })
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [showPwd, setShowPwd] = useState(false)
   const [showCfm, setShowCfm] = useState(false)
-  
+
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [globalErr, setGlobalErr] = useState<string | null>(null)
-  
+
   // Navigation steps: 'form' -> 'otp' -> 'complete'
   const [step, setStep] = useState<'form' | 'otp' | 'complete'>('form')
   const [otp, setOtp] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -97,48 +97,40 @@ export default function RegisterCharityPage() {
     const e: Record<string, string> = {}
     if (!form.org_name.trim()) e.org_name = 'Organization name is required.'
     else if (form.org_name.length < 2) e.org_name = 'Must be at least 2 characters.'
-    
+
     if (!form.description.trim()) e.description = 'Description is required.'
     else if (form.description.length < 10) e.description = 'Description must be at least 10 characters.'
-    
+
     if (!file) e.file = 'Supporting document is required.'
-    
+
     if (!form.full_name.trim()) e.full_name = 'Representative name is required.'
     if (!form.email.trim()) e.email = 'Email is required.'
     if (form.password.length < 8) e.password = 'Min 8 characters required.'
     if (form.password !== form.confirm) e.confirm = 'Passwords do not match.'
-    
+
     setErrors(e); return Object.keys(e).length === 0
   }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setGlobalErr(null); setNotice(null)
     if (!validate()) return
-    
+
     try {
-      // 1. Create User Account
-      const emailPrefix = form.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
-      const randomArray = new Uint32Array(1);
-      window.crypto.getRandomValues(randomArray);
-      const randomSuffix = 1000 + (randomArray[0] % 9000);
-      const generatedUsername = (emailPrefix.length < 3 ? (emailPrefix + 'user') : emailPrefix).slice(0, 30) + randomSuffix;
-      const message = await register({ 
-        full_name: form.full_name, 
-        email: form.email, 
-        username: generatedUsername, 
-        password: form.password, 
+      // 1. Create the charity representative user account.
+      // FR05 bug fix: charity organisations no longer choose a username; the backend creates an internal identifier.
+      const message = await register({
+        full_name: form.full_name,
+        email: form.email,
+        password: form.password,
         roles: ['charity'] // Must match backend required roles for /charities/register
       })
-      
+
       setNotice(message)
       setStep('otp') // Move to OTP verification step
     } catch (err) {
       const ae = err as ApiError
       if (ae.errors) {
         setErrors(ae.errors);
-        if (ae.errors.username) {
-          setGlobalErr(`Registration error (Username): ${ae.errors.username}`);
-        }
       } else {
         setGlobalErr(ae.message || 'Registration failed. Please try again.');
       }
@@ -151,15 +143,15 @@ export default function RegisterCharityPage() {
       setGlobalErr('Enter the 6-digit verification OTP.')
       return
     }
-    
+
     setIsSubmitting(true)
     try {
       // 2. Verify OTP
       await verifyRegistration(form.email, otp.trim())
-      
+
       // 3. Log in automatically to get session and CSRF token
       await login(form.email, form.password)
-      
+
       // 4. Submit Charity Application to the authenticated /charities/register endpoint
       const formData = new FormData()
       formData.append('organisationName', form.org_name)
@@ -187,7 +179,7 @@ export default function RegisterCharityPage() {
         </div>
         <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>Application Submitted</h2>
         <p className="text-sm mb-6 leading-relaxed" style={{ color: C.muted }}>
-          Thank you for registering <span className="font-semibold text-slate-800">{form.org_name}</span>. 
+          Thank you for registering <span className="font-semibold text-slate-800">{form.org_name}</span>.
           Our admin team will review your supporting documents and verify your registration details.
         </p>
         <Link to="/" className="block w-full py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: C.emerald }}>
@@ -274,14 +266,14 @@ export default function RegisterCharityPage() {
                 {/* Drag and Drop File Upload Area */}
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Supporting Document (PDF, JPG, PNG)</label>
-                  <div 
+                  <div
                     onDragOver={onDragOver}
                     onDragLeave={onDragLeave}
                     onDrop={onDrop}
                     className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer ${isDragging ? 'border-emerald-500 bg-emerald-50' : errors.file ? 'border-red-400 bg-red-50' : 'border-gray-300 hover:border-emerald-400 bg-gray-50'}`}
                   >
-                    <input 
-                      type="file" 
+                    <input
+                      type="file"
                       accept="application/pdf,image/jpeg,image/png"
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       onChange={(e) => {
@@ -290,7 +282,7 @@ export default function RegisterCharityPage() {
                         }
                       }}
                     />
-                    
+
                     {!file ? (
                       <div className="flex flex-col items-center pointer-events-none">
                         <UploadCloud className="w-10 h-10 mb-3" style={{ color: C.muted }} />
@@ -306,8 +298,8 @@ export default function RegisterCharityPage() {
                             <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                           </div>
                         </div>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFile(null); }}
                           className="p-1.5 rounded-full hover:bg-gray-100 pointer-events-auto"
                         >
@@ -373,7 +365,7 @@ export default function RegisterCharityPage() {
               {isLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Starting Application...</> : 'Continue to Verification'}
             </button>
           </form>
-          
+
           <p className="text-center text-sm mt-6" style={{ color: C.muted }}>
             Are you a bidder or donor? <Link to="/register" className="font-semibold" style={{ color: C.emerald }}>Register here</Link>
           </p>
@@ -381,4 +373,4 @@ export default function RegisterCharityPage() {
       </div>
     </div>
   )
-}
+}
