@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Clock, CheckCircle, Plus, Loader2, AlertCircle,
   Truck, RefreshCw, X,
@@ -7,6 +8,7 @@ import {
 import api from '../services/api'
 import type { Listing, DonorStats, ApiError } from '../types'
 import DonorManageListingsTab from './DonorManageListingsTab'
+import DonorCreateListingForm from './DonorCreateListingForm'
 
 // Donor listing with backend-enriched payment/shipping fields
 type DonorListing = Listing & {
@@ -45,13 +47,19 @@ const money = (value: number) => `$${value.toLocaleString(undefined, { minimumFr
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Tab = 'my-listings' | 'shipping' | 'donation-proceeds'
+type Tab = 'my-listings' | 'create-listing' | 'shipping' | 'donation-proceeds'
 
 interface TabNavItem {
   id: Tab
   label: string
   icon: React.ReactNode
   badge?: number
+}
+
+const tabFromPath = (pathname: string): Tab | null => {
+  if (pathname === '/listings/create') return 'create-listing'
+  if (pathname === '/listings/manage') return 'my-listings'
+  return null
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -96,7 +104,15 @@ function Sidebar({ tabs, activeTab, onTabChange }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function DonorDashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>('my-listings')
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [selectedTab, setSelectedTab] = useState<Tab>('my-listings')
+
+  // Derive route-backed tabs directly from the URL instead of syncing URL -> state in
+  // useEffect. This avoids React's set-state-in-effect lint rule and still lets
+  // /listings/create render the create form immediately.
+  const routeTab = tabFromPath(location.pathname)
+  const activeTab = routeTab ?? selectedTab
 
   // Data
   const [listings, setListings] = useState<Listing[]>([])
@@ -154,6 +170,30 @@ export default function DonorDashboard() {
   }, [])
 
   useEffect(() => { const id = window.setTimeout(() => { void loadData() }, 0); return () => window.clearTimeout(id) }, [loadData])
+
+  // Keep dashboard navigation inside React Router. Using a plain <a> tag here
+  // caused the browser to reload /listings/create, which rendered the dashboard
+  // again because that route points to DashboardPage.
+  const handleTabChange = (tab: Tab) => {
+    setSelectedTab(tab)
+
+    if (tab === 'create-listing') {
+      if (location.pathname !== '/listings/create') navigate('/listings/create')
+      return
+    }
+
+    if (tab === 'my-listings') {
+      if (location.pathname !== '/listings/manage') navigate('/listings/manage')
+      return
+    }
+
+    // Shipping and donation proceeds are dashboard-only tabs. If the user is
+    // currently on a route-backed tab, move back to /dashboard so the selected
+    // dashboard tab is not overridden by the URL.
+    if (location.pathname === '/listings/create' || location.pathname === '/listings/manage') {
+      navigate('/dashboard')
+    }
+  }
 
   // ─── Actions ───────────────────────────────────────────────────────────
 
@@ -219,7 +259,7 @@ export default function DonorDashboard() {
       {tabs.map(tab => {
         const isActive = tab.id === activeTab
         return (
-          <button key={tab.id} onClick={() => onTabChangeMobile(tab.id)}
+          <button key={tab.id} onClick={() => handleTabChange(tab.id)}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap"
             style={{
               background: isActive ? '#fff' : 'transparent',
@@ -240,15 +280,11 @@ export default function DonorDashboard() {
     </div>
   )
 
-  const onTabChangeMobile = (tab: Tab) => {
-    setActiveTab(tab)
-  }
-
   return (
     <div className="min-h-[calc(100vh-64px)]" style={{ background: C.linen }}>
       <div className="flex">
         {/* Desktop sidebar */}
-        <Sidebar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+        <Sidebar tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
 
         {/* Main content */}
         <div className="flex-1 min-w-0 px-4 sm:px-6 py-8">
@@ -278,13 +314,31 @@ export default function DonorDashboard() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>My Listings</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>Manage your donated auction items</p>
                 </div>
-                <a href="/listings/create"
+                <button type="button" onClick={() => handleTabChange('create-listing')}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                   style={{ background: C.emerald }}>
                   <Plus className="w-4 h-4" /> Create New Listing
-                </a>
+                </button>
               </div>
               <DonorManageListingsTab />
+            </div>
+          )}
+
+          {/* ───────────── CREATE LISTING ───────────── */}
+          {activeTab === 'create-listing' && (
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h1 className="text-2xl font-black" style={{ color: C.slate }}>Create New Listing</h1>
+                  <p className="text-sm mt-1" style={{ color: C.muted }}>Submit a donated item for admin and charity review</p>
+                </div>
+                <button type="button" onClick={() => handleTabChange('my-listings')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                  style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                  Back to My Listings
+                </button>
+              </div>
+              <DonorCreateListingForm onCreated={() => handleTabChange('my-listings')} />
             </div>
           )}
 
