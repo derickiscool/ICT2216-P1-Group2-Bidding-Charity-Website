@@ -1,0 +1,17 @@
+# Development dictionary denylist used by NFSR06 tests.
+administrator
+auction
+baseball
+bidder
+charity
+computer
+donation
+dragon
+football
+monkey
+princess
+qwerty
+singapore
+student
+sunshine
+welcome

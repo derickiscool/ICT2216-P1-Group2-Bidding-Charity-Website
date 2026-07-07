@@ -13,14 +13,15 @@ import { normalizeEmail, randomToken, sha256, safeString, isValidEmail } from '.
 import { audit } from './audit.service';
 import { createSession, setSessionCookie, clearSessionCookie, revokeBySid } from './session.service';
 import { sendRegistrationOtp, sendPasswordResetOtp, sendLoginOtp } from './otpDelivery.service';
+import { getLoginLockoutState, recordLoginFailure, resetLoginFailures } from './loginAttemptCache.service';
 
 const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 };
-const MAX_FAILED_LOGINS = 5;
-const LOCKOUT_MS = 15 * 60 * 1000;
 const OTP_TTL_MS = 3 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
 const VALID_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
 const GENERIC_REGISTRATION_MESSAGE = 'If the account can be registered, a verification OTP will be sent to the submitted email address.';
+const PASSWORD_POLICY_MESSAGE = 'Password must be 8-128 characters and must not match known breached, common, or dictionary passwords.';
+const LOGIN_LOCKOUT_MESSAGE = 'Too many failed login attempts. Please try again later.';
 
 export interface RegisterInput {
   full_name?: string;
@@ -44,7 +45,7 @@ export const beginRegistration = async (input: RegisterInput, req?: Request): Pr
   if (!isValidEmail(email)) errors.email = 'Enter a valid email address.';
   if (fullName.length < 2) errors.full_name = 'Full name is required.';
   if (!/^[A-Za-z0-9_]{3,40}$/.test(username)) errors.username = 'Username must be 3-40 characters using letters, numbers, or underscores.';
-  if (!isStrongPassword(password)) errors.password = 'Password must be 8-128 characters and must not match known breached or common passwords.';
+  if (!isStrongPassword(password)) errors.password = PASSWORD_POLICY_MESSAGE;
   if (roles.length === 0) errors.roles = 'At least one valid role is required.';
   if (Object.keys(errors).length > 0) throw badRequest('Registration input failed validation.', 'VALIDATION_ERROR', errors);
 
@@ -118,23 +119,29 @@ export const verifyRegistrationOtp = async (emailInput: string, otpInput: string
 export const login = async (emailInput: string, password: string, req: Request, res: Response) => {
   const email = normalizeEmail(emailInput);
   const generic = unauthorised('Invalid email or password');
+  const preLookupLockout = await getLoginLockoutState(email);
+  if (preLookupLockout.locked) {
+    await audit(req, 'AUTH_LOGIN_LOCKED', { email, source: 'login_attempt_cache' }, 'user');
+    throw tooManyRequests(LOGIN_LOCKOUT_MESSAGE);
+  }
+
   const user = await findUserByEmail(email);
   if (!user || !user.is_active || !user.is_verified) {
+    await recordLoginFailure(email);
     await audit(req, 'AUTH_LOGIN_FAILED', { email, reason: 'invalid_credentials_or_inactive' }, 'user');
     throw generic;
   }
   if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
     await audit(req, 'AUTH_LOGIN_LOCKED', { email }, 'user', user.uuid, user.id);
-    throw tooManyRequests('Too many failed login attempts. Please try again later.');
+    throw tooManyRequests(LOGIN_LOCKOUT_MESSAGE);
   }
   const ok = await argon2.verify(user.passwordHash, password);
   if (!ok) {
-    user.failedLoginAttempts += 1;
-    if (user.failedLoginAttempts >= MAX_FAILED_LOGINS) user.lockedUntil = new Date(Date.now() + LOCKOUT_MS);
-    await updateUser(user);
-    await audit(req, 'AUTH_LOGIN_FAILED', { email, failedLoginAttempts: user.failedLoginAttempts }, 'user', user.uuid, user.id);
+    const failure = await recordLoginFailure(email);
+    await audit(req, 'AUTH_LOGIN_FAILED', { email, failedLoginAttempts: failure.count }, 'user', user.uuid, user.id);
     throw generic;
   }
+  await resetLoginFailures(email);
   user.failedLoginAttempts = 0;
   user.lockedUntil = undefined;
   user.lastLoginAt = new Date().toISOString();
@@ -161,12 +168,17 @@ export const requestLoginOtp = async (emailInput: string, req?: Request): Promis
     throw badRequest('Invalid email address.', 'VALIDATION_ERROR');
   }
 
+  const preLookupLockout = await getLoginLockoutState(email);
+  if (preLookupLockout.locked) {
+    await audit(req, 'AUTH_PASSWORDLESS_REQUEST_LOCKED', { email, source: 'login_attempt_cache' }, 'user');
+    throw tooManyRequests('Too many login attempts. Please try again later.');
+  }
+
   const user = await findUserByEmail(email);
   if (!user || !user.is_active || !user.is_verified) {
     await audit(req, 'AUTH_PASSWORDLESS_REQUEST_SUPPRESSED', { email, reason: 'user_not_found_or_inactive' }, 'user');
     return generic;
   }
-
   if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
     await audit(req, 'AUTH_PASSWORDLESS_REQUEST_LOCKED', { email }, 'user', user.uuid, user.id);
     throw tooManyRequests('Too many login attempts. Please try again later.');
@@ -189,14 +201,20 @@ export const requestLoginOtp = async (emailInput: string, req?: Request): Promis
 
 export const verifyLoginOtp = async (emailInput: string, otpInput: string, req: Request, res: Response) => {
   const email = normalizeEmail(emailInput);
+  const preLookupLockout = await getLoginLockoutState(email);
+  if (preLookupLockout.locked) {
+    await audit(req, 'AUTH_PASSWORDLESS_VERIFY_LOCKED', { email, source: 'login_attempt_cache' }, 'user');
+    throw tooManyRequests('Too many login attempts. Please try again later.');
+  }
+
   const user = await findUserByEmail(email);
   const genericErr = unauthorised('Invalid email or login OTP');
 
   if (!user || !user.is_active || !user.is_verified) {
+    await recordLoginFailure(email);
     await audit(req, 'AUTH_PASSWORDLESS_VERIFY_FAILED', { email, reason: 'user_not_found_or_inactive' }, 'user');
     throw genericErr;
   }
-
   if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
     await audit(req, 'AUTH_PASSWORDLESS_VERIFY_LOCKED', { email }, 'user', user.uuid, user.id);
     throw tooManyRequests('Too many login attempts. Please try again later.');
@@ -211,13 +229,9 @@ export const verifyLoginOtp = async (emailInput: string, otpInput: string, req: 
 
   if (pending.attempts >= MAX_OTP_ATTEMPTS) {
     await removeLoginOtp(user.id);
-    user.failedLoginAttempts += 1;
-    if (user.failedLoginAttempts >= MAX_FAILED_LOGINS) {
-      user.lockedUntil = new Date(Date.now() + LOCKOUT_MS);
-    }
-    await updateUser(user);
+    const failure = await recordLoginFailure(email);
     await audit(req, 'AUTH_PASSWORDLESS_VERIFY_LOCKED', { email, attempts: pending.attempts }, 'user', user.uuid, user.id);
-    throw tooManyRequests('Too many verification attempts. Please request a new OTP.');
+    throw tooManyRequests(failure.locked ? 'Too many login attempts. Please try again later.' : 'Too many verification attempts. Please request a new OTP.');
   }
 
   if (pending.otpHash !== sha256(String(otpInput))) {
@@ -226,17 +240,14 @@ export const verifyLoginOtp = async (emailInput: string, otpInput: string, req: 
     await audit(req, 'AUTH_PASSWORDLESS_VERIFY_FAILED', { email, reason: 'otp_mismatch', attempts: pending.attempts }, 'user', user.uuid, user.id);
     if (pending.attempts >= MAX_OTP_ATTEMPTS) {
       await removeLoginOtp(user.id);
-      user.failedLoginAttempts += 1;
-      if (user.failedLoginAttempts >= MAX_FAILED_LOGINS) {
-        user.lockedUntil = new Date(Date.now() + LOCKOUT_MS);
-      }
-      await updateUser(user);
-      throw tooManyRequests('Too many verification attempts. Please request a new OTP.');
+      const failure = await recordLoginFailure(email);
+      throw tooManyRequests(failure.locked ? 'Too many login attempts. Please try again later.' : 'Too many verification attempts. Please request a new OTP.');
     }
     throw genericErr;
   }
 
   await removeLoginOtp(user.id);
+  await resetLoginFailures(email);
   user.failedLoginAttempts = 0;
   user.lockedUntil = undefined;
   user.lastLoginAt = new Date().toISOString();
@@ -283,8 +294,8 @@ export const resetPassword = async (emailInput: string, otpInput: string, newPas
   const email = normalizeEmail(emailInput);
   const invalid = badRequest('The code is invalid or has expired. Please request a new one.', 'RESET_OTP_INVALID');
   if (!isStrongPassword(newPassword)) {
-    throw badRequest('Password must be 8-128 characters and must not match known breached or common passwords.', 'VALIDATION_ERROR', {
-      password: 'Password must be 8-128 characters and must not match known breached or common passwords.',
+    throw badRequest(PASSWORD_POLICY_MESSAGE, 'VALIDATION_ERROR', {
+      password: PASSWORD_POLICY_MESSAGE,
     });
   }
   const record = await getPasswordResetTokenByEmail(email);
@@ -310,6 +321,7 @@ export const resetPassword = async (emailInput: string, otpInput: string, newPas
   user.passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
   user.failedLoginAttempts = 0;
   user.lockedUntil = undefined;
+  await resetLoginFailures(email);
   await updateUser(user);
   await removePasswordResetToken(email);
   await revokeAllSessionsByUserId(user.id);

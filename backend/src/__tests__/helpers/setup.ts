@@ -5,6 +5,7 @@ import {
   resetRepositoryForTests,
 } from '../../repositories/postgres.repository';
 import { readDevOtpForTest, clearDevOtpForTest } from '../../services/otpDelivery.service';
+import { clearLoginAttemptCacheForTests } from '../../services/loginAttemptCache.service';
 import { closePool } from '../../utils/db';
 
 export type TestListing = {
@@ -38,7 +39,10 @@ let baseUrl = '';
 export const startServer = async () => {
   process.env.NODE_ENV = 'test';
   process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-ci';
+  delete process.env.LOGIN_ATTEMPT_CACHE;
+  delete process.env.REDIS_URL;
   clearDevOtpForTest();
+  clearLoginAttemptCacheForTests();
   await resetRepositoryForTests();
   const app = createApp();
   server = createServer(app);
