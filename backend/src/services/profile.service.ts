@@ -20,6 +20,7 @@ import { sendPasswordChangeVerificationOtp } from './otpDelivery.service';
 const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 } as const;
 const PROFILE_NAME_MAX = 80;
 const USERNAME_MAX = 30;
+const USERNAME_ROLES = new Set(['bidder', 'donor']);
 const CONTACT_INPUT_MAX = 13; // longest allowed UI format is "+65 9123 4567".
 const PASSWORD_CHANGE_OTP_TTL_MS = 15 * 60 * 1000;
 const MAX_PASSWORD_CHANGE_OTP_ATTEMPTS = 5;
@@ -53,6 +54,9 @@ const cleanTextInput = (value: unknown): string => {
 const hasSubmittedField = (input: UpdateProfileInput, field: keyof UpdateProfileInput): boolean =>
   Object.prototype.hasOwnProperty.call(input, field);
 
+const userUsesUsername = (roles: readonly string[]): boolean =>
+  roles.some(role => USERNAME_ROLES.has(role));
+
 const normalizeSingaporeMobileNumber = (value: unknown): string | undefined => {
   const raw = cleanTextInput(value);
   if (raw.length === 0) return undefined;
@@ -74,6 +78,7 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
   if (!user) throw notFound('User not found.');
 
   const errors: Record<string, string> = {};
+  const allowUsername = userUsesUsername(user.roles);
 
   // FR03 allows normal profile edits, but email/password are sensitive fields.
   // Reject them server-side so API tampering cannot bypass the read-only frontend.
@@ -82,12 +87,19 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
     errors.password = 'Use the password change flow to update your password.';
   }
 
+  // Charity Organisation and Charity Staff accounts are identified by their
+  // organisation/email. User-facing usernames remain only for bidder/donor roles,
+  // so tampered username updates for charity roles are rejected explicitly.
+  if (!allowUsername && hasSubmittedField(input, 'username')) {
+    errors.username = 'Username is only used for bidder and donor accounts.';
+  }
+
   const fullName = cleanTextInput(input.full_name);
   if (fullName.length < 2) errors.full_name = 'Full name must be at least 2 characters.';
   else if (fullName.length > PROFILE_NAME_MAX) errors.full_name = `Full name must be ${PROFILE_NAME_MAX} characters or less.`;
 
-  const username = cleanTextInput(input.username);
-  if (!/^[A-Za-z0-9_]{3,30}$/.test(username)) {
+  const username = allowUsername ? cleanTextInput(input.username) : user.username;
+  if (allowUsername && !/^[A-Za-z0-9_]{3,30}$/.test(username)) {
     errors.username = `Username must be 3-${USERNAME_MAX} characters using letters, numbers, or underscores.`;
   }
 
@@ -99,19 +111,19 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
 
   if (Object.keys(errors).length > 0) throw badRequest('Profile update validation failed.', 'VALIDATION_ERROR', errors);
 
-  if (username.toLowerCase() !== user.username.toLowerCase()) {
+  if (allowUsername && username.toLowerCase() !== user.username.toLowerCase()) {
     const taken = await findUserByUsername(username);
     if (taken && taken.id !== user.id) throw badRequest('Username is already taken.', 'USERNAME_TAKEN');
   }
 
-  const previous = { full_name: user.full_name, username: user.username, contactNumber: user.contactNumber };
+  const previous = { full_name: user.full_name, username: allowUsername ? user.username : undefined, contactNumber: user.contactNumber };
 
   user.full_name = fullName;
-  user.username = username;
+  if (allowUsername) user.username = username;
   user.contactNumber = contactNumber;
 
   await updateUser(user);
-  await audit(req, 'PROFILE_UPDATED', { previous, updated: { full_name: fullName, username, contactNumber } }, 'user', user.uuid, user.id);
+  await audit(req, 'PROFILE_UPDATED', { previous, updated: { full_name: fullName, username: allowUsername ? username : undefined, contactNumber } }, 'user', user.uuid, user.id);
 
   return toPublicUser(user);
 };

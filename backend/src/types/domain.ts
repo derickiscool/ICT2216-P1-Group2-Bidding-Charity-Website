@@ -7,6 +7,7 @@ export interface User {
   username: string;
   full_name: string;
   roles: UserRole[];
+  mustChangePassword: boolean;
   passwordHash: string;
   is_verified: boolean;
   is_active: boolean;

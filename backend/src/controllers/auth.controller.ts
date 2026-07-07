@@ -55,3 +55,18 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
   );
   res.json(result);
 };
+
+export const forceChangePassword = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ message: 'Authentication required' });
+    return;
+  }
+
+  const result = await authService.forceChangePassword(
+    req.user.id,
+    String(req.body.currentPassword ?? ''),
+    String(req.body.newPassword ?? ''),
+    req,
+  );
+  res.json(result);
+};
