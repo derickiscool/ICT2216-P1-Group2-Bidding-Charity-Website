@@ -76,7 +76,7 @@ export const changePassword = async (userId: number, input: ChangePasswordInput,
   const errors: Record<string, string> = {};
   if (!currentPassword) errors.currentPassword = 'Current password is required.';
   if (!newPassword) errors.newPassword = 'New password is required.';
-  else if (!isStrongPassword(newPassword)) errors.newPassword = 'Password must be 8-128 characters and must not match known breached passwords.';
+  else if (!isStrongPassword(newPassword)) errors.newPassword = 'Password must be 8-128 characters and must not match known breached, common, or dictionary passwords.';
   if (Object.keys(errors).length > 0) throw badRequest('Password change validation failed.', 'VALIDATION_ERROR', errors);
 
   const currentOk = await argon2.verify(user.passwordHash, currentPassword);

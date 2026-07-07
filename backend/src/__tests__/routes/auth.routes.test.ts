@@ -55,7 +55,7 @@ describe('SFR02 — Authentication & Session Management', () => {
     assert.equal(bearerOnly.response.status, 401);
   });
 
-  test('locks account after five consecutive failed login attempts', async () => {
+  test('locks account after five consecutive failed login attempts using cache-backed tracking', async () => {
     const email = 'lockoutuser@example.com';
     const password = 'correcthorsebatterystaple5';
     await registerVerifiedUser({
@@ -78,11 +78,18 @@ describe('SFR02 — Authentication & Session Management', () => {
     const locked = await postJson('/api/auth/login', { email, password });
     assert.equal(locked.response.status, 429);
     assert.match(locked.body.message, /Too many failed login attempts/i);
+
+    const persisted = await query<{ failed_login_attempts: number; locked_until: Date | null }>(
+      'SELECT failed_login_attempts, locked_until FROM users WHERE email = $1',
+      [email],
+    );
+    assert.equal(Number(persisted.rows[0].failed_login_attempts), 0);
+    assert.equal(persisted.rows[0].locked_until, null);
   });
 });
 
 describe('SFR01 — Registration & Email Verification', () => {
-  test('blocks registration with breached or common passwords', async () => {
+  test('blocks registration with breached, common, or dictionary passwords', async () => {
     const weak = await postJson('/api/auth/register', {
       email: 'weak@example.com',
       username: 'weakuser',
@@ -92,6 +99,16 @@ describe('SFR01 — Registration & Email Verification', () => {
     });
     assert.equal(weak.response.status, 400);
     assert.match(weak.body.errors.password, /breached|common/i);
+
+    const dictionary = await postJson('/api/auth/register', {
+      email: 'dictionary@example.com',
+      username: 'dictionaryuser',
+      full_name: 'Dictionary User',
+      password: 'Sunshine2026!',
+      roles: ['bidder'],
+    });
+    assert.equal(dictionary.response.status, 400);
+    assert.match(dictionary.body.errors.password, /dictionary/i);
 
     const validNew = await postJson('/api/auth/register', {
       email: 'newperson@example.com',
