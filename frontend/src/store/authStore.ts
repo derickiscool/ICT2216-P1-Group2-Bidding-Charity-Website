@@ -7,6 +7,8 @@ interface AuthStore {
   isAuthenticated: boolean
   isLoading: boolean
   login: (email: string, password: string) => Promise<void>
+  requestLoginOtp: (email: string) => Promise<string>
+  verifyLoginOtp: (email: string, otp: string) => Promise<void>
   logout: () => Promise<void>
   register: (data: RegisterData) => Promise<string>
   verifyRegistration: (email: string, otp: string) => Promise<void>
@@ -34,12 +36,36 @@ interface RegisterResponse {
 export const useAuthStore = create<AuthStore>((set, get) => ({
   user: null,
   isAuthenticated: false,
-  isLoading: false,
+  isLoading: true,
 
   login: async (email, password) => {
     set({ isLoading: true })
     try {
       const res = await api.post<LoginResponse>('/auth/login', { email, password })
+      setCsrfToken(res.data.csrfToken)
+      set({ user: res.data.user, isAuthenticated: true, isLoading: false })
+    } catch (err) {
+      set({ isLoading: false })
+      throw err
+    }
+  },
+
+  requestLoginOtp: async (email) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.post<{ message: string }>('/auth/login/passwordless/request', { email })
+      set({ isLoading: false })
+      return res.data.message
+    } catch (err) {
+      set({ isLoading: false })
+      throw err
+    }
+  },
+
+  verifyLoginOtp: async (email, otp) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.post<LoginResponse>('/auth/login/passwordless/verify', { email, otp })
       setCsrfToken(res.data.csrfToken)
       set({ user: res.data.user, isAuthenticated: true, isLoading: false })
     } catch (err) {
@@ -83,10 +109,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   fetchMe: async () => {
     try {
       const res = await api.get<User>('/auth/me')
-      set({ user: res.data, isAuthenticated: true })
+      set({ user: res.data, isAuthenticated: true, isLoading: false })
     } catch {
       setCsrfToken(null)
-      set({ user: null, isAuthenticated: false })
+      set({ user: null, isAuthenticated: false, isLoading: false })
     }
   },
 

@@ -31,6 +31,15 @@ export interface PendingRegistration {
   createdAt: Date;
 }
 
+export interface LoginOtp {
+  user_id: number;
+  email: string;
+  otpHash: string;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
 export interface Campaign {
   id: number;
   uuid: string;
@@ -79,7 +88,7 @@ export interface CharityOrganisation {
   created_at: string;
 }
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
 export interface Listing {
   id: number;
   uuid: string;
@@ -104,6 +113,36 @@ export interface Listing {
   created_at: string;
 }
 
+export interface DonorListingStatusSummary {
+  total: number;
+  draft: number;
+  pending: number;
+  active: number;
+  sold: number;
+  shipped: number;
+  delivered: number;
+  expired: number;
+  cancelled: number;
+  rejected: number;
+}
+
+export interface DonorListingTrackingItem extends Listing {
+  // Backend-owned user interface hints for FR10. The frontend can display these
+  // directly without reimplementing auction status rules in the browser.
+  statusLabel: string;
+  statusMessage: string;
+  timelineLabel: string;
+  canEdit: boolean;
+  canDelete: boolean;
+  finalBidAmount?: number;
+}
+
+export interface DonorListingTrackingDashboard {
+  generatedAt: string;
+  summary: DonorListingStatusSummary;
+  listings: DonorListingTrackingItem[];
+}
+
 export interface Bid {
   id: number;
   uuid: string;
@@ -115,12 +154,100 @@ export interface Bid {
   created_at: string;
 }
 
+
+export interface AutoBidSetting {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  bidder_username: string;
+  max_amount: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutoBidWithListing extends AutoBidSetting {
+  listingTitle?: string;
+  listingUuid?: string;
+  listingStatus?: ListingStatus;
+  currentBid?: number;
+  endTime?: string;
+}
+
+export interface BidWithListing extends Bid {
+  listingTitle?: string;
+  listingUuid?: string;
+}
+
+export interface Delivery {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  tracking_number?: string;
+  courier?: string;
+  shipped_at?: string;
+  confirmed_at?: string;
+  created_at: string;
+}
+
+export interface Receipt {
+  id: number;
+  uuid: string;
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+  generated_at: string;
+}
+
+export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired';
+export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded';
+
+export interface Payment {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  amount: number;
+  payment_ref: string;
+  escrow_state: EscrowState;
+  status: PaymentStatus;
+  payment_deadline: string;
+  offered_at: string;
+  paid_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Response shape used by bidder-facing payment pages. Keeping this as a separate
+// type prevents the backend from accidentally exposing unnecessary listing/user data.
+export interface PaymentWithListing extends Payment {
+  listing_uuid: string;
+  listing_title: string;
+  charity_name: string;
+  has_shipping: boolean;
+}
+
+export interface PasswordResetToken {
+  email: string;
+  tokenHash: string;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
 export interface SessionRecord {
   sid: string;
   userId: number;
   jtiHash: string;
   csrfTokenHash: string;
   expiresAt: Date;
+  absoluteExpiresAt: Date;
   revokedAt?: Date;
   createdAt: Date;
   lastSeenAt: Date;

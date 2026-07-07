@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Heart, HeartHandshake, Settings, ShieldCheck, Menu, X, Users } from 'lucide-react'
+import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Heart, HeartHandshake, Settings, ShieldCheck, Menu, X, Users, Plus, CreditCard } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 // ─── Avatar dropdown ─────────────────────────────────────────────────────────
@@ -54,6 +54,9 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
         {[
           { icon: LayoutDashboard, label: 'My Dashboard', to: '/dashboard' },
           { icon: Heart, label: 'Watchlist', to: '/dashboard?tab=watchlist' },
+          ...(user?.roles?.includes('donor')
+            ? [{ icon: Plus, label: 'Donate an Item', to: '/listings/create' }]
+            : []),
           { icon: Settings, label: 'Settings', to: '/profile' },
         ].map(item => (
           <Link key={item.label} to={item.to} onClick={onClose}
@@ -63,6 +66,30 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
             {item.label}
           </Link>
         ))}
+        {user?.roles?.includes('bidder') && (
+          <Link
+            to="/payments"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+            style={{ color: '#2D3A3A' }}
+          >
+            <CreditCard className="w-4 h-4" style={{ color: '#047857' }} />
+            Payment Deadlines
+          </Link>
+        )}
+
+        {(user?.roles?.includes('donor') || user?.roles?.includes('admin')) && (
+          <Link
+            to="/listings/manage"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+            style={{ color: '#2D3A3A' }}
+          >
+            <LayoutDashboard className="w-4 h-4" style={{ color: '#047857' }} />
+            My Listings
+          </Link>
+        )}
+
         {(user?.roles?.includes('charity') || user?.roles?.includes('admin')) && (
           <Link
             to="/charity/staff"
@@ -83,6 +110,17 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
           >
             <HeartHandshake className="w-4 h-4" style={{ color: '#047857' }} />
             Campaign Management
+          </Link>
+        )}
+        {(user?.roles?.includes('charity') || user?.roles?.includes('charity_staff')) && (
+          <Link
+            to="/charity/listing-reviews"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+            style={{ color: '#2D3A3A' }}
+          >
+            <ShieldCheck className="w-4 h-4" style={{ color: '#047857' }} />
+            Listing Reviews
           </Link>
         )}
         {user?.roles?.includes('admin') && (
@@ -224,6 +262,15 @@ export default function Navbar() {
         <div className="md:hidden border-t px-6 py-4 space-y-2" style={{ background: isHome ? '#2D3A3A' : '#fff', borderColor: '#BBB09B' }}>
           <Link to="/auctions" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Browse Auctions</Link>
           <Link to="/charities" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Charities</Link>
+          {isAuthenticated && user?.roles?.includes('bidder') && (
+            <Link to="/payments" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Payment Deadlines</Link>
+          )}
+          {isAuthenticated && (user?.roles?.includes('donor') || user?.roles?.includes('admin')) && (
+            <Link to="/listings/manage" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>My Listings</Link>
+          )}
+          {isAuthenticated && (user?.roles?.includes('charity') || user?.roles?.includes('charity_staff')) && (
+            <Link to="/charity/listing-reviews" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Listing Reviews</Link>
+          )}
           {!isAuthenticated && <>
             <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Log In</Link>
             <Link to="/register" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Register</Link>

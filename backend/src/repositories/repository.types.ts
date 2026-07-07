@@ -1,11 +1,20 @@
 import type {
   AuditEvent,
+  AutoBidSetting,
+  AutoBidWithListing,
   Bid,
+  BidWithListing,
   Campaign,
   CharityOrganisation,
+  Delivery,
   Listing,
+  Payment,
+  PaymentWithListing,
+  Receipt,
   NewCampaignInput,
+  PasswordResetToken,
   PendingRegistration,
+  LoginOtp,
   SessionRecord,
   UpdateCampaignInput,
   User,
@@ -18,6 +27,9 @@ export type NewUserInput = Omit<User, 'id' | 'uuid' | 'created_at' | 'failedLogi
 export type NewCharityInput = Omit<CharityOrganisation, 'id' | 'uuid' | 'status' | 'created_at'>;
 export type NewListingInput = Omit<Listing, 'id' | 'uuid' | 'created_at' | 'current_bid' | 'bid_count' | 'winner_id'>;
 export type NewBidInput = Omit<Bid, 'id' | 'uuid' | 'created_at'>;
+export type NewAutoBidInput = Omit<AutoBidSetting, 'id' | 'uuid' | 'created_at' | 'updated_at'>;
+export type NewPaymentInput = Omit<Payment, 'id' | 'uuid' | 'created_at' | 'updated_at' | 'paid_at'> & { paid_at?: string };
+
 export type NewAuditEventInput = Omit<AuditEvent, 'id' | 'timestamp' | 'previousHash' | 'currentHash' | 'payload'> & {
   payload?: Record<string, unknown>;
 };
@@ -36,10 +48,19 @@ export interface BidForGoodRepository {
   getPendingRegistration(email: string): Promise<PendingRegistration | undefined>;
   removePendingRegistration(email: string): Promise<void>;
 
+  saveLoginOtp(otp: LoginOtp): Promise<void>;
+  getLoginOtp(userId: number): Promise<LoginOtp | undefined>;
+  removeLoginOtp(userId: number): Promise<void>;
+
   addSession(record: SessionRecord): Promise<void>;
   getSession(sid: string): Promise<SessionRecord | undefined>;
   updateSession(record: SessionRecord): Promise<void>;
   revokeSession(sid: string): Promise<void>;
+  revokeAllSessionsByUserId(userId: number): Promise<void>;
+
+  savePasswordResetToken(token: PasswordResetToken): Promise<void>;
+  getPasswordResetTokenByEmail(email: string): Promise<PasswordResetToken | undefined>;
+  removePasswordResetToken(email: string): Promise<void>;
 
   addCharity(input: NewCharityInput): Promise<CharityOrganisation>;
   getCharityById(id: number): Promise<CharityOrganisation | undefined>;
@@ -64,10 +85,44 @@ export interface BidForGoodRepository {
   listListings(): Promise<Listing[]>;
   listActiveListings(): Promise<Listing[]>;
   listPendingListings(): Promise<Listing[]>;
+  listListingsByDonor(donorId: number): Promise<Listing[]>;
+
+  listUsers(): Promise<User[]>;
 
   addBid(input: NewBidInput): Promise<Bid>;
   getBidsForListing(listingId: number): Promise<Bid[]>;
+  getBidsByBidder(bidderId: number): Promise<BidWithListing[]>;
+  upsertAutoBid(input: NewAutoBidInput): Promise<AutoBidSetting>;
+  getAutoBidForBidder(listingId: number, bidderId: number): Promise<AutoBidSetting | undefined>;
+  listActiveAutoBidsForListing(listingId: number): Promise<AutoBidSetting[]>;
+  listAutoBidsByBidder(bidderId: number): Promise<AutoBidWithListing[]>;
+  deactivateAutoBid(listingId: number, bidderId: number): Promise<AutoBidSetting | undefined>;
   withListingLock<T>(listingId: number, fn: () => Promise<T>): Promise<T>;
+
+  addDelivery(listingId: number): Promise<Delivery>;
+  getDeliveryByListingId(listingId: number): Promise<Delivery | undefined>;
+  updateDelivery(delivery: Delivery): Promise<void>;
+
+  addReceipt(input: {
+    payment_id: number;
+    listing_id: number;
+    bidder_id: number;
+    item_title: string;
+    amount: number;
+    charity_name: string;
+    receipt_ref: string;
+    integrity_hash: string;
+  }): Promise<Receipt>;
+  getReceiptByUuid(uuid: string): Promise<Receipt | undefined>;
+  getReceiptsByBidder(bidderId: number): Promise<Receipt[]>;
+
+  addPayment(input: NewPaymentInput): Promise<Payment>;
+  updatePayment(payment: Payment): Promise<void>;
+  getPaymentByUuid(uuid: string): Promise<Payment | undefined>;
+  getPaymentsForListing(listingId: number): Promise<Payment[]>;
+  getPendingPaymentForListing(listingId: number): Promise<Payment | undefined>;
+  listPaymentsByBidder(bidderId: number): Promise<PaymentWithListing[]>;
+  withPaymentLock<T>(paymentId: number, fn: () => Promise<T>): Promise<T>;
 
   appendAuditEvent(event: NewAuditEventInput): Promise<AuditEvent>;
   listAuditEvents(): Promise<AuditEvent[]>;

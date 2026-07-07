@@ -1,12 +1,21 @@
 import argon2 from 'argon2';
 import type {
   AuditEvent,
+  AutoBidSetting,
+  AutoBidWithListing,
   Bid,
+  BidWithListing,
   Campaign,
   CharityOrganisation,
+  Delivery,
   Listing,
+  Payment,
+  PaymentWithListing,
+  Receipt,
   NewCampaignInput,
+  PasswordResetToken,
   PendingRegistration,
+  LoginOtp,
   SessionRecord,
   UpdateCampaignInput,
   User,
@@ -17,9 +26,11 @@ import { sha256 } from '../utils/security';
 import type {
   BidForGoodRepository,
   NewAuditEventInput,
+  NewAutoBidInput,
   NewBidInput,
   NewCharityInput,
   NewListingInput,
+  NewPaymentInput,
   NewUserInput,
   PublicUser,
 } from './repository.types';
@@ -57,12 +68,30 @@ interface PendingRegistrationRow {
   created_at: DbDate;
 }
 
+interface LoginOtpRow {
+  user_id: number | string;
+  email: string;
+  otp_hash: string;
+  expires_at: DbDate;
+  attempts: number;
+  created_at: DbDate;
+}
+ 
+interface PasswordResetTokenRow {
+  email: string;
+  token_hash: string;
+  expires_at: DbDate;
+  attempts: number;
+  created_at: DbDate;
+}
+
 interface SessionRow {
   sid: string;
   user_id: number;
   jti_hash: string;
   csrf_token_hash: string;
   expires_at: DbDate;
+  absolute_expires_at: DbDate;
   revoked_at: DbDate | null;
   created_at: DbDate;
   last_seen_at: DbDate;
@@ -119,6 +148,60 @@ interface BidRow {
   created_at: DbDate;
 }
 
+interface DeliveryRow {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  tracking_number: string | null;
+  courier: string | null;
+  shipped_at: Date | null;
+  confirmed_at: Date | null;
+  created_at: Date;
+}
+
+interface AutoBidRow {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  bidder_username: string;
+  max_amount: number | string;
+  is_active: boolean;
+  created_at: DbDate;
+  updated_at: DbDate;
+}
+
+interface AutoBidWithListingRow extends AutoBidRow {
+  listing_title?: string;
+  listing_uuid?: string;
+  listing_status?: 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+  current_bid?: number | string;
+  end_time?: DbDate;
+}
+
+interface PaymentRow {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  amount: number | string;
+  payment_ref: string;
+  escrow_state: 'not_held' | 'held' | 'released' | 'refunded';
+  status: 'pending' | 'successful' | 'failed' | 'expired';
+  payment_deadline: DbDate;
+  offered_at: DbDate;
+  paid_at: DbDate | null;
+  created_at: DbDate;
+  updated_at: DbDate;
+}
+
+interface PaymentWithListingRow extends PaymentRow {
+  listing_title?: string;
+  listing_uuid?: string;
+  charity_name?: string;
+  has_shipping?: boolean;
+}
+
 interface AuditEventRow {
   id: number;
   timestamp: DbDate;
@@ -131,6 +214,20 @@ interface AuditEventRow {
   payload: unknown;
   previous_hash: string;
   current_hash: string;
+}
+
+interface ReceiptRow {
+  id: number;
+  uuid: string;
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number | string;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+  generated_at: DbDate;
 }
 
 const USER_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
@@ -192,15 +289,33 @@ const mapPendingRegistration = (row: PendingRegistrationRow): PendingRegistratio
   createdAt: toDate(row.created_at),
 });
 
+const mapLoginOtp = (row: LoginOtpRow): LoginOtp => ({
+  user_id: Number(row.user_id),
+  email: row.email,
+  otpHash: row.otp_hash,
+  expiresAt: toDate(row.expires_at),
+  attempts: Number(row.attempts),
+  createdAt: toDate(row.created_at),
+});
+
 const mapSession = (row: SessionRow): SessionRecord => ({
   sid: row.sid,
   userId: Number(row.user_id),
   jtiHash: row.jti_hash,
   csrfTokenHash: row.csrf_token_hash,
   expiresAt: toDate(row.expires_at),
+  absoluteExpiresAt: toDate(row.absolute_expires_at),
   revokedAt: optionalDate(row.revoked_at),
   createdAt: toDate(row.created_at),
   lastSeenAt: toDate(row.last_seen_at),
+});
+
+const mapPasswordResetToken = (row: PasswordResetTokenRow): PasswordResetToken => ({
+  email: row.email,
+  tokenHash: row.token_hash,
+  expiresAt: toDate(row.expires_at),
+  attempts: Number(row.attempts),
+  createdAt: toDate(row.created_at),
 });
 
 const mapCharity = (row: CharityRow): CharityOrganisation => ({
@@ -252,6 +367,76 @@ const mapBid = (row: BidRow): Bid => ({
   amount: Number(row.amount),
   is_auto_bid: row.is_auto_bid,
   created_at: toIso(row.created_at),
+});
+
+const mapAutoBid = (row: AutoBidRow): AutoBidSetting => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  listing_id: Number(row.listing_id),
+  bidder_id: Number(row.bidder_id),
+  bidder_username: row.bidder_username,
+  max_amount: Number(row.max_amount),
+  is_active: row.is_active,
+  created_at: toIso(row.created_at),
+  updated_at: toIso(row.updated_at),
+});
+
+const mapAutoBidWithListing = (row: AutoBidWithListingRow): AutoBidWithListing => ({
+  ...mapAutoBid(row),
+  listingTitle: row.listing_title ?? undefined,
+  listingUuid: row.listing_uuid ?? undefined,
+  listingStatus: row.listing_status ?? undefined,
+  currentBid: optionalNumber(row.current_bid),
+  endTime: optionalIso(row.end_time),
+});
+
+const mapPayment = (row: PaymentRow): Payment => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  listing_id: Number(row.listing_id),
+  bidder_id: Number(row.bidder_id),
+  amount: Number(row.amount),
+  payment_ref: row.payment_ref,
+  escrow_state: row.escrow_state,
+  status: row.status,
+  payment_deadline: toIso(row.payment_deadline),
+  offered_at: toIso(row.offered_at),
+  paid_at: optionalIso(row.paid_at),
+  created_at: toIso(row.created_at),
+  updated_at: toIso(row.updated_at),
+});
+
+const mapDelivery = (row: DeliveryRow): Delivery => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  listing_id: Number(row.listing_id),
+  tracking_number: row.tracking_number ?? undefined,
+  courier: row.courier ?? undefined,
+  shipped_at: optionalIso(row.shipped_at),
+  confirmed_at: optionalIso(row.confirmed_at),
+  created_at: toIso(row.created_at),
+});
+
+const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing => ({
+  ...mapPayment(row),
+  listing_uuid: row.listing_uuid ?? '',
+  listing_title: row.listing_title ?? '',
+  charity_name: row.charity_name ?? '',
+  has_shipping: row.has_shipping ?? false,
+});
+
+const mapReceipt = (row: ReceiptRow): Receipt => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  payment_id: Number(row.payment_id),
+  listing_id: Number(row.listing_id),
+  bidder_id: Number(row.bidder_id),
+  item_title: row.item_title,
+  amount: Number(row.amount),
+  charity_name: row.charity_name,
+  receipt_ref: row.receipt_ref,
+  integrity_hash: row.integrity_hash,
+  generated_at: toIso(row.generated_at),
 });
 
 const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
@@ -384,10 +569,40 @@ const removePendingRegistration = async (email: string): Promise<void> => {
   await query('DELETE FROM pending_registrations WHERE lower(email) = lower($1)', [email]);
 };
 
+const saveLoginOtp = async (otp: LoginOtp): Promise<void> => {
+  await query(
+    `INSERT INTO login_otps (user_id, email, otp_hash, expires_at, attempts, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_id) DO UPDATE SET
+       email = EXCLUDED.email,
+       otp_hash = EXCLUDED.otp_hash,
+       expires_at = EXCLUDED.expires_at,
+       attempts = EXCLUDED.attempts,
+       created_at = EXCLUDED.created_at`,
+    [
+      otp.user_id,
+      otp.email,
+      otp.otpHash,
+      otp.expiresAt,
+      otp.attempts,
+      otp.createdAt,
+    ],
+  );
+};
+
+const getLoginOtp = async (userId: number): Promise<LoginOtp | undefined> => {
+  const row = await firstRow<LoginOtpRow>('SELECT * FROM login_otps WHERE user_id = $1 LIMIT 1', [userId]);
+  return row ? mapLoginOtp(row) : undefined;
+};
+
+const removeLoginOtp = async (userId: number): Promise<void> => {
+  await query('DELETE FROM login_otps WHERE user_id = $1', [userId]);
+};
+
 const addSession = async (record: SessionRecord): Promise<void> => {
   await query(
-    `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, revoked_at, created_at, last_seen_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, absolute_expires_at, revoked_at, created_at, last_seen_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (sid) DO UPDATE SET
        user_id = EXCLUDED.user_id,
        jti_hash = EXCLUDED.jti_hash,
@@ -395,7 +610,7 @@ const addSession = async (record: SessionRecord): Promise<void> => {
        expires_at = EXCLUDED.expires_at,
        revoked_at = EXCLUDED.revoked_at,
        last_seen_at = EXCLUDED.last_seen_at`,
-    [record.sid, record.userId, record.jtiHash, record.csrfTokenHash, record.expiresAt, record.revokedAt ?? null, record.createdAt, record.lastSeenAt],
+    [record.sid, record.userId, record.jtiHash, record.csrfTokenHash, record.expiresAt, record.absoluteExpiresAt, record.revokedAt ?? null, record.createdAt, record.lastSeenAt],
   );
 };
 
@@ -408,6 +623,28 @@ const updateSession = async (record: SessionRecord): Promise<void> => addSession
 
 const revokeSession = async (sid: string): Promise<void> => {
   await query('UPDATE sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE sid = $1', [sid]);
+};
+
+const revokeAllSessionsByUserId = async (userId: number): Promise<void> => {
+  await query('UPDATE sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+};
+
+const savePasswordResetToken = async (token: PasswordResetToken): Promise<void> => {
+  await query(
+    `INSERT INTO password_reset_tokens (email, token_hash, expires_at, attempts, created_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (email) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, attempts = EXCLUDED.attempts, created_at = EXCLUDED.created_at`,
+    [token.email, token.tokenHash, token.expiresAt, token.attempts, token.createdAt],
+  );
+};
+
+const getPasswordResetTokenByEmail = async (email: string): Promise<PasswordResetToken | undefined> => {
+  const row = await firstRow<PasswordResetTokenRow>('SELECT * FROM password_reset_tokens WHERE email = $1 LIMIT 1', [email]);
+  return row ? mapPasswordResetToken(row) : undefined;
+};
+
+const removePasswordResetToken = async (email: string): Promise<void> => {
+  await query('DELETE FROM password_reset_tokens WHERE email = $1', [email]);
 };
 
 const addCharity = async (input: NewCharityInput): Promise<CharityOrganisation> => {
@@ -703,6 +940,16 @@ const listPendingListings = async (): Promise<Listing[]> => {
   return rows.map(mapListing);
 };
 
+const listUsers = async (): Promise<User[]> => {
+  const rows = await allRows<UserRow>('SELECT * FROM users ORDER BY created_at DESC, id DESC');
+  return rows.map(mapUser);
+};
+
+const listListingsByDonor = async (donorId: number): Promise<Listing[]> => {
+  const rows = await allRows<ListingRow>('SELECT * FROM listings WHERE donor_id = $1 ORDER BY created_at DESC, id DESC', [donorId]);
+  return rows.map(mapListing);
+};
+
 const addBid = async (input: NewBidInput): Promise<Bid> => {
   const row = await firstRow<BidRow>(
     `INSERT INTO bids (listing_id, bidder_id, bidder_username, amount, is_auto_bid)
@@ -719,9 +966,238 @@ const getBidsForListing = async (listingId: number): Promise<Bid[]> => {
   return rows.map(mapBid);
 };
 
+interface BidWithListingRow extends BidRow {
+  listing_title?: string;
+  listing_uuid?: string;
+}
+
+const mapBidWithListing = (row: BidWithListingRow): BidWithListing => ({
+  ...mapBid(row),
+  listingTitle: row.listing_title ?? undefined,
+  listingUuid: row.listing_uuid ?? undefined,
+});
+
+const getBidsByBidder = async (bidderId: number): Promise<BidWithListing[]> => {
+  const rows = await allRows<BidWithListingRow>(
+    `SELECT b.*, l.title AS listing_title, l.uuid AS listing_uuid
+     FROM bids b
+     LEFT JOIN listings l ON b.listing_id = l.id
+     WHERE b.bidder_id = $1
+     ORDER BY b.created_at DESC, b.id DESC`,
+    [bidderId]
+  );
+  return rows.map(mapBidWithListing);
+};
+
+const upsertAutoBid = async (input: NewAutoBidInput): Promise<AutoBidSetting> => {
+  const row = await firstRow<AutoBidRow>(
+    `INSERT INTO auto_bids (listing_id, bidder_id, bidder_username, max_amount, is_active)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (listing_id, bidder_id) DO UPDATE SET
+       bidder_username = EXCLUDED.bidder_username,
+       max_amount = EXCLUDED.max_amount,
+       is_active = EXCLUDED.is_active,
+       updated_at = NOW()
+     RETURNING *`,
+    [input.listing_id, input.bidder_id, input.bidder_username, input.max_amount, input.is_active],
+  );
+  if (!row) throw new Error('Failed to save auto-bid setting.');
+  return mapAutoBid(row);
+};
+
+const getAutoBidForBidder = async (listingId: number, bidderId: number): Promise<AutoBidSetting | undefined> => {
+  const row = await firstRow<AutoBidRow>(
+    'SELECT * FROM auto_bids WHERE listing_id = $1 AND bidder_id = $2 LIMIT 1',
+    [listingId, bidderId],
+  );
+  return row ? mapAutoBid(row) : undefined;
+};
+
+const listActiveAutoBidsForListing = async (listingId: number): Promise<AutoBidSetting[]> => {
+  const rows = await allRows<AutoBidRow>(
+    `SELECT * FROM auto_bids
+     WHERE listing_id = $1 AND is_active = true
+     ORDER BY max_amount DESC, updated_at ASC, id ASC`,
+    [listingId],
+  );
+  return rows.map(mapAutoBid);
+};
+
+const listAutoBidsByBidder = async (bidderId: number): Promise<AutoBidWithListing[]> => {
+  const rows = await allRows<AutoBidWithListingRow>(
+    `SELECT
+       a.*,
+       l.title AS listing_title,
+       l.uuid AS listing_uuid,
+       l.status AS listing_status,
+       l.current_bid AS current_bid,
+       l.end_time AS end_time
+     FROM auto_bids a
+     INNER JOIN listings l ON l.id = a.listing_id
+     WHERE a.bidder_id = $1
+     ORDER BY a.is_active DESC, a.updated_at DESC, a.id DESC`,
+    [bidderId],
+  );
+  return rows.map(mapAutoBidWithListing);
+};
+
+const deactivateAutoBid = async (listingId: number, bidderId: number): Promise<AutoBidSetting | undefined> => {
+  const row = await firstRow<AutoBidRow>(
+    `UPDATE auto_bids
+     SET is_active = false, updated_at = NOW()
+     WHERE listing_id = $1 AND bidder_id = $2
+     RETURNING *`,
+    [listingId, bidderId],
+  );
+  return row ? mapAutoBid(row) : undefined;
+};
+
 const withListingLock = async <T>(listingId: number, fn: () => Promise<T>): Promise<T> =>
   withTransaction(async () => {
     await query('SELECT id FROM listings WHERE id = $1 FOR UPDATE', [listingId]);
+    return fn();
+  });
+
+const addDelivery = async (listingId: number): Promise<Delivery> => {
+  const row = await firstRow<DeliveryRow>(
+    'INSERT INTO deliveries (listing_id) VALUES ($1) RETURNING *',
+    [listingId],
+  );
+  if (!row) throw new Error('Failed to create delivery record.');
+  return mapDelivery(row);
+};
+
+const getDeliveryByListingId = async (listingId: number): Promise<Delivery | undefined> => {
+  const row = await firstRow<DeliveryRow>('SELECT * FROM deliveries WHERE listing_id = $1 LIMIT 1', [listingId]);
+  return row ? mapDelivery(row) : undefined;
+};
+
+const updateDelivery = async (delivery: Delivery): Promise<void> => {
+  await query(
+    `UPDATE deliveries
+     SET tracking_number = $2, courier = $3, shipped_at = $4, confirmed_at = $5
+     WHERE id = $1`,
+    [delivery.id, delivery.tracking_number ?? null, delivery.courier ?? null, delivery.shipped_at ?? null, delivery.confirmed_at ?? null],
+  );
+};
+
+const addReceipt = async (input: {
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+}): Promise<Receipt> => {
+  const row = await firstRow<ReceiptRow>(
+    `INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [input.payment_id, input.listing_id, input.bidder_id, input.item_title, input.amount, input.charity_name, input.receipt_ref, input.integrity_hash],
+  );
+  if (!row) throw new Error('Failed to create receipt.');
+  return mapReceipt(row);
+};
+
+const getReceiptByUuid = async (uuid: string): Promise<Receipt | undefined> => {
+  const row = await firstRow<ReceiptRow>('SELECT * FROM receipts WHERE uuid = $1 LIMIT 1', [uuid]);
+  return row ? mapReceipt(row) : undefined;
+};
+
+const getReceiptsByBidder = async (bidderId: number): Promise<Receipt[]> => {
+  const rows = await allRows<ReceiptRow>('SELECT * FROM receipts WHERE bidder_id = $1 ORDER BY generated_at DESC, id DESC', [bidderId]);
+  return rows.map(mapReceipt);
+};
+
+const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
+  const row = await firstRow<PaymentRow>(
+    `INSERT INTO payments
+       (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING *`,
+    [
+      input.listing_id,
+      input.bidder_id,
+      input.amount,
+      input.payment_ref,
+      input.escrow_state,
+      input.status,
+      input.payment_deadline,
+      input.offered_at,
+      input.paid_at ?? null,
+    ],
+  );
+  if (!row) throw new Error('Failed to create payment offer.');
+  return mapPayment(row);
+};
+
+const updatePayment = async (payment: Payment): Promise<void> => {
+  await query(
+    `UPDATE payments
+     SET listing_id = $2, bidder_id = $3, amount = $4, payment_ref = $5, escrow_state = $6,
+         status = $7, payment_deadline = $8, offered_at = $9, paid_at = $10, updated_at = NOW()
+     WHERE id = $1`,
+    [
+      payment.id,
+      payment.listing_id,
+      payment.bidder_id,
+      payment.amount,
+      payment.payment_ref,
+      payment.escrow_state,
+      payment.status,
+      payment.payment_deadline,
+      payment.offered_at,
+      payment.paid_at ?? null,
+    ],
+  );
+};
+
+const getPaymentByUuid = async (uuid: string): Promise<Payment | undefined> => {
+  const row = await firstRow<PaymentRow>('SELECT * FROM payments WHERE uuid = $1 LIMIT 1', [uuid]);
+  return row ? mapPayment(row) : undefined;
+};
+
+const getPaymentsForListing = async (listingId: number): Promise<Payment[]> => {
+  const rows = await allRows<PaymentRow>('SELECT * FROM payments WHERE listing_id = $1 ORDER BY created_at ASC, id ASC', [listingId]);
+  return rows.map(mapPayment);
+};
+
+const getPendingPaymentForListing = async (listingId: number): Promise<Payment | undefined> => {
+  const row = await firstRow<PaymentRow>(
+    `SELECT * FROM payments
+     WHERE listing_id = $1 AND status = 'pending'
+     ORDER BY payment_deadline ASC, id ASC
+     LIMIT 1`,
+    [listingId],
+  );
+  return row ? mapPayment(row) : undefined;
+};
+
+const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListing[]> => {
+  const rows = await allRows<PaymentWithListingRow>(
+    `SELECT
+       p.*,
+       l.uuid AS listing_uuid,
+       l.title AS listing_title,
+       l.charity_name AS charity_name,
+       (d.tracking_number IS NOT NULL) AS has_shipping
+     FROM payments p
+     INNER JOIN listings l ON l.id = p.listing_id
+     LEFT JOIN deliveries d ON d.listing_id = p.listing_id
+     WHERE p.bidder_id = $1
+     ORDER BY
+       CASE p.status WHEN 'pending' THEN 0 WHEN 'successful' THEN 1 ELSE 2 END,
+       p.payment_deadline ASC,
+       p.created_at DESC`,
+    [bidderId],
+  );
+  return rows.map(mapPaymentWithListing);
+};
+
+const withPaymentLock = async <T>(paymentId: number, fn: () => Promise<T>): Promise<T> =>
+  withTransaction(async () => {
+    await query('SELECT id FROM payments WHERE id = $1 FOR UPDATE', [paymentId]);
     return fn();
   });
 
@@ -788,7 +1264,7 @@ export const seedDemoData = async (): Promise<void> => {
     documentSha256: "testhash",
   });
   await query("UPDATE charities SET status = 'approved' WHERE id = $1", [charity.id]);
-  
+
   const campaign = await addCampaign({
     charityId: charity.id,
     name: "Winter Fundraising 2026",
@@ -797,19 +1273,19 @@ export const seedDemoData = async (): Promise<void> => {
 
   const demoListings: Array<NewListingInput & { current_bid: number }> = [
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Signed Premier League Jersey',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Signed Premier League Jersey',
       description: 'Signed jersey donated for charity fundraising.', condition: 'good', category: 'Sports', images: [],
       starting_price: 1000, current_bid: 1250, status: 'active', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), charityName: "Children's Hospital Trust", min_increment: 50,
     },
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Private Dining Experience',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Private Dining Experience',
       description: 'Private dining session for a good cause.', condition: 'new', category: 'Experiences', images: [],
       starting_price: 2000, current_bid: 3800, status: 'active', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(), charityName: 'Food Bank Singapore', min_increment: 100,
     },
     {
-      donor_id: userIds['donor@bidforgood.test'], campaign_id: 1, title: 'Pending Vintage Camera',
+      donor_id: userIds['donor@bidforgood.test'], campaign_id: campaign.id, title: 'Pending Vintage Camera',
       description: 'Pending approval; must not appear in public search.', condition: 'fair', category: 'Collectibles', images: [],
       starting_price: 400, current_bid: 400, status: 'pending', start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), charityName: 'Arts for Youth', min_increment: 25,
@@ -824,7 +1300,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, bids, listings, campaigns, charities, sessions, pending_registrations, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, auto_bids, payments, bids, listings, campaigns, charities, sessions, pending_registrations, login_otps, password_reset_tokens, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -842,10 +1318,19 @@ export const postgresRepository: BidForGoodRepository = {
   getPendingRegistration,
   removePendingRegistration,
 
+  saveLoginOtp,
+  getLoginOtp,
+  removeLoginOtp,
+
   addSession,
   getSession,
   updateSession,
   revokeSession,
+  revokeAllSessionsByUserId,
+
+  savePasswordResetToken,
+  getPasswordResetTokenByEmail,
+  removePasswordResetToken,
 
   addCharity,
   getCharityById,
@@ -870,10 +1355,34 @@ export const postgresRepository: BidForGoodRepository = {
   listListings,
   listActiveListings,
   listPendingListings,
+  listListingsByDonor,
+  listUsers,
 
   addBid,
   getBidsForListing,
+  getBidsByBidder,
+  upsertAutoBid,
+  getAutoBidForBidder,
+  listActiveAutoBidsForListing,
+  listAutoBidsByBidder,
+  deactivateAutoBid,
   withListingLock,
+
+  addDelivery,
+  getDeliveryByListingId,
+  updateDelivery,
+
+  addReceipt,
+  getReceiptByUuid,
+  getReceiptsByBidder,
+
+  addPayment,
+  updatePayment,
+  getPaymentByUuid,
+  getPaymentsForListing,
+  getPendingPaymentForListing,
+  listPaymentsByBidder,
+  withPaymentLock,
 
   appendAuditEvent,
   listAuditEvents,

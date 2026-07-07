@@ -38,6 +38,25 @@ SELECT
   'pending'
 WHERE NOT EXISTS (SELECT 1 FROM charities WHERE organisation_name = 'Green Paws Animal Rescue');
 
+-- Demo campaigns. Keep these before listings so clean seed data has valid campaign ownership for FR09 charity listing review.
+INSERT INTO campaigns (charity_id, name, description, status, end_date)
+SELECT
+  (SELECT id FROM charities WHERE organisation_name = 'Children''s Hospital Trust'),
+  'Winter Fundraising 2026',
+  'Raising funds for children and families through donated auction items.',
+  'active',
+  CURRENT_DATE + 60
+WHERE NOT EXISTS (SELECT 1 FROM campaigns WHERE name = 'Winter Fundraising 2026');
+
+INSERT INTO campaigns (charity_id, name, description, status, end_date)
+SELECT
+  (SELECT id FROM charities WHERE organisation_name = 'Green Paws Animal Rescue'),
+  'Animal Rescue Support Drive',
+  'Supporting rescue, rehabilitation, and rehoming for abandoned animals.',
+  'active',
+  CURRENT_DATE + 45
+WHERE NOT EXISTS (SELECT 1 FROM campaigns WHERE name = 'Animal Rescue Support Drive');
+
 -- Demo listings covering active (with bid history), pending review, sold, draft, and active-with-no-bids states.
 INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, charity_name, min_increment)
 SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Signed Premier League Jersey',
@@ -152,5 +171,45 @@ SELECT (SELECT id FROM listings WHERE title = 'Professional Photography Session'
 WHERE NOT EXISTS (
   SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Professional Photography Session') AND amount = 350
 );
+
+-- SFR14/SFR15 demo: closed auction won by bidder, awaiting payment.
+-- Use this listing to test the full payment → receipt → shipping → delivery flow.
+INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, winner_id, charity_name, min_increment)
+SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Handcrafted Ceramic Vase',
+       'A hand-thrown ceramic vase donated by a local studio.', 'new', 'Art', ARRAY[]::TEXT[],
+       200, 320, 1, 'sold', NOW() - INTERVAL '2 days', NOW() - INTERVAL '1 hour',
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'), 'Children''s Hospital Trust', 20
+WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = 'Handcrafted Ceramic Vase');
+
+INSERT INTO bids (listing_id, bidder_id, bidder_username, amount, is_auto_bid, created_at)
+SELECT (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase'),
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'), 'bidder', 320, false, NOW() - INTERVAL '2 days'
+WHERE NOT EXISTS (
+  SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase') AND amount = 320
+);
+
+-- FR14 demo payment offer for a closed auction. This lets the bidder account
+-- immediately see a pending payment deadline at /payments after seeding.
+INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at)
+SELECT (SELECT id FROM listings WHERE title = 'Antique Pocket Watch'),
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'),
+       750,
+       'DEMO-POCKET-WATCH-001',
+       'not_held',
+       'pending',
+       NOW() + INTERVAL '24 hours',
+       NOW()
+WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-POCKET-WATCH-001');
+
+INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at)
+SELECT (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase'),
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'),
+       320,
+       'DEMO-CERAMIC-VASE-001',
+       'not_held',
+       'pending',
+       NOW() + INTERVAL '48 hours',
+       NOW()
+WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-CERAMIC-VASE-001');
 
 COMMIT;
