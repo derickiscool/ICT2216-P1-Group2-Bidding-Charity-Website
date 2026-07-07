@@ -178,6 +178,10 @@ export interface AutoBidWithListing extends AutoBidSetting {
 export interface BidWithListing extends Bid {
   listingTitle?: string;
   listingUuid?: string;
+  currentBid?: number;
+  winnerId?: number;
+  endTime?: string;
+  listingStatus?: ListingStatus;
 }
 
 export interface Delivery {
@@ -231,6 +235,7 @@ export interface PaymentWithListing extends Payment {
   listing_title: string;
   charity_name: string;
   has_shipping: boolean;
+  listing_image?: string;
 }
 
 export interface PasswordResetToken {

@@ -9,6 +9,7 @@ import type {
   CharityOrganisation,
   Delivery,
   Listing,
+  ListingStatus,
   Payment,
   PaymentWithListing,
   Receipt,
@@ -200,6 +201,7 @@ interface PaymentWithListingRow extends PaymentRow {
   listing_uuid?: string;
   charity_name?: string;
   has_shipping?: boolean;
+  listing_image?: string;
 }
 
 interface AuditEventRow {
@@ -423,6 +425,7 @@ const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing =
   listing_title: row.listing_title ?? '',
   charity_name: row.charity_name ?? '',
   has_shipping: row.has_shipping ?? false,
+  listing_image: row.listing_image ?? undefined,
 });
 
 const mapReceipt = (row: ReceiptRow): Receipt => ({
@@ -969,17 +972,26 @@ const getBidsForListing = async (listingId: number): Promise<Bid[]> => {
 interface BidWithListingRow extends BidRow {
   listing_title?: string;
   listing_uuid?: string;
+  current_bid?: number;
+  winner_id?: number;
+  end_time?: DbDate;
+  listing_status?: string;
 }
 
 const mapBidWithListing = (row: BidWithListingRow): BidWithListing => ({
   ...mapBid(row),
   listingTitle: row.listing_title ?? undefined,
   listingUuid: row.listing_uuid ?? undefined,
+  currentBid: row.current_bid != null ? Number(row.current_bid) : undefined,
+  winnerId: row.winner_id != null ? Number(row.winner_id) : undefined,
+  endTime: row.end_time ? toIso(row.end_time) : undefined,
+  listingStatus: (row.listing_status ?? undefined) as ListingStatus | undefined,
 });
 
 const getBidsByBidder = async (bidderId: number): Promise<BidWithListing[]> => {
   const rows = await allRows<BidWithListingRow>(
-    `SELECT b.*, l.title AS listing_title, l.uuid AS listing_uuid
+    `SELECT b.*, l.title AS listing_title, l.uuid AS listing_uuid,
+            l.current_bid, l.winner_id, l.end_time, l.status AS listing_status
      FROM bids b
      LEFT JOIN listings l ON b.listing_id = l.id
      WHERE b.bidder_id = $1
@@ -1181,7 +1193,8 @@ const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListin
        l.uuid AS listing_uuid,
        l.title AS listing_title,
        l.charity_name AS charity_name,
-       (d.tracking_number IS NOT NULL) AS has_shipping
+       (d.tracking_number IS NOT NULL) AS has_shipping,
+       l.images[1] AS listing_image
      FROM payments p
      INNER JOIN listings l ON l.id = p.listing_id
      LEFT JOIN deliveries d ON d.listing_id = p.listing_id

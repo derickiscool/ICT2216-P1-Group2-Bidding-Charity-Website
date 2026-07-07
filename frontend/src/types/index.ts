@@ -119,6 +119,10 @@ export interface Bid {
   created_at: string
   listingTitle?: string
   listingUuid?: string
+  currentBid?: number
+  winnerId?: number
+  endTime?: string
+  listingStatus?: ListingStatus
 }
 
 export interface BidPlacementResponse {
@@ -176,6 +180,7 @@ export interface PaymentWithListing extends Payment {
   charity_name: string
   has_shipping: boolean
   listing_status?: string
+  listing_image?: string
 }
 
 export interface Receipt {

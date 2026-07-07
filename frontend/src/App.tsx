@@ -90,7 +90,6 @@ import AdminAuditPage from './pages/AdminAuditPage'
 import AdminActiveListingsPage from './pages/AdminActiveListingsPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import DonorListingsPage from './pages/DonorListingsPage'
-import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
 import CharityListingReviewPage from './pages/CharityListingReviewPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
@@ -140,7 +139,7 @@ export default function App() {
 
           {/* ── Bidder only ── */}
           <Route element={<RoleProtectedRoute allowedRoles={['bidder']} />}>
-            <Route path="/payments" element={<PaymentDeadlinesPage />} />
+            <Route path="/payments" element={<DashboardPage />} />
           </Route>
 
           {/* ── Donor only ── */}

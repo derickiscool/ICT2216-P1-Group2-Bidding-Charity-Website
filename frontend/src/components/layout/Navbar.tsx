@@ -68,7 +68,7 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
         ))}
         {user?.roles?.includes('bidder') && (
           <Link
-            to="/payments"
+            to="/dashboard"
             onClick={onClose}
             className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
             style={{ color: '#2D3A3A' }}
@@ -263,7 +263,7 @@ export default function Navbar() {
           <Link to="/auctions" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Browse Auctions</Link>
           <Link to="/charities" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Charities</Link>
           {isAuthenticated && user?.roles?.includes('bidder') && (
-            <Link to="/payments" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Payment Deadlines</Link>
+            <Link to="/dashboard" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Payment Deadlines</Link>
           )}
           {isAuthenticated && (user?.roles?.includes('donor') || user?.roles?.includes('admin')) && (
             <Link to="/listings/manage" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>My Listings</Link>
