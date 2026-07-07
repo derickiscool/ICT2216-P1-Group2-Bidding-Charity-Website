@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.routes';
 import listingRoutes from './routes/listing.routes';
 import bidRoutes from './routes/bid.routes';
 import paymentRoutes from './routes/payment.routes';
+import shippingRoutes from './routes/shipping.routes';
 import adminRoutes from './routes/admin.routes';
 import charityRoutes from './routes/charity.routes';
 import profileRoutes from './routes/profile.routes';
@@ -29,6 +30,7 @@ export const createApp = () => {
   app.use('/api/auth', authRoutes);
   app.use('/api/users', profileRoutes);
   app.use('/api/listings', listingRoutes);
+  app.use('/api/listings', shippingRoutes);
   app.use('/api/bids', bidRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/admin', adminRoutes);

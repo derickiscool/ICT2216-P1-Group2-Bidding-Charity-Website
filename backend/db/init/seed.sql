@@ -172,6 +172,22 @@ WHERE NOT EXISTS (
   SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Professional Photography Session') AND amount = 350
 );
 
+-- SFR14/SFR15 demo: closed auction won by bidder, awaiting payment.
+-- Use this listing to test the full payment → receipt → shipping → delivery flow.
+INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, winner_id, charity_name, min_increment)
+SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Handcrafted Ceramic Vase',
+       'A hand-thrown ceramic vase donated by a local studio.', 'new', 'Art', ARRAY[]::TEXT[],
+       200, 320, 1, 'sold', NOW() - INTERVAL '2 days', NOW() - INTERVAL '1 hour',
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'), 'Children''s Hospital Trust', 20
+WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = 'Handcrafted Ceramic Vase');
+
+INSERT INTO bids (listing_id, bidder_id, bidder_username, amount, is_auto_bid, created_at)
+SELECT (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase'),
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'), 'bidder', 320, false, NOW() - INTERVAL '2 days'
+WHERE NOT EXISTS (
+  SELECT 1 FROM bids WHERE listing_id = (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase') AND amount = 320
+);
+
 -- FR14 demo payment offer for a closed auction. This lets the bidder account
 -- immediately see a pending payment deadline at /payments after seeding.
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at)
@@ -184,5 +200,16 @@ SELECT (SELECT id FROM listings WHERE title = 'Antique Pocket Watch'),
        NOW() + INTERVAL '24 hours',
        NOW()
 WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-POCKET-WATCH-001');
+
+INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at)
+SELECT (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase'),
+       (SELECT id FROM users WHERE email = 'bidder@bidforgood.test'),
+       320,
+       'DEMO-CERAMIC-VASE-001',
+       'not_held',
+       'pending',
+       NOW() + INTERVAL '48 hours',
+       NOW()
+WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-CERAMIC-VASE-001');
 
 COMMIT;

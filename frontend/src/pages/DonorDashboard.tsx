@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Package, TrendingUp, Clock, CheckCircle, Plus, Loader2, AlertCircle } from 'lucide-react'
+import { Package, TrendingUp, Clock, CheckCircle, Plus, Loader2, AlertCircle, Truck, X } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { Listing, DonorStats, ApiError } from '../types'
@@ -15,12 +15,15 @@ const money = (value: number) => `$${value.toLocaleString(undefined, { minimumFr
 
 const statusBadge = (status: string) => {
   const colors: Record<string, { bg: string; text: string }> = {
-    draft: { bg: '#F3F4F6', text: '#6B7280' },
-    pending: { bg: '#FEF3C7', text: '#92400E' },
-    active: { bg: '#ECFDF5', text: '#047857' },
-    sold: { bg: '#DBEAFE', text: '#1E40AF' },
-    expired: { bg: '#FEE2E2', text: '#991B1B' },
+    draft:     { bg: '#F3F4F6', text: '#6B7280' },
+    pending:   { bg: '#FEF3C7', text: '#92400E' },
+    active:    { bg: '#ECFDF5', text: '#047857' },
+    sold:      { bg: '#DBEAFE', text: '#1E40AF' },
+    shipped:   { bg: '#EDE9FE', text: '#5B21B6' },
+    delivered: { bg: '#D1FAE5', text: '#065F46' },
+    expired:   { bg: '#FEE2E2', text: '#991B1B' },
     cancelled: { bg: '#FEE2E2', text: '#991B1B' },
+    rejected:  { bg: '#FEE2E2', text: '#991B1B' },
   }
   const style = colors[status] || colors.draft
   return (
@@ -31,6 +34,8 @@ const statusBadge = (status: string) => {
   )
 }
 
+interface ShipForm { trackingNumber: string; carrier: string; notes: string }
+
 export default function DonorDashboard() {
   const { user } = useAuthStore()
   const [listings, setListings] = useState<Listing[]>([])
@@ -38,23 +43,64 @@ export default function DonorDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await api.get<{ listings: Listing[]; stats: DonorStats }>('/listings/donor')
-        setListings(res.data.listings)
-        setStats(res.data.stats)
-      } catch (err) {
-        const ae = err as ApiError
-        setError(ae.message || 'Failed to load dashboard.')
-      } finally {
-        setLoading(false)
-      }
+  // Shipping modal state
+  const [shipTarget, setShipTarget] = useState<Listing | null>(null)
+  const [shipForm, setShipForm] = useState<ShipForm>({ trackingNumber: '', carrier: '', notes: '' })
+  const [shipLoading, setShipLoading] = useState(false)
+  const [shipError, setShipError] = useState<string | null>(null)
+  const trackingRef = useRef<HTMLInputElement>(null)
+
+  const loadListings = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api.get<{ listings: Listing[]; stats: DonorStats }>('/listings/donor')
+      setListings(res.data.listings)
+      setStats(res.data.stats)
+    } catch (err) {
+      const ae = err as ApiError
+      setError(ae.message || 'Failed to load dashboard.')
+    } finally {
+      setLoading(false)
     }
-    void load()
-  }, [])
+  }
+
+  useEffect(() => { void loadListings() }, [])
+
+  const openShipModal = (listing: Listing) => {
+    setShipTarget(listing)
+    setShipForm({ trackingNumber: '', carrier: '', notes: '' })
+    setShipError(null)
+    setTimeout(() => trackingRef.current?.focus(), 50)
+  }
+
+  const closeShipModal = () => { setShipTarget(null); setShipError(null) }
+
+  const TRACKING_RE = /^[A-Z]{2,4}-[A-Z0-9]{6,20}$/
+
+  const submitShipping = async () => {
+    if (!shipTarget) return
+    if (!shipForm.trackingNumber.trim() || !shipForm.carrier.trim()) {
+      setShipError('Tracking number and carrier are required.')
+      return
+    }
+    if (!TRACKING_RE.test(shipForm.trackingNumber.trim())) {
+      setShipError('Tracking number must be in the format XX-XXXXXXXX (e.g. SG-123456789).')
+      return
+    }
+    setShipLoading(true)
+    setShipError(null)
+    try {
+      await api.post(`/listings/${shipTarget.uuid}/ship`, shipForm)
+      closeShipModal()
+      void loadListings()
+    } catch (err) {
+      const ae = err as ApiError
+      setShipError(ae.message || 'Failed to confirm shipping.')
+    } finally {
+      setShipLoading(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -178,11 +224,22 @@ export default function DonorDashboard() {
                           <span className="text-xs" style={{ color: C.muted }}>Pending review</span>
                         ) : listing.status === 'draft' ? (
                           <span className="text-xs" style={{ color: C.muted }}>Draft</span>
-                        ) : (
+                        ) : listing.status === 'sold' ? (
+                          <button
+                            onClick={() => openShipModal(listing)}
+                            className="flex items-center gap-1 text-xs font-semibold ml-auto"
+                            style={{ color: '#5B21B6' }}>
+                            <Truck className="w-3.5 h-3.5" /> Confirm Shipping
+                          </button>
+                        ) : listing.status === 'active' ? (
                           <Link to={`/auctions/${listing.uuid}`}
                             className="text-xs font-semibold" style={{ color: C.emerald }}>
                             View →
                           </Link>
+                        ) : (
+                          <span className="text-xs" style={{ color: C.muted }}>
+                            {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -193,6 +250,88 @@ export default function DonorDashboard() {
           )}
         </div>
       </div>
+
+      {/* Shipping confirmation modal */}
+      {shipTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.45)' }}
+          onClick={closeShipModal}>
+          <div className="rounded-2xl bg-white w-full max-w-md mx-4 p-6 shadow-xl"
+            style={{ border: '1px solid', borderColor: C.beige }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="font-bold text-base" style={{ color: C.slate }}>Confirm Shipping</h2>
+                <p className="text-xs mt-0.5" style={{ color: C.muted }}>{shipTarget.title}</p>
+              </div>
+              <button onClick={closeShipModal}><X className="w-5 h-5" style={{ color: C.muted }} /></button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: C.slate }}>
+                  Tracking Number <span style={{ color: C.danger }}>*</span>
+                </label>
+                <input
+                  ref={trackingRef}
+                  type="text"
+                  className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{ border: '1px solid', borderColor: C.beige, color: 'white' }}
+                  placeholder="e.g. SG-123456789"
+                  value={shipForm.trackingNumber}
+                  onChange={e => setShipForm(f => ({ ...f, trackingNumber: e.target.value }))}
+                />
+                <p className="text-xs mt-1" style={{ color: C.muted }}>Format: 2–4 uppercase letters, hyphen, 6–20 alphanumeric (e.g. SG-123456789)</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: C.slate }}>
+                  Carrier <span style={{ color: C.danger }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{ border: '1px solid', borderColor: C.beige, color: 'white' }}
+                  placeholder="e.g. SingPost, FedEx, DHL"
+                  value={shipForm.carrier}
+                  onChange={e => setShipForm(f => ({ ...f, carrier: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: C.slate }}>Notes</label>
+                <textarea
+                  className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none"
+                  style={{ border: '1px solid', borderColor: C.beige, color: 'white' }}
+                  rows={3}
+                  placeholder="Optional notes for the bidder"
+                  value={shipForm.notes}
+                  onChange={e => setShipForm(f => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {shipError && (
+              <p className="mt-3 text-xs" style={{ color: C.danger }}>{shipError}</p>
+            )}
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={closeShipModal}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ border: '1px solid', borderColor: C.beige, color: C.muted }}>
+                Cancel
+              </button>
+              <button
+                onClick={submitShipping}
+                disabled={shipLoading}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ background: '#5B21B6', opacity: shipLoading ? 0.7 : 1 }}>
+                {shipLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
+                {shipLoading ? 'Confirming…' : 'Confirm Shipping'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

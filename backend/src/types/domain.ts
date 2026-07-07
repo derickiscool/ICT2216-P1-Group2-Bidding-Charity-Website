@@ -79,7 +79,7 @@ export interface CharityOrganisation {
   created_at: string;
 }
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
 export interface Listing {
   id: number;
   uuid: string;
@@ -110,6 +110,8 @@ export interface DonorListingStatusSummary {
   pending: number;
   active: number;
   sold: number;
+  shipped: number;
+  delivered: number;
   expired: number;
   cancelled: number;
   rejected: number;
@@ -214,6 +216,32 @@ export interface SessionRecord {
   revokedAt?: Date;
   createdAt: Date;
   lastSeenAt: Date;
+}
+
+// SFR14 — immutable donation receipt generated upon payment confirmation
+export interface Receipt {
+  id: number;
+  uuid: string;
+  paymentId: number;
+  listingId: number;
+  bidderId: number;
+  amount: number;
+  itemTitle: string;
+  itemDescription: string;
+  beneficiaryName: string;
+  generatedAt: string;
+}
+
+// SFR15 — shipping details submitted by donor after payment is confirmed
+export interface ShippingVerification {
+  id: number;
+  uuid: string;
+  listingId: number;
+  donorId: number;
+  trackingNumber: string;
+  carrier: string;
+  notes: string;
+  shippedAt: string;
 }
 
 export interface AuditEvent {

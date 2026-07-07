@@ -9,6 +9,8 @@ import type {
   Listing,
   Payment,
   PaymentWithListing,
+  Receipt,
+  ShippingVerification,
   NewCampaignInput,
   PasswordResetToken,
   PendingRegistration,
@@ -26,6 +28,8 @@ export type NewListingInput = Omit<Listing, 'id' | 'uuid' | 'created_at' | 'curr
 export type NewBidInput = Omit<Bid, 'id' | 'uuid' | 'created_at'>;
 export type NewAutoBidInput = Omit<AutoBidSetting, 'id' | 'uuid' | 'created_at' | 'updated_at'>;
 export type NewPaymentInput = Omit<Payment, 'id' | 'uuid' | 'created_at' | 'updated_at' | 'paid_at'> & { paid_at?: string };
+export type NewReceiptInput = Omit<Receipt, 'id' | 'uuid' | 'generatedAt'>;
+export type NewShippingVerificationInput = Omit<ShippingVerification, 'id' | 'uuid' | 'shippedAt'>;
 export type NewAuditEventInput = Omit<AuditEvent, 'id' | 'timestamp' | 'previousHash' | 'currentHash' | 'payload'> & {
   payload?: Record<string, unknown>;
 };
@@ -98,6 +102,13 @@ export interface BidForGoodRepository {
   getPendingPaymentForListing(listingId: number): Promise<Payment | undefined>;
   listPaymentsByBidder(bidderId: number): Promise<PaymentWithListing[]>;
   withPaymentLock<T>(paymentId: number, fn: () => Promise<T>): Promise<T>;
+
+  createReceipt(input: NewReceiptInput): Promise<Receipt>;
+  getReceiptByUuid(uuid: string): Promise<Receipt | undefined>;
+  getReceiptByPaymentId(paymentId: number): Promise<Receipt | undefined>;
+
+  createShippingVerification(input: NewShippingVerificationInput): Promise<ShippingVerification>;
+  getShippingVerificationByListingId(listingId: number): Promise<ShippingVerification | undefined>;
 
   appendAuditEvent(event: NewAuditEventInput): Promise<AuditEvent>;
   listAuditEvents(): Promise<AuditEvent[]>;

@@ -10,6 +10,8 @@ import type {
   Listing,
   Payment,
   PaymentWithListing,
+  Receipt,
+  ShippingVerification,
   NewCampaignInput,
   PasswordResetToken,
   PendingRegistration,
@@ -28,6 +30,8 @@ import type {
   NewCharityInput,
   NewListingInput,
   NewPaymentInput,
+  NewReceiptInput,
+  NewShippingVerificationInput,
   NewUserInput,
   PublicUser,
 } from './repository.types';
@@ -151,7 +155,7 @@ interface AutoBidRow {
 interface AutoBidWithListingRow extends AutoBidRow {
   listing_title?: string;
   listing_uuid?: string;
-  listing_status?: 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+  listing_status?: 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
   current_bid?: number | string;
   end_time?: DbDate;
 }
@@ -176,6 +180,30 @@ interface PaymentWithListingRow extends PaymentRow {
   listing_uuid: string;
   listing_title: string;
   charity_name: string;
+}
+
+interface ReceiptRow {
+  id: number;
+  uuid: string;
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  amount: number | string;
+  item_title: string;
+  item_description: string;
+  beneficiary_name: string;
+  generated_at: DbDate;
+}
+
+interface ShippingVerificationRow {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  donor_id: number;
+  tracking_number: string;
+  carrier: string;
+  notes: string;
+  shipped_at: DbDate;
 }
 
 interface AuditEventRow {
@@ -364,6 +392,30 @@ const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing =
   listing_uuid: row.listing_uuid,
   listing_title: row.listing_title,
   charity_name: row.charity_name,
+});
+
+const mapReceipt = (row: ReceiptRow): Receipt => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  paymentId: Number(row.payment_id),
+  listingId: Number(row.listing_id),
+  bidderId: Number(row.bidder_id),
+  amount: Number(row.amount),
+  itemTitle: row.item_title,
+  itemDescription: row.item_description,
+  beneficiaryName: row.beneficiary_name,
+  generatedAt: toIso(row.generated_at),
+});
+
+const mapShippingVerification = (row: ShippingVerificationRow): ShippingVerification => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  listingId: Number(row.listing_id),
+  donorId: Number(row.donor_id),
+  trackingNumber: row.tracking_number,
+  carrier: row.carrier,
+  notes: row.notes,
+  shippedAt: toIso(row.shipped_at),
 });
 
 const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
@@ -1044,6 +1096,43 @@ const withPaymentLock = async <T>(paymentId: number, fn: () => Promise<T>): Prom
     return fn();
   });
 
+const createReceipt = async (input: NewReceiptInput): Promise<Receipt> => {
+  const row = await firstRow<ReceiptRow>(
+    `INSERT INTO receipts (payment_id, listing_id, bidder_id, amount, item_title, item_description, beneficiary_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [input.paymentId, input.listingId, input.bidderId, input.amount, input.itemTitle, input.itemDescription, input.beneficiaryName],
+  );
+  if (!row) throw new Error('Failed to create receipt.');
+  return mapReceipt(row);
+};
+
+const getReceiptByUuid = async (uuid: string): Promise<Receipt | undefined> => {
+  const row = await firstRow<ReceiptRow>('SELECT * FROM receipts WHERE uuid = $1 LIMIT 1', [uuid]);
+  return row ? mapReceipt(row) : undefined;
+};
+
+const getReceiptByPaymentId = async (paymentId: number): Promise<Receipt | undefined> => {
+  const row = await firstRow<ReceiptRow>('SELECT * FROM receipts WHERE payment_id = $1 LIMIT 1', [paymentId]);
+  return row ? mapReceipt(row) : undefined;
+};
+
+const createShippingVerification = async (input: NewShippingVerificationInput): Promise<ShippingVerification> => {
+  const row = await firstRow<ShippingVerificationRow>(
+    `INSERT INTO shipping_verifications (listing_id, donor_id, tracking_number, carrier, notes)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [input.listingId, input.donorId, input.trackingNumber, input.carrier, input.notes],
+  );
+  if (!row) throw new Error('Failed to create shipping verification.');
+  return mapShippingVerification(row);
+};
+
+const getShippingVerificationByListingId = async (listingId: number): Promise<ShippingVerification | undefined> => {
+  const row = await firstRow<ShippingVerificationRow>('SELECT * FROM shipping_verifications WHERE listing_id = $1 LIMIT 1', [listingId]);
+  return row ? mapShippingVerification(row) : undefined;
+};
+
 const appendAuditEvent = async (event: NewAuditEventInput): Promise<AuditEvent> =>
   withTransaction(async () => {
     await query('LOCK TABLE audit_events IN SHARE ROW EXCLUSIVE MODE');
@@ -1143,7 +1232,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, payments, auto_bids, bids, listings, campaigns, charities, sessions, pending_registrations, password_reset_tokens, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, receipts, shipping_verifications, payments, auto_bids, bids, listings, campaigns, charities, sessions, pending_registrations, password_reset_tokens, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -1214,6 +1303,13 @@ export const postgresRepository: BidForGoodRepository = {
   getPendingPaymentForListing,
   listPaymentsByBidder,
   withPaymentLock,
+
+  createReceipt,
+  getReceiptByUuid,
+  getReceiptByPaymentId,
+
+  createShippingVerification,
+  getShippingVerificationByListingId,
 
   appendAuditEvent,
   listAuditEvents,

@@ -1,13 +1,15 @@
 import crypto from 'crypto';
 import type { Request } from 'express';
-import type { Bid, Listing, Payment, PaymentWithListing } from '../types/domain';
+import type { Bid, Listing, Payment, PaymentWithListing, Receipt } from '../types/domain';
 import {
   addPayment,
+  createReceipt,
   getBidsForListing,
   getListingById,
   getPaymentByUuid,
   getPaymentsForListing,
   getPendingPaymentForListing,
+  getReceiptByUuid,
   listActiveListings,
   listListings,
   listPaymentsByBidder,
@@ -259,6 +261,17 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
     listing.status = 'sold';
     await updateListing(listing);
 
+    // SFR14: generate immutable receipt locked to payment amount, item, and beneficiary
+    await createReceipt({
+      paymentId: payment.id,
+      listingId: listing.id,
+      bidderId: payment.bidder_id,
+      amount: payment.amount,
+      itemTitle: listing.title,
+      itemDescription: listing.description,
+      beneficiaryName: listing.charityName,
+    });
+
     await audit(
       req,
       'PAYMENT_COMPLETED',
@@ -270,4 +283,15 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
 
     return payment;
   });
+};
+
+export const getReceipt = async (receiptUuid: string, req: Request): Promise<Receipt> => {
+  if (!req.user) throw forbidden();
+  const receipt = await getReceiptByUuid(receiptUuid);
+  if (!receipt) throw notFound('Receipt not found.');
+  if (receipt.bidderId !== req.user.id) {
+    await audit(req, 'RECEIPT_ACCESS_DENIED', { receiptUuid }, 'receipt', receiptUuid, req.user.id);
+    throw forbidden('This receipt does not belong to your account.');
+  }
+  return receipt;
 };
