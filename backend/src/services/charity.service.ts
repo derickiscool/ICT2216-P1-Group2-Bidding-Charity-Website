@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { CharityOrganisation, Listing, Payment } from '../types/domain';
-import { addCharity, getCharityByUuid, getPaymentsForListing, listCharities, listListings, updateCharity } from '../repositories';
+import { addCharity, findUserById, getCharityById, getCharityByUuid, getPaymentsForListing, listCharities, listListings, updateCharity } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';
@@ -62,15 +62,27 @@ export const getApprovedCharities = async (): Promise<CharityOrganisation[]> => 
   return all.filter(c => c.status === 'approved');
 };
 
-export const getCharityDashboard = async (ownerUserId: number): Promise<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }> => {
-  const allCharities = await listCharities();
-  const charity = allCharities.find(c => c.ownerUserId === ownerUserId) ?? null;
+export const getCharityDashboard = async (userId: number): Promise<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }> => {
+  const user = await findUserById(userId);
+  if (!user) throw notFound('User not found.');
+
+  let charity: CharityOrganisation | null = null;
+
+  if (user.roles.includes('charity_staff') && user.charityId) {
+    // Charity Staff do not own the organisation record. Their access is linked
+    // through users.charity_id, so the dashboard must resolve the organisation
+    // from that association instead of ownerUserId.
+    charity = (await getCharityById(user.charityId)) ?? null;
+  } else {
+    const allCharities = await listCharities();
+    charity = allCharities.find(c => c.ownerUserId === userId) ?? null;
+  }
 
   const allListings = await listListings();
   const organisationName = charity?.organisationName ?? '';
-  const listings = allListings.filter(l => l.charityName.toLowerCase() === organisationName.toLowerCase());
+  const listings = charity ? allListings.filter(l => l.charityName.toLowerCase() === organisationName.toLowerCase()) : [];
 
-  // Fetch payments for this charity's listings to compute fund statistics
+  // Fetch payments for this charity's listings to compute fund statistics.
   const allPayments: Payment[] = (
     await Promise.all(listings.map(l => getPaymentsForListing(l.id)))
   ).flat();
