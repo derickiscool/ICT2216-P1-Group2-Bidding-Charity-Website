@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS charities (
   document_name TEXT NOT NULL,
   document_mime TEXT NOT NULL CHECK (document_mime IN ('application/pdf', 'image/png', 'image/jpeg')),
   document_sha256 TEXT NOT NULL,
+  document_data BYTEA,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   reviewed_at TIMESTAMPTZ,
@@ -99,6 +100,7 @@ CREATE TABLE IF NOT EXISTS charities (
 
 CREATE INDEX IF NOT EXISTS charities_status_idx ON charities (status);
 CREATE INDEX IF NOT EXISTS charities_owner_user_id_idx ON charities (owner_user_id);
+ALTER TABLE charities ADD COLUMN IF NOT EXISTS document_data BYTEA;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS charity_id BIGINT REFERENCES charities(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS users_charity_id_idx ON users (charity_id);
