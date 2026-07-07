@@ -8,6 +8,7 @@ export interface User {
   email: string
   username: string
   full_name: string
+  contactNumber?: string | null
   roles: UserRole[]
   is_verified: boolean
   is_active: boolean

@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { AlertCircle, AtSign, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Mail, Phone, Save, ShieldCheck, UserCircle } from 'lucide-react'
+import { useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Mail, Phone, Save, ShieldCheck, UserCircle } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { ApiError, User } from '../types'
@@ -14,14 +13,13 @@ const C = {
   danger: '#B91C1C', dangerLight: '#FEF2F2', dangerBorder: '#FECACA',
 }
 
-// Temporary type extension because backend may name the phone field differently.
-// Once backend confirms the exact field, we can keep only one field name.
-type ProfileUser = User & { contact_number?: string | null; phone_number?: string | null }
+type ProfileUser = User & { contactNumber?: string | null }
 type ProfileForm = { full_name: string; username: string; email: string; contact_number: string }
 type EditableProfileField = 'full_name' | 'username' | 'contact_number'
-type PasswordForm = { currentPassword: string; newPassword: string; confirmPassword: string }
+type PasswordForm = { currentPassword: string; newPassword: string; confirmPassword: string; verificationCode: string }
+type PasswordField = keyof PasswordForm
 
-const emptyPwd: PasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
+const emptyPwd: PasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '', verificationCode: '' }
 
 function inputSt(hasErr: boolean, extra?: CSSProperties): CSSProperties {
   return {
@@ -31,19 +29,16 @@ function inputSt(hasErr: boolean, extra?: CSSProperties): CSSProperties {
   }
 }
 
-// Converts the logged-in user from authStore into editable form values.
 function toForm(user: User | null): ProfileForm {
   const u = user as ProfileUser | null
   return {
     full_name: u?.full_name ?? '',
     username: u?.username ?? '',
     email: u?.email ?? '',
-    contact_number: u?.contact_number ?? u?.phone_number ?? '',
+    contact_number: u?.contactNumber ?? '',
   }
 }
 
-// Simple client-side password strength indicator.
-// This is only for user guidance. Backend must still validate and hash passwords securely.
 function pwdStrength(p: string) {
   if (!p) return { score: 0, label: '', color: C.beige }
 
@@ -63,14 +58,13 @@ function roleText(role: string) {
     case 'donor': return 'Donor'
     case 'charity_staff': return 'Charity Staff'
     case 'charity_org':
-    case 'charity_organisation': return 'Charity Organisation'
+    case 'charity_organisation':
+    case 'charity': return 'Charity Organisation'
     case 'admin': return 'Admin'
     default: return role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 }
 
-// Shows user-friendly error messages instead of raw backend messages like "Not found".
-// The current "Not found" happens because backend profile routes are not implemented/mounted yet.
 function errMsg(err: unknown, fallback: string) {
   const ae = err as ApiError
   const msg = ae.message?.toLowerCase() ?? ''
@@ -79,16 +73,19 @@ function errMsg(err: unknown, fallback: string) {
   return ae.message || fallback
 }
 
-export default function ProfilePage() {
-  const { user, fetchMe, logout } = useAuthStore()
-  const navigate = useNavigate()
+function normaliseSgMobilePreview(value: string): string | null {
+  const raw = value.trim()
+  if (!raw) return ''
+  if (raw.length > 13 || !/^\+?[0-9\s-]+$/.test(raw)) return null
 
-  // After a verified email change the backend revokes all sessions, so we clear
-  // client auth state and send the user back to the login page to sign in afresh.
-  const handleEmailChanged = useCallback(async () => {
-    try { await logout() } catch { /* session already revoked server-side */ }
-    navigate('/login', { replace: true })
-  }, [logout, navigate])
+  let digits = raw.replace(/\D/g, '')
+  if (digits.startsWith('65') && digits.length === 10) digits = digits.slice(2)
+  if (!/^[89]\d{7}$/.test(digits)) return null
+  return `+65${digits}`
+}
+
+export default function ProfilePage() {
+  const { user, fetchMe } = useAuthStore()
 
   const [profileEdits, setProfileEdits] = useState<Partial<ProfileForm>>({})
   const [passwords, setPasswords] = useState<PasswordForm>(emptyPwd)
@@ -98,6 +95,7 @@ export default function ProfilePage() {
   const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const [savingProfile, setSavingProfile] = useState(false)
+  const [requestingCode, setRequestingCode] = useState(false)
   const [savingPwd, setSavingPwd] = useState(false)
   const [showCur, setShowCur] = useState(false)
   const [showNew, setShowNew] = useState(false)
@@ -109,36 +107,49 @@ export default function ProfilePage() {
   const dirty = profile.full_name !== original.full_name || profile.username !== original.username || profile.contact_number !== original.contact_number
 
   const setProfileField = (key: EditableProfileField) => (e: ChangeEvent<HTMLInputElement>) => {
-  const value = e.target.value
+    const value = e.target.value
 
-  // Avoid dynamic object injection warning by updating known fields only.
-  setProfileEdits(prev => {
-    if (key === 'full_name') return { ...prev, full_name: value }
-    if (key === 'username') return { ...prev, username: value }
-    return { ...prev, contact_number: value }
-  })
+    setProfileEdits(prev => {
+      if (key === 'full_name') return { ...prev, full_name: value }
+      if (key === 'username') return { ...prev, username: value }
+      return { ...prev, contact_number: value }
+    })
 
-  setProfileErrs(prev => {
-    if (key === 'full_name') return { ...prev, full_name: '' }
-    if (key === 'username') return { ...prev, username: '' }
-    return { ...prev, contact_number: '' }
-  })
+    setProfileErrs(prev => {
+      if (key === 'full_name') return { ...prev, full_name: '' }
+      if (key === 'username') return { ...prev, username: '' }
+      return { ...prev, contact_number: '' }
+    })
 
-  setProfileMsg(null)
-}
+    setProfileMsg(null)
+  }
 
-  const setPwdField = (key: keyof PasswordForm) => (e: ChangeEvent<HTMLInputElement>) => {
-    setPasswords(prev => ({ ...prev, [key]: e.target.value }))
-    setPwdErrs(prev => ({ ...prev, [key]: '' }))
+  const setPwdField = (key: PasswordField) => (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+
+    setPasswords(prev => {
+      if (key === 'currentPassword') return { ...prev, currentPassword: value }
+      if (key === 'newPassword') return { ...prev, newPassword: value }
+      if (key === 'confirmPassword') return { ...prev, confirmPassword: value }
+      return { ...prev, verificationCode: value }
+    })
+
+    setPwdErrs(prev => {
+      if (key === 'currentPassword') return { ...prev, currentPassword: '' }
+      if (key === 'newPassword') return { ...prev, newPassword: '' }
+      if (key === 'confirmPassword') return { ...prev, confirmPassword: '' }
+      return { ...prev, verificationCode: '' }
+    })
+
     setPwdMsg(null)
   }
 
-  // Frontend validation gives quick feedback before sending data to backend.
   function validateProfile() {
     const e: Record<string, string> = {}
     const name = profile.full_name.trim()
     const username = profile.username.trim()
     const contact = profile.contact_number.trim()
+    const normalisedContact = normaliseSgMobilePreview(contact)
 
     if (!name) e.full_name = 'Full name is required.'
     else if (name.length < 2) e.full_name = 'Full name must be at least 2 characters.'
@@ -149,7 +160,7 @@ export default function ProfilePage() {
     else if (username.length > 30) e.username = 'Username must be 30 characters or less.'
     else if (!/^[a-zA-Z0-9_]+$/.test(username)) e.username = 'Use letters, numbers, and underscores only.'
 
-    if (contact && !/^\+?[0-9\s-]{8,20}$/.test(contact)) e.contact_number = 'Enter a valid contact number.'
+    if (normalisedContact === null) e.contact_number = 'Enter a valid Singapore mobile number, e.g. 91234567 or +65 9123 4567.'
 
     setProfileErrs(e)
     return Object.keys(e).length === 0
@@ -166,6 +177,9 @@ export default function ProfilePage() {
 
     if (!passwords.confirmPassword) e.confirmPassword = 'Please confirm your new password.'
     else if (passwords.newPassword !== passwords.confirmPassword) e.confirmPassword = 'Passwords do not match.'
+
+    if (!passwords.verificationCode.trim()) e.verificationCode = 'Enter the verification code sent to your email.'
+    else if (!/^\d{6}$/.test(passwords.verificationCode.trim())) e.verificationCode = 'Verification code must be 6 digits.'
 
     if (passwords.currentPassword && passwords.newPassword && passwords.currentPassword === passwords.newPassword) {
       e.newPassword = 'New password must be different from current password.'
@@ -187,19 +201,12 @@ export default function ProfilePage() {
 
     try {
       setSavingProfile(true)
+      const normalisedContact = normaliseSgMobilePreview(profile.contact_number.trim())
 
-      /*
-        Expected backend route:
-        PUT /api/users/profile
-
-        Important security point:
-        Frontend should not send user_id here.
-        Backend should identify the current user from the token/session.
-      */
       await api.put('/users/profile', {
         full_name: profile.full_name.trim(),
         username: profile.username.trim(),
-        contact_number: profile.contact_number.trim() || null,
+        contact_number: normalisedContact || null,
       })
 
       await fetchMe()
@@ -220,6 +227,28 @@ export default function ProfilePage() {
     }
   }
 
+  async function requestPasswordCode() {
+    setPwdMsg(null)
+    setPwdErrs(prev => ({ ...prev, currentPassword: '', verificationCode: '' }))
+
+    if (!passwords.currentPassword) {
+      setPwdErrs(prev => ({ ...prev, currentPassword: 'Current password is required before requesting a code.' }))
+      return
+    }
+
+    try {
+      setRequestingCode(true)
+      await api.post('/users/profile/password/verification', { currentPassword: passwords.currentPassword })
+      setPwdMsg({ type: 'success', text: 'Verification code sent to your registered email address.' })
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setPwdErrs(ae.errors)
+      else setPwdMsg({ type: 'error', text: errMsg(err, 'Unable to send verification code right now. Please try again later.') })
+    } finally {
+      setRequestingCode(false)
+    }
+  }
+
   async function savePassword(e: FormEvent) {
     e.preventDefault()
     setPwdMsg(null)
@@ -228,16 +257,10 @@ export default function ProfilePage() {
 
     try {
       setSavingPwd(true)
-
-      /*
-        Expected backend route:
-        PUT /api/users/profile/password
-
-        Password fields are cleared after success so they do not remain in component state.
-      */
       await api.put('/users/profile/password', {
         currentPassword: passwords.currentPassword,
         newPassword: passwords.newPassword,
+        verificationCode: passwords.verificationCode.trim(),
       })
 
       setPasswords(emptyPwd)
@@ -264,18 +287,18 @@ export default function ProfilePage() {
 
         <div className="grid lg:grid-cols-[1fr_340px] gap-6">
           <div className="space-y-6">
-            <Card icon={<UserCircle className="w-5 h-5" />} title="Account details" desc="Update your name, username and contact number.">
+            <Card icon={<UserCircle className="w-5 h-5" />} title="Account details" desc="Update your name, username and Singapore contact number.">
               <form onSubmit={saveProfile} noValidate className="space-y-5">
                 <Alert msg={profileMsg} />
 
                 <div className="grid md:grid-cols-2 gap-4">
-                  <TextInput label="Full name" value={profile.full_name} error={profileErrs.full_name} onChange={setProfileField('full_name')} autoComplete="name" />
-                  <TextInput label="Username" value={profile.username} error={profileErrs.username} onChange={setProfileField('username')} autoComplete="username" />
+                  <TextInput label="Full name" value={profile.full_name} error={profileErrs.full_name} onChange={setProfileField('full_name')} autoComplete="name" maxLength={80} />
+                  <TextInput label="Username" value={profile.username} error={profileErrs.username} onChange={setProfileField('username')} autoComplete="username" maxLength={30} />
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
-                  <IconInput label="Email address" icon={<Mail className="w-4 h-4" />} value={profile.email} disabled note="Use “Change email address” below to update it." />
-                  <IconInput label="Contact number" icon={<Phone className="w-4 h-4" />} value={profile.contact_number} error={profileErrs.contact_number} onChange={setProfileField('contact_number')} autoComplete="tel" placeholder="+65 9123 4567" />
+                  <IconInput label="Email address" icon={<Mail className="w-4 h-4" />} value={profile.email} disabled note="Email cannot be changed from the profile page." />
+                  <IconInput label="Contact number" icon={<Phone className="w-4 h-4" />} value={profile.contact_number} error={profileErrs.contact_number} onChange={setProfileField('contact_number')} autoComplete="tel" placeholder="+65 9123 4567" maxLength={13} inputMode="tel" />
                 </div>
 
                 <div className="flex justify-end pt-2">
@@ -288,11 +311,25 @@ export default function ProfilePage() {
               </form>
             </Card>
 
-            <Card icon={<KeyRound className="w-5 h-5" />} title="Change password" desc="Use a strong password and avoid reusing old credentials." accent="mauve">
+            <Card icon={<KeyRound className="w-5 h-5" />} title="Change password" desc="Enter your current password, request an email code, then submit your new password." accent="mauve">
               <form onSubmit={savePassword} noValidate className="space-y-5">
                 <Alert msg={pwdMsg} />
 
                 <PasswordInput label="Current password" value={passwords.currentPassword} error={pwdErrs.currentPassword} show={showCur} setShow={setShowCur} onChange={setPwdField('currentPassword')} autoComplete="current-password" />
+
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Email verification code</label>
+                  <div className="grid sm:grid-cols-[1fr_auto] gap-3">
+                    <input type="text" value={passwords.verificationCode} onChange={setPwdField('verificationCode')} autoComplete="one-time-code" inputMode="numeric" maxLength={6} placeholder="6-digit code" style={inputSt(!!pwdErrs.verificationCode)} />
+                    <button type="button" onClick={() => { void requestPasswordCode() }} disabled={requestingCode}
+                      className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+                      style={{ background: requestingCode ? '#6ba88e' : C.emerald, cursor: requestingCode ? 'not-allowed' : 'pointer' }}>
+                      {requestingCode ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send code</>}
+                    </button>
+                  </div>
+                  {pwdErrs.verificationCode && <p className="text-xs mt-1" style={{ color: C.danger }}>{pwdErrs.verificationCode}</p>}
+                  <p className="text-xs mt-1" style={{ color: C.muted }}>The code is sent to your registered email address.</p>
+                </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
@@ -319,8 +356,6 @@ export default function ProfilePage() {
                 </div>
               </form>
             </Card>
-
-            <EmailChangeCard currentEmail={original.email} onChanged={handleEmailChanged} />
           </div>
 
           <aside className="space-y-6">
@@ -350,195 +385,16 @@ export default function ProfilePage() {
               </div>
             </section>
 
-            {/*
-              TODO: Remove this block when backend profile/password routes are fully completed.
-            */}
             <section className="rounded-2xl p-5" style={{ background: C.warningLight, border: '1px solid #FDE68A' }}>
               <h3 className="font-bold text-sm mb-2" style={{ color: C.warning }}>Security reminder</h3>
               <p className="text-sm leading-relaxed" style={{ color: '#A16207' }}>
-                For your security, profile and password changes may require verification before they are saved.
+                Password changes require your current password and an email verification code before they are saved.
               </p>
             </section>
           </aside>
         </div>
       </div>
     </div>
-  )
-}
-
-/*
-  SFR03 verified email change (OWASP no-MFA, sequential current-first confirmation).
-  Stage 1 (request):        re-authenticate with current password + new email → a code is
-                            sent to the CURRENT address only.
-  Stage 2 (verify current): enter that code → the new address is proven-safe to contact and
-                            only then receives its own code.
-  Stage 3 (confirm new):    enter the new-address code → backend applies the change and
-                            revokes all sessions, so on success we log out and go to login.
-*/
-type EmailStage = 'idle' | 'request' | 'verifyCurrent' | 'confirmNew' | 'done'
-
-function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; onChanged: () => void }) {
-  const [stage, setStage] = useState<EmailStage>('idle')
-  const [newEmail, setNewEmail] = useState('')
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [oldEmailOtp, setOldEmailOtp] = useState('')
-  const [newEmailOtp, setNewEmailOtp] = useState('')
-  const [errs, setErrs] = useState<Record<string, string>>({})
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [showPwd, setShowPwd] = useState(false)
-
-  function reset() {
-    setStage('idle'); setNewEmail(''); setCurrentPassword('')
-    setOldEmailOtp(''); setNewEmailOtp(''); setErrs({}); setMsg(null)
-  }
-
-  // Once the change is applied the backend has already revoked every session, so force
-  // the client to log out and return to login — with a brief pause so the user can read
-  // the confirmation. The button below is a manual fallback if the timer is interrupted.
-  useEffect(() => {
-    if (stage !== 'done') return
-    const timer = setTimeout(() => { void onChanged() }, 3000)
-    return () => clearTimeout(timer)
-  }, [stage, onChanged])
-
-  async function submitRequest(e: FormEvent) {
-    e.preventDefault(); setMsg(null); setErrs({})
-
-    const email = newEmail.trim()
-    const local: Record<string, string> = {}
-    if (!email) local.newEmail = 'New email is required.'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) local.newEmail = 'Enter a valid email address.'
-    else if (email.toLowerCase() === currentEmail.toLowerCase()) local.newEmail = 'New email must be different from your current email.'
-    if (!currentPassword) local.currentPassword = 'Current password is required.'
-    if (Object.keys(local).length) { setErrs(local); return }
-
-    try {
-      setBusy(true)
-      await api.post('/users/profile/email', { newEmail: email, currentPassword })
-      setStage('verifyCurrent')
-      setMsg({ type: 'success', text: `We sent a 6-digit code to your current email (${currentEmail}). Enter it below to prove this is your account.` })
-    } catch (err) {
-      const ae = err as ApiError
-      if (ae.errors) setErrs(ae.errors)
-      else setMsg({ type: 'error', text: ae.message || 'Unable to start email change right now. Please try again later.' })
-    } finally { setBusy(false) }
-  }
-
-  async function submitVerifyCurrent(e: FormEvent) {
-    e.preventDefault(); setMsg(null); setErrs({})
-
-    if (!oldEmailOtp.trim()) { setErrs({ oldEmailOtp: 'Enter the code sent to your current email.' }); return }
-
-    try {
-      setBusy(true)
-      await api.post('/users/profile/email/verify-current', { oldEmailOtp: oldEmailOtp.trim() })
-      setStage('confirmNew')
-      setMsg({ type: 'success', text: `Current email confirmed. We've now sent a code to your new email (${newEmail.trim()}). Enter it to finish.` })
-    } catch (err) {
-      const ae = err as ApiError
-      if (ae.errors) setErrs(ae.errors)
-      else setMsg({ type: 'error', text: ae.message || 'Unable to verify that code right now. Please try again later.' })
-    } finally { setBusy(false) }
-  }
-
-  async function submitConfirmNew(e: FormEvent) {
-    e.preventDefault(); setMsg(null); setErrs({})
-
-    if (!newEmailOtp.trim()) { setErrs({ newEmailOtp: 'Enter the code sent to your new email.' }); return }
-
-    try {
-      setBusy(true)
-      await api.post('/users/profile/email/confirm', { newEmailOtp: newEmailOtp.trim() })
-      setStage('done')
-      setMsg({ type: 'success', text: 'Your email address has been changed. For security you have been signed out — please log in again with your new email.' })
-    } catch (err) {
-      const ae = err as ApiError
-      if (ae.errors) setErrs(ae.errors)
-      else setMsg({ type: 'error', text: ae.message || 'Unable to confirm email change right now. Please try again later.' })
-    } finally { setBusy(false) }
-  }
-
-  return (
-    <Card icon={<AtSign className="w-5 h-5" />} title="Change email address" desc="Changing your email requires your password, then confirmation from your current and new addresses in turn." accent="mauve">
-      {stage === 'idle' && (
-        <div className="space-y-4">
-          <Alert msg={msg} />
-          <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
-            To protect your account, updating your email needs your current password and a one-time code —
-            first to confirm your <strong>current</strong> address, then your <strong>new</strong> one.
-          </p>
-          <button type="button" onClick={() => { setMsg(null); setStage('request') }}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-            style={{ background: C.emerald, cursor: 'pointer' }}>
-            <AtSign className="w-4 h-4" />Change email
-          </button>
-        </div>
-      )}
-
-      {stage === 'request' && (
-        <form onSubmit={submitRequest} noValidate className="space-y-5">
-          <Alert msg={msg} />
-          <TextInput label="New email address" value={newEmail} error={errs.newEmail}
-            onChange={e => { setNewEmail(e.target.value); setErrs(p => ({ ...p, newEmail: '' })) }} autoComplete="email" />
-          <PasswordInput label="Current password" value={currentPassword} error={errs.currentPassword}
-            show={showPwd} setShow={setShowPwd}
-            onChange={e => { setCurrentPassword(e.target.value); setErrs(p => ({ ...p, currentPassword: '' })) }} autoComplete="current-password" />
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: C.muted, cursor: 'pointer' }}>Cancel</button>
-            <button type="submit" disabled={busy}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-              style={{ background: busy ? '#6ba88e' : C.emerald, cursor: busy ? 'not-allowed' : 'pointer' }}>
-              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send code</>}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {stage === 'verifyCurrent' && (
-        <form onSubmit={submitVerifyCurrent} noValidate className="space-y-5">
-          <Alert msg={msg} />
-          <TextInput label="Code sent to your current email" value={oldEmailOtp} error={errs.oldEmailOtp}
-            onChange={e => { setOldEmailOtp(e.target.value); setErrs(p => ({ ...p, oldEmailOtp: '' })) }} autoComplete="one-time-code" />
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: C.muted, cursor: 'pointer' }}>Cancel</button>
-            <button type="submit" disabled={busy}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-              style={{ background: busy ? '#6ba88e' : C.emerald, cursor: busy ? 'not-allowed' : 'pointer' }}>
-              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Verifying…</> : <><CheckCircle2 className="w-4 h-4" />Verify current email</>}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {stage === 'confirmNew' && (
-        <form onSubmit={submitConfirmNew} noValidate className="space-y-5">
-          <Alert msg={msg} />
-          <TextInput label="Code sent to your new email" value={newEmailOtp} error={errs.newEmailOtp}
-            onChange={e => { setNewEmailOtp(e.target.value); setErrs(p => ({ ...p, newEmailOtp: '' })) }} autoComplete="one-time-code" />
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: C.muted, cursor: 'pointer' }}>Cancel</button>
-            <button type="submit" disabled={busy}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-              style={{ background: busy ? '#6ba88e' : C.emerald, cursor: busy ? 'not-allowed' : 'pointer' }}>
-              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Confirming…</> : <><CheckCircle2 className="w-4 h-4" />Confirm change</>}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {stage === 'done' && (
-        <div className="space-y-4">
-          <Alert msg={msg} />
-          <p className="text-sm" style={{ color: C.muted }}>Redirecting you to the login page…</p>
-          <button type="button" onClick={() => { void onChanged() }}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-            style={{ background: C.emerald, cursor: 'pointer' }}>
-            Continue to login now
-          </button>
-        </div>
-      )}
-    </Card>
   )
 }
 
@@ -565,7 +421,6 @@ function Header({ user }: { user: User | null }) {
   )
 }
 
-/* Reusable card wrapper for profile and password sections. */
 function Card({ icon, title, desc, accent = 'emerald', children }: {
   icon: ReactNode; title: string; desc: string; accent?: 'emerald' | 'mauve'; children: ReactNode
 }) {
@@ -586,7 +441,6 @@ function Card({ icon, title, desc, accent = 'emerald', children }: {
   )
 }
 
-/* Shared alert banner for success/error feedback. */
 function Alert({ msg }: { msg: { type: 'success' | 'error'; text: string } | null }) {
   if (!msg) return null
   const isErr = msg.type === 'error'
@@ -600,13 +454,13 @@ function Alert({ msg }: { msg: { type: 'success' | 'error'; text: string } | nul
   )
 }
 
-function TextInput({ label, value, error, onChange, autoComplete }: {
-  label: string; value: string; error?: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; autoComplete?: string
+function TextInput({ label, value, error, onChange, autoComplete, maxLength }: {
+  label: string; value: string; error?: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; autoComplete?: string; maxLength?: number
 }) {
   return (
     <div>
       <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>{label}</label>
-      <input type="text" value={value} onChange={onChange} autoComplete={autoComplete} style={inputSt(!!error)}
+      <input type="text" value={value} onChange={onChange} autoComplete={autoComplete} maxLength={maxLength} style={inputSt(!!error)}
         onFocus={e => (e.target.style.borderColor = C.emerald)}
         onBlur={e => (e.target.style.borderColor = error ? C.danger : C.beige)} />
       {error && <p className="text-xs mt-1" style={{ color: C.danger }}>{error}</p>}
@@ -614,8 +468,8 @@ function TextInput({ label, value, error, onChange, autoComplete }: {
   )
 }
 
-function IconInput({ label, icon, value, error, onChange, disabled, note, autoComplete, placeholder }: {
-  label: string; icon: ReactNode; value: string; error?: string; disabled?: boolean; note?: string; autoComplete?: string; placeholder?: string;
+function IconInput({ label, icon, value, error, onChange, disabled, note, autoComplete, placeholder, maxLength, inputMode }: {
+  label: string; icon: ReactNode; value: string; error?: string; disabled?: boolean; note?: string; autoComplete?: string; placeholder?: string; maxLength?: number; inputMode?: 'tel' | 'numeric';
   onChange?: (e: ChangeEvent<HTMLInputElement>) => void
 }) {
   return (
@@ -624,7 +478,7 @@ function IconInput({ label, icon, value, error, onChange, disabled, note, autoCo
       <div className="relative">
         <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>{icon}</span>
         <input type={label.includes('Email') ? 'email' : 'tel'} value={value} disabled={disabled} onChange={onChange}
-          autoComplete={autoComplete} placeholder={placeholder}
+          autoComplete={autoComplete} placeholder={placeholder} maxLength={maxLength} inputMode={inputMode}
           style={inputSt(!!error, { paddingLeft: '40px', background: disabled ? C.linen : '#fff', color: disabled ? C.muted : C.slate, cursor: disabled ? 'not-allowed' : 'text' })}
           onFocus={e => (e.target.style.borderColor = C.emerald)}
           onBlur={e => (e.target.style.borderColor = error ? C.danger : C.beige)} />
