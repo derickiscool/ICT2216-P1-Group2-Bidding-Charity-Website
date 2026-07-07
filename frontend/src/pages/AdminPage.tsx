@@ -331,6 +331,19 @@ export default function AdminPage() {
     return filteredListings.slice(start, start + PAGE_SIZE)
   }, [filteredListings, listingsPage])
 
+  // User lookup for audit log
+  const userLookup = useMemo(() => {
+    const map = new Map<number, { name: string; username: string }>()
+    users.forEach(u => { if (u.id) map.set(u.id, { name: u.full_name, username: u.username }) })
+    return map
+  }, [users])
+
+  const actorName = (userId?: number): string => {
+    if (!userId) return 'System'
+    const u = userLookup.get(userId)
+    return u ? `${u.name} (@${u.username}) #${userId}` : `#${userId}`
+  }
+
   // Audits
   const auditActions = useMemo(() => {
     const set = new Set(events.map(e => e.action))
@@ -341,18 +354,20 @@ export default function AdminPage() {
     let result = [...events].reverse()
     if (auditSearch.trim()) {
       const q = auditSearch.toLowerCase()
-      result = result.filter(e =>
-        e.action.toLowerCase().includes(q) ||
-        `#${e.actorUserId ?? ''}`.includes(q) ||
-        (e.resourceType ?? '').toLowerCase().includes(q) ||
-        (e.resourceId ?? '').toLowerCase().includes(q)
-      )
+      result = result.filter(e => {
+        const u = e.actorUserId ? userLookup.get(e.actorUserId) : null
+        const userStr = u ? `${u.name} (@${u.username}) #${e.actorUserId}` : `#${e.actorUserId ?? ''}`
+        return e.action.toLowerCase().includes(q) ||
+          userStr.toLowerCase().includes(q) ||
+          (e.resourceType ?? '').toLowerCase().includes(q) ||
+          (e.resourceId ?? '').toLowerCase().includes(q)
+      })
     }
     if (auditActionFilter !== 'all') {
       result = result.filter(e => e.action === auditActionFilter)
     }
     return result
-  }, [events, auditSearch, auditActionFilter])
+  }, [events, auditSearch, auditActionFilter, userLookup])
 
   const paginatedAuditEvents = useMemo(() => {
     const start = auditPage * PAGE_SIZE
@@ -509,7 +524,7 @@ export default function AdminPage() {
                             )}
                           </p>
                           <p className="text-xs" style={{ color: C.muted }}>
-                            {e.actorUserId ? `#${e.actorUserId}` : 'System'}
+                            {actorName(e.actorUserId)}
                           </p>
                         </div>
                         <span className="text-xs flex-shrink-0" style={{ color: C.muted }}>
@@ -922,7 +937,7 @@ export default function AdminPage() {
                               {new Date(e.timestamp).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                             </td>
                             <td className="px-6 py-4 text-xs font-bold" style={{ color: C.slate }}>
-                              {e.actorUserId ? `#${e.actorUserId}` : 'System'}
+                              {actorName(e.actorUserId)}
                             </td>
                             <td className="px-6 py-4">
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: C.linen, color: C.slate }}>
