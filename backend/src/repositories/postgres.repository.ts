@@ -13,6 +13,7 @@ import type {
   NewCampaignInput,
   PasswordResetToken,
   PendingRegistration,
+  LoginOtp,
   SessionRecord,
   UpdateCampaignInput,
   User,
@@ -65,6 +66,15 @@ interface PendingRegistrationRow {
   created_at: DbDate;
 }
 
+interface LoginOtpRow {
+  user_id: number | string;
+  email: string;
+  otp_hash: string;
+  expires_at: DbDate;
+  attempts: number;
+  created_at: DbDate;
+}
+ 
 interface PasswordResetTokenRow {
   email: string;
   token_hash: string;
@@ -245,6 +255,15 @@ const mapPendingRegistration = (row: PendingRegistrationRow): PendingRegistratio
   full_name: row.full_name,
   passwordHash: row.password_hash,
   roles: mapRoles(row.roles),
+  otpHash: row.otp_hash,
+  expiresAt: toDate(row.expires_at),
+  attempts: Number(row.attempts),
+  createdAt: toDate(row.created_at),
+});
+
+const mapLoginOtp = (row: LoginOtpRow): LoginOtp => ({
+  user_id: Number(row.user_id),
+  email: row.email,
   otpHash: row.otp_hash,
   expiresAt: toDate(row.expires_at),
   attempts: Number(row.attempts),
@@ -494,6 +513,36 @@ export const getPendingRegistration = async (email: string): Promise<PendingRegi
 
 const removePendingRegistration = async (email: string): Promise<void> => {
   await query('DELETE FROM pending_registrations WHERE lower(email) = lower($1)', [email]);
+};
+
+const saveLoginOtp = async (otp: LoginOtp): Promise<void> => {
+  await query(
+    `INSERT INTO login_otps (user_id, email, otp_hash, expires_at, attempts, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_id) DO UPDATE SET
+       email = EXCLUDED.email,
+       otp_hash = EXCLUDED.otp_hash,
+       expires_at = EXCLUDED.expires_at,
+       attempts = EXCLUDED.attempts,
+       created_at = EXCLUDED.created_at`,
+    [
+      otp.user_id,
+      otp.email,
+      otp.otpHash,
+      otp.expiresAt,
+      otp.attempts,
+      otp.createdAt,
+    ],
+  );
+};
+
+const getLoginOtp = async (userId: number): Promise<LoginOtp | undefined> => {
+  const row = await firstRow<LoginOtpRow>('SELECT * FROM login_otps WHERE user_id = $1 LIMIT 1', [userId]);
+  return row ? mapLoginOtp(row) : undefined;
+};
+
+const removeLoginOtp = async (userId: number): Promise<void> => {
+  await query('DELETE FROM login_otps WHERE user_id = $1', [userId]);
 };
 
 const addSession = async (record: SessionRecord): Promise<void> => {
@@ -1143,7 +1192,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, payments, auto_bids, bids, listings, campaigns, charities, sessions, pending_registrations, password_reset_tokens, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, auto_bids, payments, bids, listings, campaigns, charities, sessions, pending_registrations, login_otps, password_reset_tokens, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -1160,6 +1209,10 @@ export const postgresRepository: BidForGoodRepository = {
   savePendingRegistration,
   getPendingRegistration,
   removePendingRegistration,
+
+  saveLoginOtp,
+  getLoginOtp,
+  removeLoginOtp,
 
   addSession,
   getSession,

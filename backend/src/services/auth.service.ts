@@ -3,6 +3,7 @@ import argon2 from 'argon2';
 import type { Request, Response } from 'express';
 import {
   addUser, findUserByEmail, getPendingRegistration, removePendingRegistration, savePendingRegistration, toPublicUser, updateUser,
+  saveLoginOtp, getLoginOtp, removeLoginOtp,
   savePasswordResetToken, getPasswordResetTokenByEmail, removePasswordResetToken, revokeAllSessionsByUserId,
 } from '../repositories';
 import type { UserRole } from '../types/domain';
@@ -11,7 +12,7 @@ import { isStrongPassword } from '../utils/breachedPasswords';
 import { normalizeEmail, randomToken, sha256, safeString, isValidEmail } from '../utils/security';
 import { audit } from './audit.service';
 import { createSession, setSessionCookie, clearSessionCookie, revokeBySid } from './session.service';
-import { sendRegistrationOtp, sendPasswordResetOtp } from './otpDelivery.service';
+import { sendRegistrationOtp, sendPasswordResetOtp, sendLoginOtp } from './otpDelivery.service';
 
 const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 };
 const MAX_FAILED_LOGINS = 5;
@@ -150,6 +151,104 @@ export const logout = async (sid: string | undefined, req: Request, res: Respons
   if (sid) await revokeBySid(sid);
   clearSessionCookie(res);
   await audit(req, 'AUTH_LOGOUT', { sid }, 'session', sid, req.user?.id);
+};
+
+export const requestLoginOtp = async (emailInput: string, req?: Request): Promise<{ message: string }> => {
+  const email = normalizeEmail(emailInput);
+  const generic = { message: 'If the email matches an active account, a login OTP will be sent.' };
+
+  if (!isValidEmail(email)) {
+    throw badRequest('Invalid email address.', 'VALIDATION_ERROR');
+  }
+
+  const user = await findUserByEmail(email);
+  if (!user || !user.is_active || !user.is_verified) {
+    await audit(req, 'AUTH_PASSWORDLESS_REQUEST_SUPPRESSED', { email, reason: 'user_not_found_or_inactive' }, 'user');
+    return generic;
+  }
+
+  if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+    await audit(req, 'AUTH_PASSWORDLESS_REQUEST_LOCKED', { email }, 'user', user.uuid, user.id);
+    throw tooManyRequests('Too many login attempts. Please try again later.');
+  }
+
+  const otp = crypto.randomInt(100000, 1000000).toString();
+  await saveLoginOtp({
+    user_id: user.id,
+    email,
+    otpHash: sha256(otp),
+    expiresAt: new Date(Date.now() + OTP_TTL_MS),
+    attempts: 0,
+    createdAt: new Date(),
+  });
+
+  await sendLoginOtp(email, otp);
+  await audit(req, 'AUTH_PASSWORDLESS_OTP_CREATED', { email }, 'user', user.uuid, user.id);
+  return generic;
+};
+
+export const verifyLoginOtp = async (emailInput: string, otpInput: string, req: Request, res: Response) => {
+  const email = normalizeEmail(emailInput);
+  const user = await findUserByEmail(email);
+  const genericErr = unauthorised('Invalid email or login OTP');
+
+  if (!user || !user.is_active || !user.is_verified) {
+    await audit(req, 'AUTH_PASSWORDLESS_VERIFY_FAILED', { email, reason: 'user_not_found_or_inactive' }, 'user');
+    throw genericErr;
+  }
+
+  if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+    await audit(req, 'AUTH_PASSWORDLESS_VERIFY_LOCKED', { email }, 'user', user.uuid, user.id);
+    throw tooManyRequests('Too many login attempts. Please try again later.');
+  }
+
+  const pending = await getLoginOtp(user.id);
+  if (!pending || pending.expiresAt.getTime() <= Date.now()) {
+    if (pending) await removeLoginOtp(user.id);
+    await audit(req, 'AUTH_PASSWORDLESS_VERIFY_FAILED', { email, reason: 'missing_or_expired' }, 'user', user.uuid, user.id);
+    throw genericErr;
+  }
+
+  if (pending.attempts >= MAX_OTP_ATTEMPTS) {
+    await removeLoginOtp(user.id);
+    user.failedLoginAttempts += 1;
+    if (user.failedLoginAttempts >= MAX_FAILED_LOGINS) {
+      user.lockedUntil = new Date(Date.now() + LOCKOUT_MS);
+    }
+    await updateUser(user);
+    await audit(req, 'AUTH_PASSWORDLESS_VERIFY_LOCKED', { email, attempts: pending.attempts }, 'user', user.uuid, user.id);
+    throw tooManyRequests('Too many verification attempts. Please request a new OTP.');
+  }
+
+  if (pending.otpHash !== sha256(String(otpInput))) {
+    pending.attempts += 1;
+    await saveLoginOtp(pending);
+    await audit(req, 'AUTH_PASSWORDLESS_VERIFY_FAILED', { email, reason: 'otp_mismatch', attempts: pending.attempts }, 'user', user.uuid, user.id);
+    if (pending.attempts >= MAX_OTP_ATTEMPTS) {
+      await removeLoginOtp(user.id);
+      user.failedLoginAttempts += 1;
+      if (user.failedLoginAttempts >= MAX_FAILED_LOGINS) {
+        user.lockedUntil = new Date(Date.now() + LOCKOUT_MS);
+      }
+      await updateUser(user);
+      throw tooManyRequests('Too many verification attempts. Please request a new OTP.');
+    }
+    throw genericErr;
+  }
+
+  await removeLoginOtp(user.id);
+  user.failedLoginAttempts = 0;
+  user.lockedUntil = undefined;
+  user.lastLoginAt = new Date().toISOString();
+  await updateUser(user);
+
+  const safeUser = toPublicUser(user);
+  const session = await createSession(safeUser);
+  setSessionCookie(res, session.token);
+  res.setHeader('X-CSRF-Token', session.csrfToken);
+
+  await audit(req, 'AUTH_LOGIN_SUCCESS', { email, method: 'passwordless', sid: session.sid }, 'user', user.uuid, user.id);
+  return { user: safeUser, csrfToken: session.csrfToken };
 };
 
 const RESET_OTP_TTL_MS = 3 * 60 * 1000;
