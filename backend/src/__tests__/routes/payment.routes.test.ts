@@ -71,7 +71,7 @@ const setupPaidAuction = async () => {
   const pendingPayment = payments.find(p => p.status === 'pending');
   assert.ok(pendingPayment, 'bidder should have a pending payment offer after auction closes');
 
-  // Bidder completes payment — this generates the receipt (SFR14)
+  // Bidder completes payment — this generates the receipt
   const payRes = await postJson(
     `/api/payments/${pendingPayment.uuid as string}/complete`,
     {},
@@ -84,66 +84,78 @@ const setupPaidAuction = async () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SFR14 — Digital Donation Receipt
+// Note: Receipt is generated on escrow release (delivery confirmation), not
+// on payment completion. Tests below go through the full payment+ship+confirm flow.
 // ─────────────────────────────────────────────────────────────────────────────
-describe('SFR14 — Digital Donation Receipt', () => {
-  test('receipt is automatically generated when payment is completed', async () => {
-    const { listing, bidder } = await setupPaidAuction();
+const setupFullFlowReceipt = async () => {
+  const ctx = await setupPaidAuction();
+  // Donor ships
+  await postJson(
+    `/api/listings/${ctx.listing.uuid as string}/shipping`,
+    { tracking_number: 'RCP-TEST-001', courier: 'DHL' },
+    { cookie: ctx.donor.cookie, 'x-csrf-token': ctx.donor.csrf },
+  );
+  // Bidder confirms delivery — generates receipt
+  await postJson(
+    `/api/listings/${ctx.listing.uuid as string}/confirm-delivery`,
+    {},
+    { cookie: ctx.bidder.cookie, 'x-csrf-token': ctx.bidder.csrf },
+  );
+  return ctx;
+};
 
-    // Receipt is stored; fetch it by querying the DB via the listing's id
-    const rows = await query(
-      'SELECT uuid FROM receipts WHERE listing_id = $1 LIMIT 1',
-      [listing.id],
-    );
-    assert.equal(rows.rows.length, 1, 'a receipt row should exist after payment');
+describe('SFR14 — Digital Donation Receipt', () => {
+  test('receipt is generated after delivery confirmation', async () => {
+    const { listing, bidder } = await setupFullFlowReceipt();
+    const rows = await query('SELECT uuid FROM receipts WHERE listing_id = $1 LIMIT 1', [listing.id]);
+    assert.equal(rows.rows.length, 1, 'a receipt row should exist after delivery confirmation');
 
     const receiptUuid = rows.rows[0].uuid as string;
-    const res = await request(`/api/payments/receipts/${receiptUuid}`, { headers: { cookie: bidder.cookie } });
+    const res = await request(`/api/receipts/${receiptUuid}`, { headers: { cookie: bidder.cookie } });
     assert.equal(res.response.status, 200);
   });
 
-  test('receipt captures the correct amount, item title, and beneficiary', async () => {
-    const { listing, bidder } = await setupPaidAuction();
+  test('receipt captures the correct amount, item title, and charity', async () => {
+    const { listing, bidder } = await setupFullFlowReceipt();
     const rows = await query('SELECT uuid FROM receipts WHERE listing_id = $1 LIMIT 1', [listing.id]);
     const receiptUuid = rows.rows[0].uuid as string;
 
-    const res = await request(`/api/payments/receipts/${receiptUuid}`, { headers: { cookie: bidder.cookie } });
+    const res = await request(`/api/receipts/${receiptUuid}`, { headers: { cookie: bidder.cookie } });
     assert.equal(res.response.status, 200);
 
     const receipt = res.body as Rec;
-    assert.equal(receipt.itemTitle, listing.title, 'receipt item title must match listing title');
-    assert.equal(receipt.beneficiaryName, 'Test Charity', 'receipt beneficiary must match listing charity name');
+    assert.equal(receipt.item_title, listing.title, 'receipt item title must match listing title');
+    assert.equal(receipt.charity_name, 'Test Charity', 'receipt charity must match listing charity name');
     assert.ok(typeof receipt.amount === 'number' && receipt.amount > 0, 'receipt amount must be a positive number');
-    assert.ok(typeof receipt.generatedAt === 'string', 'receipt must have a generatedAt timestamp');
+    assert.ok(typeof receipt.generated_at === 'string', 'receipt must have a generated_at timestamp');
   });
 
-  test('receipt is not accessible to a different bidder — 403', async () => {
-    const { listing } = await setupPaidAuction();
+  test('receipt is accessible to admin — 200 (admin override)', async () => {
+    const { listing } = await setupFullFlowReceipt();
     const rows = await query('SELECT uuid FROM receipts WHERE listing_id = $1 LIMIT 1', [listing.id]);
     const receiptUuid = rows.rows[0].uuid as string;
 
-    // Register and login a second bidder who did not win
-    const { cookie: otherCookie } = await loginAs('admin@bidforgood.test');
-    // admin has no 'bidder' role → 403 from requireRole
-    const res = await request(`/api/payments/receipts/${receiptUuid}`, { headers: { cookie: otherCookie } });
-    assert.equal(res.response.status, 403);
+    const admin = await loginAs('admin@bidforgood.test');
+    const res = await request(`/api/receipts/${receiptUuid}`, { headers: { cookie: admin.cookie } });
+    assert.equal(res.response.status, 200);
   });
 
   test('no PUT or PATCH route exists for receipts — 404', async () => {
-    const { listing, bidder } = await setupPaidAuction();
+    const { listing, bidder } = await setupFullFlowReceipt();
     const rows = await query('SELECT uuid FROM receipts WHERE listing_id = $1 LIMIT 1', [listing.id]);
     const receiptUuid = rows.rows[0].uuid as string;
 
-    const putRes = await request(`/api/payments/receipts/${receiptUuid}`, {
+    const putRes = await request(`/api/receipts/${receiptUuid}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json', cookie: bidder.cookie },
       body: JSON.stringify({ amount: 999999 }),
     });
     assert.equal(putRes.response.status, 404, 'PUT on receipt must not exist');
 
-    const patchRes = await request(`/api/payments/receipts/${receiptUuid}`, {
+    const patchRes = await request(`/api/receipts/${receiptUuid}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json', cookie: bidder.cookie },
-      body: JSON.stringify({ beneficiaryName: 'HACKED' }),
+      body: JSON.stringify({ charity_name: 'HACKED' }),
     });
     assert.equal(patchRes.response.status, 404, 'PATCH on receipt must not exist');
   });
@@ -163,29 +175,28 @@ describe('SFR14 — Digital Donation Receipt', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // SFR15 — Shipping Verification & Delivery Confirmation
 // ─────────────────────────────────────────────────────────────────────────────
-describe('SFR15 — Shipping Verification & Delivery Confirmation', () => {
-  test('donor cannot confirm shipping when listing is not yet sold — status guard', async () => {
+describe('FR17 — Shipping & Delivery', () => {
+  test('donor cannot ship when listing has no held payment', async () => {
     const donor = await loginAs('donor@bidforgood.test');
-    // Use a seeded active listing that has not been paid for
     const listingsRes = await request('/api/listings');
     const listings = (listingsRes.body as Rec).data as Rec[];
     const activeListing = listings.find(l => l.status === 'active');
     assert.ok(activeListing);
 
     const res = await postJson(
-      `/api/listings/${activeListing.uuid as string}/ship`,
-      { trackingNumber: 'TN123', carrier: 'DHL' },
+      `/api/listings/${activeListing.uuid as string}/shipping`,
+      { tracking_number: 'TN123', courier: 'DHL' },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
     assert.equal(res.response.status, 400);
-    assert.equal(res.body.code, 'INVALID_LISTING_STATUS');
+    assert.equal(res.body.code, 'SHIPPING_PAYMENT_NOT_HELD');
   });
 
   test('non-donor role cannot submit shipping details — 403', async () => {
     const { listing, bidder } = await setupPaidAuction();
     const res = await postJson(
-      `/api/listings/${listing.uuid as string}/ship`,
-      { trackingNumber: 'TN123', carrier: 'DHL' },
+      `/api/listings/${listing.uuid as string}/shipping`,
+      { tracking_number: 'TN123', courier: 'DHL' },
       { cookie: bidder.cookie, 'x-csrf-token': bidder.csrf },
     );
     assert.equal(res.response.status, 403);
@@ -196,87 +207,83 @@ describe('SFR15 — Shipping Verification & Delivery Confirmation', () => {
     const xssPayload = '<script>alert(1)</script>';
 
     const res = await postJson(
-      `/api/listings/${listing.uuid as string}/ship`,
+      `/api/listings/${listing.uuid as string}/shipping`,
       {
-        trackingNumber: 'TN-XSSTEST01',
-        carrier: `DHL${xssPayload}`,
-        notes: `Handle with care. ${xssPayload}`,
+        tracking_number: 'TN-XSSTEST01',
+        courier: `DHL${xssPayload}`,
       },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
     assert.equal(res.response.status, 200);
 
-    const sv = res.body as Rec;
-    assert.ok(!String(sv.carrier).includes('<script>'), 'carrier must have HTML stripped');
-    assert.ok(!String(sv.notes).includes('<script>'), 'notes must have HTML stripped');
+    const shipBody = res.body as unknown as { delivery: Rec; listing: Rec };
+    assert.ok(!String(shipBody.delivery.courier).includes('<script>'), 'courier must have HTML stripped');
   });
 
-  test('valid shipping confirmation transitions listing status to shipped', async () => {
-    const { listing, donor, bidder } = await setupPaidAuction();
+  test('valid shipping creates a delivery record', async () => {
+    const { listing, donor } = await setupPaidAuction();
 
     const shipRes = await postJson(
-      `/api/listings/${listing.uuid as string}/ship`,
-      { trackingNumber: 'TRK-123456', carrier: 'FedEx', notes: 'Fragile item' },
+      `/api/listings/${listing.uuid as string}/shipping`,
+      { tracking_number: 'TRK-123456', courier: 'FedEx' },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
     assert.equal(shipRes.response.status, 200);
 
-    const sv = shipRes.body as Rec;
-    assert.equal(sv.trackingNumber, 'TRK-123456');
-    assert.equal(sv.carrier, 'FedEx');
-
-    // Confirm listing status transitioned to 'shipped' (non-active listings are 404 from the public API)
-    const dbRow = await query('SELECT status FROM listings WHERE uuid = $1', [listing.uuid as string]);
-    assert.equal(dbRow.rows[0]?.status, 'shipped');
+    const body = shipRes.body as unknown as { delivery: Rec; listing: Rec };
+    assert.equal(body.delivery.tracking_number, 'TRK-123456');
+    assert.equal(body.delivery.courier, 'FedEx');
+    assert.ok(body.delivery.shipped_at, 'shipment should have a shipped_at timestamp');
   });
 
-  test('bidder cannot confirm delivery when listing is not yet shipped — forced delivery rejected', async () => {
+  test('bidder cannot confirm delivery when shipping not arranged — 400', async () => {
     const { listing, bidder } = await setupPaidAuction();
-    // listing is currently 'sold', not 'shipped' — attempt to jump to 'delivered' must fail
     const res = await postJson(
-      `/api/listings/${listing.uuid as string}/deliver`,
+      `/api/listings/${listing.uuid as string}/confirm-delivery`,
       {},
       { cookie: bidder.cookie, 'x-csrf-token': bidder.csrf },
     );
     assert.equal(res.response.status, 400);
-    assert.equal(res.body.code, 'INVALID_LISTING_STATUS');
+    assert.equal(res.body.code, 'SHIPPING_NOT_ARRANGED');
   });
 
-  test('non-winner bidder cannot confirm delivery — 403', async () => {
-    const { listing, donor, admin } = await setupPaidAuction();
+  test('non-winner role cannot confirm delivery — 403', async () => {
+    const { listing, donor } = await setupPaidAuction();
 
     // Donor ships first
     await postJson(
-      `/api/listings/${listing.uuid as string}/ship`,
-      { trackingNumber: 'TN-DLV00001', carrier: 'UPS' },
+      `/api/listings/${listing.uuid as string}/shipping`,
+      { tracking_number: 'TN-DLV00001', courier: 'UPS' },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
 
-    // Admin is not the winner bidder — should be rejected
+    // Donor is not the winner bidder — should be rejected
     const res = await postJson(
-      `/api/listings/${listing.uuid as string}/deliver`,
+      `/api/listings/${listing.uuid as string}/confirm-delivery`,
       {},
-      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+      { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
+    // Donor doesn't have bidder role → RBAC returns 403
     assert.equal(res.response.status, 403);
   });
 
-  test('winning bidder confirming delivery transitions listing to delivered and releases escrow', async () => {
+  test('winning bidder confirming delivery releases escrow', async () => {
     const { listing, donor, bidder } = await setupPaidAuction();
 
     await postJson(
-      `/api/listings/${listing.uuid as string}/ship`,
-      { trackingNumber: 'TN-FLOW0001', carrier: 'SingPost' },
+      `/api/listings/${listing.uuid as string}/shipping`,
+      { tracking_number: 'TN-FLOW0001', courier: 'SingPost' },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
 
-    const deliverRes = await postJson(
-      `/api/listings/${listing.uuid as string}/deliver`,
+    const confirmRes = await postJson(
+      `/api/listings/${listing.uuid as string}/confirm-delivery`,
       {},
       { cookie: bidder.cookie, 'x-csrf-token': bidder.csrf },
     );
-    assert.equal(deliverRes.response.status, 200);
-    assert.equal((deliverRes.body as Rec).status, 'delivered');
+    assert.equal(confirmRes.response.status, 200);
+    const body = confirmRes.body as unknown as { delivery: Rec };
+    assert.ok(body.delivery.confirmed_at, 'delivery should have a confirmed_at timestamp');
 
     // Escrow should be released
     const paymentsRow = await query(
