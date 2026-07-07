@@ -69,6 +69,7 @@ interface PasswordResetTokenRow {
   email: string;
   token_hash: string;
   expires_at: DbDate;
+  attempts: number;
   created_at: DbDate;
 }
 
@@ -266,6 +267,7 @@ const mapPasswordResetToken = (row: PasswordResetTokenRow): PasswordResetToken =
   email: row.email,
   tokenHash: row.token_hash,
   expiresAt: toDate(row.expires_at),
+  attempts: Number(row.attempts),
   createdAt: toDate(row.created_at),
 });
 
@@ -526,10 +528,10 @@ const revokeAllSessionsByUserId = async (userId: number): Promise<void> => {
 
 const savePasswordResetToken = async (token: PasswordResetToken): Promise<void> => {
   await query(
-    `INSERT INTO password_reset_tokens (email, token_hash, expires_at, created_at)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (email) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = EXCLUDED.created_at`,
-    [token.email, token.tokenHash, token.expiresAt, token.createdAt],
+    `INSERT INTO password_reset_tokens (email, token_hash, expires_at, attempts, created_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (email) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, attempts = EXCLUDED.attempts, created_at = EXCLUDED.created_at`,
+    [token.email, token.tokenHash, token.expiresAt, token.attempts, token.createdAt],
   );
 };
 

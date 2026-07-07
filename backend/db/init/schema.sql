@@ -63,8 +63,10 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   email TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS password_reset_tokens_expires_idx ON password_reset_tokens (expires_at);
 
