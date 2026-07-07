@@ -49,6 +49,7 @@ jobs:
       DB_USER: testuser
       DB_PASSWORD: testpass
       NODE_ENV: test
+      DKIM_PRIVATE_KEY_PATH: ${{ secrets.DKIM_PRIVATE_KEY_PATH }}
 
     steps:
       - name: Checkout repository
