@@ -697,15 +697,15 @@ export default function BidderDashboard() {
                     </div>
                   )}
 
-                  {/* Paid / delivered items */}
-                  {payments.filter(p => p.status === 'successful').length > 0 && (
+                  {/* Paid items (escrow held, not yet released) */}
+                  {payments.filter(p => p.escrow_state === 'held').length > 0 && (
                     <div>
                       <div className="flex items-center gap-2 mb-4">
                         <CheckCircle className="w-4 h-4" style={{ color: C.emerald }} />
                         <h2 className="font-bold text-sm" style={{ color: C.slate }}>Paid Items</h2>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {payments.filter(p => p.status === 'successful').map(payment => (
+                        {payments.filter(p => p.escrow_state === 'held').map(payment => (
                           <div key={payment.uuid} className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
                             <div className="h-40 flex items-center justify-center overflow-hidden"
                               style={{ background: C.linen }}>
@@ -731,14 +731,7 @@ export default function BidderDashboard() {
                                   <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: C.muted }}>Winning Bid</p>
                                   <p className="text-lg font-black font-mono" style={{ color: C.emerald }}>{money(payment.amount)}</p>
                                 </div>
-                                {payment.listing_status === 'delivered' ? (
-                                  <button type="button"
-                                    onClick={() => viewReceipt(payment.uuid)}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest"
-                                    style={{ background: C.emeraldLight, color: C.emerald }}>
-                                    <FileText className="w-3 h-3" /> Receipt
-                                  </button>
-                                ) : payment.listing_status === 'shipped' ? (
+                                {payment.has_shipping ? (
                                   <button type="button"
                                     onClick={() => confirmDelivery(payment.listing_uuid)}
                                     disabled={confirming === payment.listing_uuid}
@@ -825,7 +818,7 @@ export default function BidderDashboard() {
                               </td>
                               <td className="px-6 py-4 text-sm" style={{ color: C.slate }}>{payment.charity_name}</td>
                               <td className="px-6 py-4 text-center">
-                                {isPaid && payment.listing_status === 'delivered' ? (
+                                {isPaid && payment.escrow_state === 'released' ? (
                                   <button onClick={() => viewReceipt(payment.uuid)}
                                     className="text-xs font-bold underline underline-offset-2 transition-colors"
                                     style={{ color: C.emerald }}>
@@ -843,7 +836,7 @@ export default function BidderDashboard() {
                                   }}>
                                   {isPaid ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
                                   {isPaid ? (
-                                    payment.listing_status === 'delivered' ? 'Delivered' : 'Paid'
+                                    payment.escrow_state === 'released' ? 'Delivered' : 'Paid'
                                   ) : (
                                     'Pending'
                                   )}
