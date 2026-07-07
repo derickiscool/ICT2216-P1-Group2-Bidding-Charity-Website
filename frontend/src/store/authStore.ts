@@ -19,7 +19,7 @@ interface AuthStore {
 interface RegisterData {
   full_name: string
   email: string
-  username: string
+  username?: string
   password: string
   roles: UserRole[]
 }

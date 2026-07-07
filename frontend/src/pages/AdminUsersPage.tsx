@@ -10,6 +10,8 @@ const C = {
   danger: '#B91C1C', dangerLight: '#FEF2F2',
 }
 
+const userUsesUsername = (user: User) => user.roles.some(role => role === 'bidder' || role === 'donor')
+
 const roleBadge = (role: string) => {
   const colors = new Map<string, { bg: string; text: string }>([
     ['admin', { bg: '#FEE2E2', text: '#991B1B' }],
@@ -107,7 +109,7 @@ export default function AdminUsersPage() {
                     <tr key={u.uuid} className="border-t" style={{ borderColor: C.beige }}>
                       <td className="px-6 py-4">
                         <p className="font-medium" style={{ color: C.slate }}>{u.full_name}</p>
-                        <p className="text-xs mt-0.5" style={{ color: C.muted }}>@{u.username}</p>
+                        {userUsesUsername(u) && <p className="text-xs mt-0.5" style={{ color: C.muted }}>@{u.username}</p>}
                       </td>
                       <td className="px-6 py-4 hidden md:table-cell" style={{ color: C.muted }}>{u.email}</td>
                       <td className="px-6 py-4">

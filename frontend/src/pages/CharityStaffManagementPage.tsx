@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { AlertCircle, CheckCircle2, Edit3, Loader2, Plus, Power, Search, ShieldCheck, UserPlus, Users, X, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, Plus, Power, RotateCcw, Search, ShieldCheck, UserPlus, Users, XCircle } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api from '../services/api'
 import type { ApiError } from '../types'
@@ -10,7 +10,7 @@ const C = {
   warningLight: '#FFFBEB', danger: '#B91C1C', dangerLight: '#FEF2F2', dangerBorder: '#FECACA',
 }
 
-type StaffField = 'full_name' | 'email' | 'username' | 'temporaryPassword'
+type StaffField = 'full_name' | 'email' | 'temporaryPassword'
 type AlertMsg = { type: 'success' | 'error'; text: string } | null
 type StaffFormErrors = Partial<Record<keyof StaffForm, string>>
 
@@ -18,7 +18,6 @@ interface StaffAccount {
   uuid: string
   full_name: string
   email: string
-  username: string
   is_active: boolean
   created_at: string
   lastLoginAt?: string
@@ -32,12 +31,11 @@ interface StaffListResponse {
 interface StaffForm {
   full_name: string
   email: string
-  username: string
   temporaryPassword: string
 }
 
 const emptyForm: StaffForm = {
-  full_name: '', email: '', username: '', temporaryPassword: '',
+  full_name: '', email: '', temporaryPassword: '',
 }
 
 function inputSt(hasErr: boolean, extra?: CSSProperties): CSSProperties {
@@ -71,14 +69,12 @@ function apiErrorMessage(err: unknown, fallback: string): string {
 function updateKnownField(form: StaffForm, field: StaffField, value: string): StaffForm {
   if (field === 'full_name') return { ...form, full_name: value }
   if (field === 'email') return { ...form, email: value }
-  if (field === 'username') return { ...form, username: value }
   return { ...form, temporaryPassword: value }
 }
 
 function clearKnownError(errors: StaffFormErrors, field: StaffField): StaffFormErrors {
   if (field === 'full_name') return { ...errors, full_name: '' }
   if (field === 'email') return { ...errors, email: '' }
-  if (field === 'username') return { ...errors, username: '' }
   return { ...errors, temporaryPassword: '' }
 }
 
@@ -88,15 +84,11 @@ export default function CharityStaffManagementPage() {
   const [loading, setLoading] = useState(false)
   const [canManageStaff, setCanManageStaff] = useState(false)
   const [createForm, setCreateForm] = useState<StaffForm>(emptyForm)
-  const [editForm, setEditForm] = useState<StaffForm>(emptyForm)
   const [createErrors, setCreateErrors] = useState<StaffFormErrors>({})
-  const [editErrors, setEditErrors] = useState<StaffFormErrors>({})
   const [message, setMessage] = useState<AlertMsg>(null)
-  const [editingAccount, setEditingAccount] = useState<StaffAccount | null>(null)
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null)
-  const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
+  const [workingStaffId, setWorkingStaffId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
 
   const roles = user?.roles ?? []
@@ -129,8 +121,7 @@ export default function CharityStaffManagementPage() {
     if (!q) return staff
     return staff.filter((item) =>
       item.full_name.toLowerCase().includes(q) ||
-      item.email.toLowerCase().includes(q) ||
-      item.username.toLowerCase().includes(q),
+      item.email.toLowerCase().includes(q),
     )
   }, [staff, search])
 
@@ -143,15 +134,9 @@ export default function CharityStaffManagementPage() {
     setMessage(null)
   }
 
-  function updateEditField(field: StaffField, value: string) {
-    setEditForm((prev) => updateKnownField(prev, field, value))
-    setEditErrors((prev) => clearKnownError(prev, field))
-    setMessage(null)
-  }
-
-  function validateStaffForm(form: StaffForm, editingUuid: string | null) {
+  function validateStaffForm(form: StaffForm) {
     const e: StaffFormErrors = {}
-    const fullName = form.full_name.trim(), email = form.email.trim(), username = form.username.trim()
+    const fullName = form.full_name.trim(), email = form.email.trim()
 
     if (!fullName) e.full_name = 'Full name is required.'
     else if (fullName.length < 2) e.full_name = 'Full name must be at least 2 characters.'
@@ -159,19 +144,11 @@ export default function CharityStaffManagementPage() {
 
     if (!email) e.email = 'Work email is required.'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = 'Enter a valid email address.'
-    else if (staff.some((item) => item.email.toLowerCase() === email.toLowerCase() && item.uuid !== editingUuid)) {
+    else if (staff.some((item) => item.email.toLowerCase() === email.toLowerCase())) {
       e.email = 'This email is already used by another staff account.'
     }
 
-    if (!username) e.username = 'Username is required.'
-    else if (username.length < 3) e.username = 'Username must be at least 3 characters.'
-    else if (username.length > 30) e.username = 'Username must be 30 characters or less.'
-    else if (!/^[a-zA-Z0-9_]+$/.test(username)) e.username = 'Use letters, numbers, and underscores only.'
-    else if (staff.some((item) => item.username.toLowerCase() === username.toLowerCase() && item.uuid !== editingUuid)) {
-      e.username = 'This username is already used by another staff account.'
-    }
-
-    if (editingUuid === null && form.temporaryPassword.length < 8) {
+    if (form.temporaryPassword.length < 8) {
       e.temporaryPassword = 'Temporary password must be at least 8 characters.'
     }
 
@@ -187,7 +164,7 @@ export default function CharityStaffManagementPage() {
       return
     }
 
-    const eMap = validateStaffForm(createForm, null)
+    const eMap = validateStaffForm(createForm)
     setCreateErrors(eMap)
     if (Object.keys(eMap).length > 0) return
 
@@ -197,7 +174,7 @@ export default function CharityStaffManagementPage() {
       setStaff((prev) => [res.data, ...prev])
       setCreateForm(emptyForm)
       setCreateErrors({})
-      setMessage({ type: 'success', text: 'Staff account created successfully.' })
+      setMessage({ type: 'success', text: 'Staff account created successfully. They must change the temporary password on first login.' })
     } catch (err) {
       const apiErr = err as ApiError
       if (apiErr.errors) setCreateErrors(apiErr.errors)
@@ -207,53 +184,8 @@ export default function CharityStaffManagementPage() {
     }
   }
 
-  async function saveEditStaff(e: FormEvent) {
-    e.preventDefault()
-    setMessage(null)
-    if (!editingAccount) return
-
-    const eMap = validateStaffForm(editForm, editingAccount.uuid)
-    setEditErrors(eMap)
-    if (Object.keys(eMap).length > 0) return
-
-    setSaving(true)
-    try {
-      const res = await api.put<StaffAccount>(`/charities/staff/${editingAccount.uuid}`, editForm)
-      setStaff((prev) => prev.map((item) => (item.uuid === editingAccount.uuid ? res.data : item)))
-      setEditingAccount(null)
-      setEditForm(emptyForm)
-      setEditErrors({})
-      setMessage({ type: 'success', text: 'Staff account updated successfully.' })
-    } catch (err) {
-      const apiErr = err as ApiError
-      if (apiErr.errors) setEditErrors(apiErr.errors)
-      setMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to update staff account.') })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function startEdit(account: StaffAccount) {
-    setEditingAccount(account)
-    setConfirmDeactivateId(null)
-    setEditErrors({})
-    setMessage(null)
-    setEditForm({
-      full_name: account.full_name,
-      email: account.email,
-      username: account.username,
-      temporaryPassword: '',
-    })
-  }
-
-  function closeEditModal() {
-    setEditingAccount(null)
-    setEditForm(emptyForm)
-    setEditErrors({})
-  }
-
   async function deactivateStaff(uuid: string) {
-    setDeactivatingId(uuid)
+    setWorkingStaffId(uuid)
     try {
       const res = await api.patch<StaffAccount>(`/charities/staff/${uuid}/deactivate`)
       setStaff((prev) => prev.map((item) => (item.uuid === uuid ? res.data : item)))
@@ -262,7 +194,20 @@ export default function CharityStaffManagementPage() {
     } catch (err) {
       setMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to deactivate staff account.') })
     } finally {
-      setDeactivatingId(null)
+      setWorkingStaffId(null)
+    }
+  }
+
+  async function reactivateStaff(uuid: string) {
+    setWorkingStaffId(uuid)
+    try {
+      const res = await api.patch<StaffAccount>(`/charities/staff/${uuid}/reactivate`)
+      setStaff((prev) => prev.map((item) => (item.uuid === uuid ? res.data : item)))
+      setMessage({ type: 'success', text: 'Staff account reactivated successfully.' })
+    } catch (err) {
+      setMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to reactivate staff account.') })
+    } finally {
+      setWorkingStaffId(null)
     }
   }
 
@@ -283,10 +228,7 @@ export default function CharityStaffManagementPage() {
                   <TextInput label="Full name" value={createForm.full_name} error={createErrors.full_name} disabled={!canManageStaff || creating} autoComplete="name" onChange={(e) => updateCreateField('full_name', e.target.value)} />
                   <TextInput label="Work email" type="email" value={createForm.email} error={createErrors.email} disabled={!canManageStaff || creating} autoComplete="email" onChange={(e) => updateCreateField('email', e.target.value)} />
                 </div>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <TextInput label="Username" value={createForm.username} error={createErrors.username} disabled={!canManageStaff || creating} autoComplete="username" onChange={(e) => updateCreateField('username', e.target.value)} />
-                  <TextInput label="Temporary password" type="password" value={createForm.temporaryPassword} error={createErrors.temporaryPassword} disabled={!canManageStaff || creating} autoComplete="new-password" note="Staff should change this after first login." onChange={(e) => updateCreateField('temporaryPassword', e.target.value)} />
-                </div>
+                <TextInput label="Temporary password" type="password" value={createForm.temporaryPassword} error={createErrors.temporaryPassword} disabled={!canManageStaff || creating} autoComplete="new-password" note="Staff must change this after their first login." onChange={(e) => updateCreateField('temporaryPassword', e.target.value)} />
                 <div className="flex justify-end pt-2">
                   <PrimaryButton disabled={!canManageStaff || creating} icon={creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} label={creating ? 'Creating...' : 'Create staff account'} />
                 </div>
@@ -305,11 +247,11 @@ export default function CharityStaffManagementPage() {
                   staff={filteredStaff}
                   canManageStaff={canManageStaff}
                   confirmDeactivateId={confirmDeactivateId}
-                  deactivatingId={deactivatingId}
-                  onEdit={startEdit}
+                  workingStaffId={workingStaffId}
                   onConfirmDeactivate={deactivateStaff}
                   onAskDeactivate={setConfirmDeactivateId}
                   onCancelDeactivate={() => setConfirmDeactivateId(null)}
+                  onReactivate={reactivateStaff}
                 />
               )}
             </Card>
@@ -318,18 +260,14 @@ export default function CharityStaffManagementPage() {
           <aside className="space-y-6">
             <OverviewCard total={staff.length} active={activeCount} inactive={inactiveCount} />
             <InfoCard title="Account approval required" tone="warning">
-              Only approved charity organisation accounts can create, edit or deactivate staff accounts.
+              Only approved charity organisation accounts can create, deactivate, or reactivate staff accounts.
             </InfoCard>
             <InfoCard title="Security reminder" tone="success">
-              Staff account changes are logged for audit purposes.
+              Staff account changes are logged for audit purposes, and temporary passwords are forced to be changed on first login.
             </InfoCard>
           </aside>
         </div>
       </div>
-
-      {editingAccount && (
-        <EditStaffModal form={editForm} errors={editErrors} saving={saving} onClose={closeEditModal} onSave={saveEditStaff} onChange={updateEditField} />
-      )}
     </div>
   )
 }
@@ -338,7 +276,7 @@ function Header() {
   return (
     <div className="mb-8">
       <h1 className="text-3xl font-bold" style={{ color: C.slate }}>Manage Staff Accounts</h1>
-      <p className="text-sm mt-2 max-w-2xl" style={{ color: C.muted }}>Create, update and deactivate charity staff accounts linked to your organisation.</p>
+      <p className="text-sm mt-2 max-w-2xl" style={{ color: C.muted }}>Create, deactivate and reactivate charity staff accounts linked to your organisation.</p>
     </div>
   )
 }
@@ -347,7 +285,7 @@ function SearchBox({ value, onChange }: { value: string; onChange: (value: strin
   return (
     <div className="mb-5 relative">
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: C.beige }} />
-      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Search by name, email or username" style={inputSt(false, { paddingLeft: '40px' })} />
+      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Search by name or email" style={inputSt(false, { paddingLeft: '40px' })} />
     </div>
   )
 }
@@ -356,13 +294,13 @@ function StaffTable(props: {
   staff: StaffAccount[]
   canManageStaff: boolean
   confirmDeactivateId: string | null
-  deactivatingId: string | null
-  onEdit: (account: StaffAccount) => void
+  workingStaffId: string | null
   onConfirmDeactivate: (uuid: string) => void
   onAskDeactivate: (uuid: string) => void
   onCancelDeactivate: () => void
+  onReactivate: (uuid: string) => void
 }) {
-  const { staff, canManageStaff, confirmDeactivateId, deactivatingId, onEdit, onConfirmDeactivate, onAskDeactivate, onCancelDeactivate } = props
+  const { staff, canManageStaff, confirmDeactivateId, workingStaffId, onConfirmDeactivate, onAskDeactivate, onCancelDeactivate, onReactivate } = props
 
   return (
     <div className="overflow-x-auto">
@@ -381,7 +319,6 @@ function StaffTable(props: {
               <td className="py-4 pr-4">
                 <p className="font-semibold" style={{ color: C.slate }}>{account.full_name}</p>
                 <p className="text-xs mt-0.5" style={{ color: C.muted }}>{account.email}</p>
-                <p className="text-xs mt-0.5" style={{ color: C.muted }}>@{account.username}</p>
               </td>
               <td className="py-4 pr-4"><StatusBadge isActive={account.is_active} /></td>
               <td className="py-4 pr-4" style={{ color: C.muted }}>{formatDate(account.lastLoginAt)}</td>
@@ -390,11 +327,11 @@ function StaffTable(props: {
                   account={account}
                   canManageStaff={canManageStaff}
                   isConfirming={confirmDeactivateId === account.uuid}
-                  isDeactivating={deactivatingId === account.uuid}
-                  onEdit={onEdit}
+                  isWorking={workingStaffId === account.uuid}
                   onConfirmDeactivate={onConfirmDeactivate}
                   onAskDeactivate={onAskDeactivate}
                   onCancelDeactivate={onCancelDeactivate}
+                  onReactivate={onReactivate}
                 />
               </td>
             </tr>
@@ -417,68 +354,31 @@ function StaffActions(props: {
   account: StaffAccount
   canManageStaff: boolean
   isConfirming: boolean
-  isDeactivating: boolean
-  onEdit: (account: StaffAccount) => void
+  isWorking: boolean
   onConfirmDeactivate: (uuid: string) => void
   onAskDeactivate: (uuid: string) => void
   onCancelDeactivate: () => void
+  onReactivate: (uuid: string) => void
 }) {
-  const { account, canManageStaff, isConfirming, isDeactivating, onEdit, onConfirmDeactivate, onAskDeactivate, onCancelDeactivate } = props
-  const disabled = !canManageStaff || !account.is_active
+  const { account, canManageStaff, isConfirming, isWorking, onConfirmDeactivate, onAskDeactivate, onCancelDeactivate, onReactivate } = props
+  const disabled = !canManageStaff || isWorking
 
   if (isConfirming) {
     return (
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={() => onConfirmDeactivate(account.uuid)} disabled={isDeactivating} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: C.danger, cursor: isDeactivating ? 'not-allowed' : 'pointer' }}>{isDeactivating ? 'Deactivating...' : 'Confirm'}</button>
-        <button type="button" onClick={onCancelDeactivate} disabled={isDeactivating} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>Cancel</button>
+        <button type="button" onClick={() => onConfirmDeactivate(account.uuid)} disabled={disabled} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: C.danger, cursor: disabled ? 'not-allowed' : 'pointer' }}>{isWorking ? 'Deactivating...' : 'Confirm'}</button>
+        <button type="button" onClick={onCancelDeactivate} disabled={disabled} className="px-3 py-1.5 rounded-lg text-xs font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>Cancel</button>
       </div>
     )
   }
 
   return (
     <div className="flex justify-end gap-2">
-      <StaffActionButton label="Edit" icon={<Edit3 className="w-3.5 h-3.5" />} disabled={disabled} onClick={() => onEdit(account)} />
-      <StaffActionButton label="Deactivate" icon={<Power className="w-3.5 h-3.5" />} danger disabled={disabled} onClick={() => onAskDeactivate(account.uuid)} />
-    </div>
-  )
-}
-
-function EditStaffModal({ form, errors, saving, onClose, onSave, onChange }: {
-  form: StaffForm
-  errors: StaffFormErrors
-  saving: boolean
-  onClose: () => void
-  onSave: (e: FormEvent) => void
-  onChange: (field: StaffField, value: string) => void
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(45, 58, 58, 0.45)' }}>
-      <section className="w-full max-w-2xl bg-white rounded-2xl shadow-xl" style={{ border: `1px solid ${C.beige}` }}>
-        <div className="px-6 py-5 border-b flex items-start justify-between gap-4" style={{ borderColor: C.beige }}>
-          <div>
-            <h2 className="text-lg font-bold" style={{ color: C.slate }}>Edit staff account</h2>
-            <p className="text-sm mt-0.5" style={{ color: C.muted }}>Update staff account details and permissions.</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={saving} className="p-2 rounded-xl hover:bg-[#F7F5F0]" aria-label="Close edit modal">
-            <X className="w-5 h-5" style={{ color: C.muted }} />
-          </button>
-        </div>
-
-        <form onSubmit={onSave} noValidate className="px-6 py-6 space-y-5">
-          <div className="grid md:grid-cols-2 gap-4">
-            <TextInput label="Full name" value={form.full_name} error={errors.full_name} disabled={saving} autoComplete="name" onChange={(e) => onChange('full_name', e.target.value)} />
-            <TextInput label="Work email" type="email" value={form.email} error={errors.email} disabled={saving} autoComplete="email" onChange={(e) => onChange('email', e.target.value)} />
-          </div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <TextInput label="Username" value={form.username} error={errors.username} disabled={saving} autoComplete="username" onChange={(e) => onChange('username', e.target.value)} />
-          </div>
-          <p className="text-xs" style={{ color: C.muted }}>Password changes should be handled separately through a reset-password flow.</p>
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-xl text-sm font-semibold border" style={{ borderColor: C.beige, color: C.slate }}>Cancel</button>
-            <PrimaryButton disabled={saving} icon={saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />} label={saving ? 'Saving...' : 'Save changes'} />
-          </div>
-        </form>
-      </section>
+      {account.is_active ? (
+        <StaffActionButton label={isWorking ? 'Working...' : 'Deactivate'} icon={<Power className="w-3.5 h-3.5" />} danger disabled={disabled} onClick={() => onAskDeactivate(account.uuid)} />
+      ) : (
+        <StaffActionButton label={isWorking ? 'Working...' : 'Reactivate'} icon={<RotateCcw className="w-3.5 h-3.5" />} disabled={disabled} onClick={() => onReactivate(account.uuid)} />
+      )}
     </div>
   )
 }

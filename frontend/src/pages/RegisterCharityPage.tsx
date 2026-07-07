@@ -28,7 +28,7 @@ export default function RegisterCharityPage() {
 
   const [form, setForm] = useState({ 
     org_name: '', description: '', 
-    full_name: '', email: '', username: '', password: '' 
+    full_name: '', email: '', password: '' 
   })
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -94,7 +94,6 @@ export default function RegisterCharityPage() {
     
     if (!form.full_name.trim()) e.full_name = 'Representative name is required.'
     if (!form.email.trim()) e.email = 'Email is required.'
-    if (!form.username.trim()) e.username = 'Username is required.'
     if (form.password.length < 8) e.password = 'Min 8 characters required.'
     
     setErrors(e); return Object.keys(e).length === 0
@@ -109,7 +108,6 @@ export default function RegisterCharityPage() {
       const message = await register({ 
         full_name: form.full_name, 
         email: form.email, 
-        username: form.username, 
         password: form.password, 
         roles: ['charity'] // Must match backend required roles for /charities/register
       })
@@ -314,11 +312,6 @@ export default function RegisterCharityPage() {
                   {errors.email && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.email}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Username</label>
-                  <input type="text" value={form.username} onChange={set('username')} style={inputSt(!!errors.username)} />
-                  {errors.username && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.username}</p>}
-                </div>
-                <div className="md:col-span-2">
                   <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Password</label>
                   <div className="relative">
                     <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={set('password')} style={inputSt(!!errors.password, { paddingRight: '42px' })} />
@@ -343,4 +336,4 @@ export default function RegisterCharityPage() {
       </div>
     </div>
   )
-}
+}

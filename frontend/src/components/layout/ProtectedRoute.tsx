@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import type { UserRole } from '../../types'
 import { Loader2 } from 'lucide-react'
@@ -12,11 +12,23 @@ function AuthLoading() {
   )
 }
 
+function ForcePasswordChangeRedirect({ path }: { path: string }) {
+  if (path === '/change-password') return <Outlet />
+  return <Navigate to="/change-password" replace />
+}
+
 // ── Requires any logged-in user ──────────────────────────────────────────────
 export function ProtectedRoute() {
-  const { isAuthenticated, isLoading } = useAuthStore()
+  const { isAuthenticated, isLoading, user } = useAuthStore()
+  const location = useLocation()
   if (isLoading) return <AuthLoading />
   if (!isAuthenticated) return <Navigate to="/login" replace />
+
+  // Temporary-password staff sessions are intentionally restricted until the
+  // first-login password change is completed. This mirrors the backend guard so
+  // users get a clean page instead of repeated 403 responses. Tiny UX shield, big security win.
+  if (user?.mustChangePassword) return <ForcePasswordChangeRedirect path={location.pathname} />
+
   return <Outlet />
 }
 
@@ -30,6 +42,8 @@ export function RoleProtectedRoute({ allowedRoles }: RoleProtectedRouteProps) {
 
   if (isLoading) return <AuthLoading />
   if (!isAuthenticated) return <Navigate to="/login" replace />
+
+  if (user?.mustChangePassword) return <Navigate to="/change-password" replace />
 
   const hasRequiredRole = user?.roles?.some((r) => allowedRoles.includes(r))
   if (!hasRequiredRole) return <Navigate to="/" replace />

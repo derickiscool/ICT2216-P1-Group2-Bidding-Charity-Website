@@ -3,6 +3,14 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Heart, HeartHandshake, Settings, ShieldCheck, Menu, X, Users, Plus, CreditCard } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
+function displayName(user: { full_name?: string; email?: string; username?: string } | null | undefined) {
+  return user?.full_name || user?.email || user?.username || 'User'
+}
+
+function avatarInitial(user: { full_name?: string; email?: string; username?: string } | null | undefined) {
+  return displayName(user).charAt(0).toUpperCase()
+}
+
 // ─── Avatar dropdown ─────────────────────────────────────────────────────────
 function AvatarDropdown({ onClose }: { onClose: () => void }) {
   const { user, logout } = useAuthStore()
@@ -36,10 +44,10 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold text-white"
             style={{ background: '#047857' }}>
-            {user?.username?.charAt(0).toUpperCase()}
+            {avatarInitial(user)}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold truncate" style={{ color: '#2D3A3A' }}>{user?.full_name || user?.username}</p>
+            <p className="text-sm font-semibold truncate" style={{ color: '#2D3A3A' }}>{displayName(user)}</p>
             <div className="flex flex-wrap gap-1 mt-0.5">
               {user?.roles?.map(r => (
                 <span key={r} className="text-[10px] font-medium px-1.5 py-0.5 rounded"
@@ -226,7 +234,7 @@ export default function Navbar() {
                   className="flex items-center gap-2 px-2 py-1.5 rounded-xl transition-opacity hover:opacity-80">
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
                     style={{ background: '#047857' }}>
-                    {user.username?.charAt(0).toUpperCase()}
+                    {avatarInitial(user)}
                   </div>
                   <ChevronDown className="w-3.5 h-3.5" style={{ color: linkColor }} />
                 </button>
@@ -267,6 +275,9 @@ export default function Navbar() {
           )}
           {isAuthenticated && (user?.roles?.includes('donor') || user?.roles?.includes('admin')) && (
             <Link to="/listings/manage" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>My Listings</Link>
+          )}
+          {isAuthenticated && (user?.roles?.includes('charity') || user?.roles?.includes('charity_staff') || user?.roles?.includes('admin')) && (
+            <Link to="/charity/campaigns" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Campaign Management</Link>
           )}
           {isAuthenticated && (user?.roles?.includes('charity') || user?.roles?.includes('charity_staff')) && (
             <Link to="/charity/listing-reviews" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Listing Reviews</Link>

@@ -65,6 +65,14 @@ function roleText(role: string) {
   }
 }
 
+function userUsesUsername(user: User | null) {
+  return Boolean(user?.roles?.some(role => role === 'bidder' || role === 'donor'))
+}
+
+function displayName(user: User | null) {
+  return user?.full_name || user?.email || user?.username || 'User'
+}
+
 function errMsg(err: unknown, fallback: string) {
   const ae = err as ApiError
   const msg = ae.message?.toLowerCase() ?? ''
@@ -103,8 +111,9 @@ export default function ProfilePage() {
 
   const original = useMemo(() => toForm(user), [user])
   const profile = useMemo<ProfileForm>(() => ({ ...original, ...profileEdits }), [original, profileEdits])
+  const showUsername = userUsesUsername(user)
   const strength = pwdStrength(passwords.newPassword)
-  const dirty = profile.full_name !== original.full_name || profile.username !== original.username || profile.contact_number !== original.contact_number
+  const dirty = profile.full_name !== original.full_name || (showUsername && profile.username !== original.username) || profile.contact_number !== original.contact_number
 
   const setProfileField = (key: EditableProfileField) => (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -155,10 +164,12 @@ export default function ProfilePage() {
     else if (name.length < 2) e.full_name = 'Full name must be at least 2 characters.'
     else if (name.length > 80) e.full_name = 'Full name must be 80 characters or less.'
 
-    if (!username) e.username = 'Username is required.'
-    else if (username.length < 3) e.username = 'Username must be at least 3 characters.'
-    else if (username.length > 30) e.username = 'Username must be 30 characters or less.'
-    else if (!/^[a-zA-Z0-9_]+$/.test(username)) e.username = 'Use letters, numbers, and underscores only.'
+    if (showUsername) {
+      if (!username) e.username = 'Username is required.'
+      else if (username.length < 3) e.username = 'Username must be at least 3 characters.'
+      else if (username.length > 30) e.username = 'Username must be 30 characters or less.'
+      else if (!/^[a-zA-Z0-9_]+$/.test(username)) e.username = 'Use letters, numbers, and underscores only.'
+    }
 
     if (normalisedContact === null) e.contact_number = 'Enter a valid Singapore mobile number, e.g. 91234567 or +65 9123 4567.'
 
@@ -203,11 +214,13 @@ export default function ProfilePage() {
       setSavingProfile(true)
       const normalisedContact = normaliseSgMobilePreview(profile.contact_number.trim())
 
-      await api.put('/users/profile', {
+      const payload: { full_name: string; username?: string; contact_number: string | null } = {
         full_name: profile.full_name.trim(),
-        username: profile.username.trim(),
         contact_number: normalisedContact || null,
-      })
+      }
+      if (showUsername) payload.username = profile.username.trim()
+
+      await api.put('/users/profile', payload)
 
       await fetchMe()
       setProfileEdits({})
@@ -287,13 +300,13 @@ export default function ProfilePage() {
 
         <div className="grid lg:grid-cols-[1fr_340px] gap-6">
           <div className="space-y-6">
-            <Card icon={<UserCircle className="w-5 h-5" />} title="Account details" desc="Update your name, username and Singapore contact number.">
+            <Card icon={<UserCircle className="w-5 h-5" />} title="Account details" desc={showUsername ? "Update your name, username and Singapore contact number." : "Update your name and Singapore contact number."}>
               <form onSubmit={saveProfile} noValidate className="space-y-5">
                 <Alert msg={profileMsg} />
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className={`grid ${showUsername ? 'md:grid-cols-2' : 'md:grid-cols-1'} gap-4`}>
                   <TextInput label="Full name" value={profile.full_name} error={profileErrs.full_name} onChange={setProfileField('full_name')} autoComplete="name" maxLength={80} />
-                  <TextInput label="Username" value={profile.username} error={profileErrs.username} onChange={setProfileField('username')} autoComplete="username" maxLength={30} />
+                  {showUsername && <TextInput label="Username" value={profile.username} error={profileErrs.username} onChange={setProfileField('username')} autoComplete="username" maxLength={30} />}
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
@@ -410,10 +423,10 @@ function Header({ user }: { user: User | null }) {
 
       <div className="flex items-center gap-3 rounded-2xl px-4 py-3 bg-white shadow-sm" style={{ border: `1px solid ${C.beige}` }}>
         <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold" style={{ background: C.emerald }}>
-          {(user?.username || user?.full_name || 'U').charAt(0).toUpperCase()}
+          {displayName(user).charAt(0).toUpperCase()}
         </div>
         <div>
-          <p className="text-sm font-semibold" style={{ color: C.slate }}>{user?.full_name || user?.username || 'User'}</p>
+          <p className="text-sm font-semibold" style={{ color: C.slate }}>{displayName(user)}</p>
           <p className="text-xs" style={{ color: C.muted }}>{user?.email}</p>
         </div>
       </div>

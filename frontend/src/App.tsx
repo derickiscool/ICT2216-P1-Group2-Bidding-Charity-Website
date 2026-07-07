@@ -94,6 +94,7 @@ import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
 import CharityListingReviewPage from './pages/CharityListingReviewPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
 import ReceiptPage from './pages/ReceiptPage'
 
 export default function App() {
@@ -121,6 +122,7 @@ export default function App() {
 
           {/* ── Auth required ── */}
           <Route element={<ProtectedRoute />}>
+            <Route path="/change-password" element={<ChangePasswordPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
