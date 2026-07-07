@@ -9,7 +9,7 @@ describe('NFSR06 password policy', () => {
     assert.equal(isStrongPassword('Sunshine2026!'), false);
   });
 
-  test('rejects breached-password hashes and allows non-denylisted passphrases', () => {
+  test('rejects breached/common denylist entries and allows non-denylisted passphrases', () => {
     assert.equal(isBreachedPassword('Password123!'), true);
     assert.equal(isStrongPassword('Password123!'), false);
     assert.equal(isStrongPassword('CorrectHorseBatteryStaple2026!'), true);

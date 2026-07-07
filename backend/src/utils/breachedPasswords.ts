@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { sha256 } from './security';
 
 const BUILT_IN_BREACHED = new Set([
   'password', 'password1', 'password12', 'password123', 'password123!', 'qwerty', 'qwerty123',
@@ -16,7 +15,6 @@ const BUILT_IN_DICTIONARY_WORDS = new Set([
 ]);
 
 let externalBreachedPasswords: Set<string> | null = null;
-let externalBreachedPasswordHashes: Set<string> | null = null;
 let externalDictionaryWords: Set<string> | null = null;
 
 const loadLineSet = (fileName: string, normalise: (line: string) => string): Set<string> => {
@@ -36,12 +34,6 @@ function loadExternalBreachedPasswords(): Set<string> {
   if (externalBreachedPasswords) return externalBreachedPasswords;
   externalBreachedPasswords = loadLineSet('breached-passwords.txt', line => line.toLowerCase());
   return externalBreachedPasswords;
-}
-
-function loadExternalBreachedPasswordHashes(): Set<string> {
-  if (externalBreachedPasswordHashes) return externalBreachedPasswordHashes;
-  externalBreachedPasswordHashes = loadLineSet('breached-password-sha256.txt', line => line.toLowerCase());
-  return externalBreachedPasswordHashes;
 }
 
 function loadExternalDictionaryWords(): Set<string> {
@@ -69,8 +61,7 @@ export const isBreachedPassword = (password: string): boolean => {
   const normalized = password.trim().toLowerCase();
   return (
     BUILT_IN_BREACHED.has(normalized) ||
-    loadExternalBreachedPasswords().has(normalized) ||
-    loadExternalBreachedPasswordHashes().has(sha256(password))
+    loadExternalBreachedPasswords().has(normalized)
   );
 };
 
