@@ -32,6 +32,9 @@ interface RelayConfig {
   pass: string;
   ehloName: string;
   from: string;
+  // false only in dev/test, where Mailpit's self-signed cert regenerates on every restart
+  // and can't be pinned; production always validates against the public CA store.
+  rejectUnauthorized: boolean;
 }
 
 interface DkimConfig {
@@ -164,12 +167,10 @@ function createSmtpSession(socket: net.Socket | tls.TLSSocket): SmtpSession {
 // Implicit TLS (SMTPS-style) — the socket is encrypted from the first byte,
 // so there's no cleartext window before the greeting and nothing for a
 // STARTTLS-stripping attacker to intercept or downgrade.
-function connectTls(host: string, port: number, localPort?: number, timeoutMs = 15000): Promise<tls.TLSSocket> {
+function connectTls(host: string, port: number, rejectUnauthorized: boolean, localPort?: number, timeoutMs = 15000): Promise<tls.TLSSocket> {
   return new Promise((resolve, reject) => {
-    // rejectUnauthorized: false — SMTP2GO relay presents a shared-hostname certificate;
-    // true would require explicit CA pinning for mail.smtp2go.com.
     // @types/node's ConnectionOptions omits localPort, though tls.connect forwards it to net.connect() at runtime.
-    const options: tls.ConnectionOptions & { localPort?: number } = { localPort, servername: host, rejectUnauthorized: true };
+    const options: tls.ConnectionOptions & { localPort?: number } = { localPort, servername: host, rejectUnauthorized };
     const socket = tls.connect(port, host, options);
     const timer = setTimeout(() => {
       socket.destroy();
@@ -196,7 +197,7 @@ function dotStuff(body: string): string {
 }
 
 async function attemptDelivery(relay: RelayConfig, dkim: DkimConfig, params: SendParams): Promise<SendResult> {
-  const { host, port, localPort, user, pass, ehloName, from } = relay;
+  const { host, port, localPort, user, pass, ehloName, from, rejectUnauthorized } = relay;
   const { to, subject, body } = params;
 
   const messageId = `<${crypto.randomUUID()}@${dkim.domain}>`;
@@ -227,7 +228,7 @@ async function attemptDelivery(relay: RelayConfig, dkim: DkimConfig, params: Sen
   ].join("\r\n");
 
   console.log(`[mailer] connecting to ${host}:${port} (implicit TLS) from local port ${localPort}`);
-  const activeSocket = await connectTls(host, port, localPort);
+  const activeSocket = await connectTls(host, port, rejectUnauthorized, localPort);
   console.log(`[mailer] TLS connected, waiting for greeting`);
 
   try {
@@ -309,6 +310,7 @@ function buildMailConfig(): { relay: RelayConfig; dkim: DkimConfig } {
     user: process.env.SMTP2GO_USER || '',
     pass: process.env.SMTP2GO_PASS || '',
     ehloName: process.env.MAIL_EHLO_NAME || 'bidforgood.xyz',
+    rejectUnauthorized: process.env.NODE_ENV === 'production',
     from: process.env.MAIL_FROM_ADDRESS || 'noreply@bidforgood.xyz',
   };
 
