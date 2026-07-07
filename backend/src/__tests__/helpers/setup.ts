@@ -6,7 +6,7 @@ import {
 } from '../../repositories/postgres.repository';
 import { readDevOtpForTest, clearDevOtpForTest, clearDevPasswordChangeOtpForTest } from '../../services/otpDelivery.service';
 import { clearLoginAttemptCacheForTests } from '../../services/loginAttemptCache.service';
-import { closePool } from '../../utils/db';
+import { closePool, query } from '../../utils/db';
 
 export type TestListing = {
   id: number;
@@ -97,6 +97,33 @@ export const loginAs = async (email: string, password = 'S3cure!Pass2026') => {
   assert.ok(login.setCookie);
   assert.ok(login.csrf);
   return { cookie: login.setCookie!.split(';')[0], csrf: login.csrf! };
+};
+
+// Creates a listing as the donor (the only role allowed to author listings) and activates it
+// directly, short-circuiting the two-stage SFR09 review for tests that only need a live auction.
+export const createActiveListing = async (
+  seller: { cookie: string; csrf: string },
+  overrides: Record<string, unknown> = {},
+): Promise<TestListing> => {
+  const res = await postJson(
+    '/api/listings',
+    {
+      title: 'Active Test Listing',
+      description: 'A listing used by tests that require a live auction.',
+      category: 'Art',
+      charityName: 'Valid Charity',
+      starting_price: 500,
+      min_increment: 25,
+      durationHours: 24,
+      ...overrides,
+    },
+    { cookie: seller.cookie, 'x-csrf-token': seller.csrf },
+  );
+  assert.equal(res.response.status, 201);
+  const listing = res.body as unknown as TestListing;
+  await query(`UPDATE listings SET status = 'active' WHERE id = $1`, [listing.id]);
+  listing.status = 'active';
+  return listing;
 };
 
 export const registerVerifiedUser = async (input: {

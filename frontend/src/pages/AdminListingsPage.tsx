@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Package, Loader2, AlertCircle, CheckCircle, ExternalLink, XCircle } from 'lucide-react'
+import { ArrowLeft, Package, Loader2, AlertCircle, CheckCircle, ExternalLink, XCircle, MessageSquare } from 'lucide-react'
 import api from '../services/api'
 import type { Listing, ApiError } from '../types'
 
@@ -8,6 +8,7 @@ const C = {
   slate: '#2D3A3A', emerald: '#047857', emeraldLight: '#ECFDF5',
   beige: '#BBB09B', linen: '#F7F5F0', muted: '#5C6E6E',
   danger: '#B91C1C', dangerLight: '#FEF2F2',
+  warning: '#92400E', warningLight: '#FFFBEB',
 }
 
 const money = (value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -20,6 +21,9 @@ export default function AdminListingsPage() {
   const [rejectUuid, setRejectUuid] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [rejecting, setRejecting] = useState<string | null>(null)
+  const [changesUuid, setChangesUuid] = useState<string | null>(null)
+  const [changesReason, setChangesReason] = useState('')
+  const [requestingChanges, setRequestingChanges] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -65,6 +69,23 @@ export default function AdminListingsPage() {
       setRejecting(null)
     }
   }
+
+  const handleRequestChanges = async (uuid: string) => {
+    if (changesReason.trim().length < 5) return
+    setRequestingChanges(uuid)
+    try {
+      await api.post(`/listings/${uuid}/request-changes`, { reason: changesReason })
+      setListings(prev => prev.filter(l => l.uuid !== uuid))
+      setChangesUuid(null)
+      setChangesReason('')
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to request changes.')
+    } finally {
+      setRequestingChanges(null)
+    }
+  }
+
+  const busy = approving !== null || rejecting !== null || requestingChanges !== null
 
   if (loading) {
     return (
@@ -129,16 +150,23 @@ export default function AdminListingsPage() {
                           </Link>
                           {rejectUuid === l.uuid ? (
                             <form onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleReject(l.uuid!) }}
-                              className="flex items-center gap-2">
-                              <input
-                                type="text" value={rejectReason} autoFocus
-                                onChange={(e) => setRejectReason(e.target.value)}
-                                placeholder="Rejection reason..."
-                                className="w-36 px-2 py-1 text-xs rounded-lg outline-none"
-                                style={{ border: '1px solid', borderColor: C.danger, background: C.dangerLight }}
-                              />
-                              <button type="submit" disabled={!rejectReason.trim() || rejecting === l.uuid}
-                                className="px-2 py-1 text-xs font-bold rounded-lg text-white"
+                              className="flex items-start gap-2">
+                              <div className="flex flex-col">
+                                <input
+                                  type="text" value={rejectReason} autoFocus
+                                  onChange={(e) => setRejectReason(e.target.value)}
+                                  placeholder="Reason shown to the donor (min 5 characters)"
+                                  className="w-56 px-2 py-1 text-xs rounded-lg outline-none"
+                                  style={{ border: '1px solid', borderColor: C.danger, background: C.dangerLight }}
+                                />
+                                <span className="text-[10px] mt-0.5" style={{ color: rejectReason.trim().length < 5 ? C.danger : C.muted }}>
+                                  {rejectReason.trim().length < 5
+                                    ? `${5 - rejectReason.trim().length} more character(s) required`
+                                    : 'This rejection is final — the donor cannot resubmit.'}
+                                </span>
+                              </div>
+                              <button type="submit" disabled={rejectReason.trim().length < 5 || rejecting === l.uuid}
+                                className="px-2 py-1 text-xs font-bold rounded-lg text-white disabled:opacity-50"
                                 style={{ background: rejecting === l.uuid ? C.muted : C.danger }}>
                                 {rejecting === l.uuid ? '...' : 'Confirm'}
                               </button>
@@ -147,15 +175,47 @@ export default function AdminListingsPage() {
                                 Cancel
                               </button>
                             </form>
+                          ) : changesUuid === l.uuid ? (
+                            <form onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleRequestChanges(l.uuid!) }}
+                              className="flex items-start gap-2">
+                              <div className="flex flex-col">
+                                <input
+                                  type="text" value={changesReason} autoFocus
+                                  onChange={(e) => setChangesReason(e.target.value)}
+                                  placeholder="What should the donor change? (min 5 characters)"
+                                  className="w-56 px-2 py-1 text-xs rounded-lg outline-none"
+                                  style={{ border: '1px solid', borderColor: C.warning, background: C.warningLight }}
+                                />
+                                <span className="text-[10px] mt-0.5" style={{ color: changesReason.trim().length < 5 ? C.warning : C.muted }}>
+                                  {changesReason.trim().length < 5
+                                    ? `${5 - changesReason.trim().length} more character(s) required`
+                                    : 'The donor can edit and resubmit for review.'}
+                                </span>
+                              </div>
+                              <button type="submit" disabled={changesReason.trim().length < 5 || requestingChanges === l.uuid}
+                                className="px-2 py-1 text-xs font-bold rounded-lg text-white disabled:opacity-50"
+                                style={{ background: requestingChanges === l.uuid ? C.muted : C.warning }}>
+                                {requestingChanges === l.uuid ? '...' : 'Send'}
+                              </button>
+                              <button type="button" onClick={() => { setChangesUuid(null); setChangesReason('') }}
+                                className="px-2 py-1 text-xs rounded-lg" style={{ color: C.muted }}>
+                                Cancel
+                              </button>
+                            </form>
                           ) : (
                             <>
-                              <button onClick={() => handleApprove(l.uuid!)} disabled={approving === l.uuid || rejecting !== null}
+                              <button onClick={() => handleApprove(l.uuid!)} disabled={busy}
                                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                                 style={{ background: C.emerald }}>
                                 {approving === l.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-                                {approving === l.uuid ? 'Approving...' : 'Approve'}
+                                {approving === l.uuid ? 'Approving...' : 'Approve → Charity'}
                               </button>
-                              <button onClick={() => setRejectUuid(l.uuid!)} disabled={approving !== null}
+                              <button onClick={() => setChangesUuid(l.uuid!)} disabled={busy}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-opacity hover:opacity-90 disabled:opacity-50"
+                                style={{ background: C.warningLight, color: C.warning, border: '1px solid', borderColor: C.warning }}>
+                                <MessageSquare className="w-3 h-3" /> Request changes
+                              </button>
+                              <button onClick={() => setRejectUuid(l.uuid!)} disabled={busy}
                                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                                 style={{ background: C.danger }}>
                                 <XCircle className="w-3 h-3" /> Reject
