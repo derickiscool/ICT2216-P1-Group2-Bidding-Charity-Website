@@ -3,6 +3,7 @@ import { sendMail } from '../utils/mailer';
 const devOtpOutbox = new Map<string, string>();
 const devResetTokenOutbox = new Map<string, string>();
 const devEmailChangeOtpOutbox = new Map<string, string>();
+const devPasswordChangeOtpOutbox = new Map<string, string>();
 
 export const sendRegistrationOtp = async (email: string, otp: string): Promise<void> => {
   if (process.env.NODE_ENV === 'production') {
@@ -62,6 +63,50 @@ export const sendPasswordResetOtp = async (email: string, otp: string): Promise<
   }
 };
 
+
+export const sendPasswordChangeVerificationOtp = async (email: string, otp: string): Promise<void> => {
+  if (process.env.NODE_ENV === 'production') {
+    await sendMail({
+      to: email,
+      subject: 'BidForGood — Confirm your password change',
+      body: `Hello,
+
+A request was made to change the password on your BidForGood account.
+
+Your password change verification code is:
+
+    ${otp}
+
+This code expires in 15 minutes.
+
+If you did not request this, please ignore this message and consider reviewing your account security.
+
+— The BidForGood Team
+noreply@bidforgood.xyz`,
+    });
+  } else {
+    devPasswordChangeOtpOutbox.set(email, otp);
+    await sendMail({
+      to: email,
+      subject: 'BidForGood — Confirm your password change',
+      body: `Hello,
+
+A request was made to change the password on your BidForGood account.
+
+Your password change verification code is:
+
+    ${otp}
+
+This code expires in 15 minutes.
+
+If you did not request this, please ignore this message and consider reviewing your account security.
+
+— The BidForGood Team
+noreply@bidforgood.xyz`,
+    });
+  }
+};
+
 // SFR03 — OTP sent to the NEW address to prove the user controls it.
 export const sendEmailChangeOtp = async (newEmail: string, otp: string): Promise<void> => {
   if (process.env.NODE_ENV === 'production') {
@@ -117,6 +162,17 @@ export const readDevEmailChangeOtpForTest = (email: string): string | undefined 
 export const clearDevEmailChangeOtpForTest = (email?: string): void => {
   if (email) devEmailChangeOtpOutbox.delete(email);
   else devEmailChangeOtpOutbox.clear();
+};
+
+
+export const readDevPasswordChangeOtpForTest = (email: string): string | undefined => {
+  if (process.env.NODE_ENV === 'production') return undefined;
+  return devPasswordChangeOtpOutbox.get(email);
+};
+
+export const clearDevPasswordChangeOtpForTest = (email?: string): void => {
+  if (email) devPasswordChangeOtpOutbox.delete(email);
+  else devPasswordChangeOtpOutbox.clear();
 };
 
 export const readDevResetTokenForTest = (email: string): string | undefined => {
