@@ -2,7 +2,7 @@ import type { Request } from 'express';
 import type { Listing, ListingStatus } from '../types/domain';
 import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listListings, listListingsByDonor, listPendingListings, updateListing } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
-import { isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
+import { containsScriptLikeContent, isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
 import { audit } from './audit.service';
 import { MAX_LISTING_IMAGES, MAX_LISTING_IMAGE_BYTES } from '../middleware/upload.middleware';
 
@@ -18,6 +18,16 @@ const LOCKED_FIELDS = new Set([
 export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected'];
 export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected', 'expired', 'cancelled'];
 const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
+
+// SFR07: reject (not just escape) title/description text containing script-like content,
+// so the rule holds even for requests that bypass the frontend form entirely.
+const sanitizeListingText = (raw: unknown, maxLength: number, field: string): string => {
+  const text = safeString(raw, maxLength);
+  if (containsScriptLikeContent(text)) {
+    throw badRequest(`Please remove script-like content from the listing ${field}.`, 'UNSAFE_TEXT_CONTENT', { [field]: 'Please remove script-like content.' });
+  }
+  return sanitizeText(text, maxLength);
+};
 
 type UploadedListingImage = Express.Multer.File;
 
@@ -53,16 +63,23 @@ const imagesFromUploads = (req: Request): string[] => {
   });
 };
 
+// Existing images are resent as base64 data URLs (up to MAX_LISTING_IMAGE_BYTES of binary,
+// which base64 inflates by ~4/3). These caps must fit a full-size image, or a real photo
+// gets truncated mid-string here, fails the SAFE_IMAGE_URL/currentImages check in
+// buildUpdatedImages, and is silently dropped even though the donor never touched it.
+const MAX_IMAGE_DATA_URL_CHARS = Math.ceil(MAX_LISTING_IMAGE_BYTES * 1.4);
+const MAX_EXISTING_IMAGES_JSON_CHARS = MAX_IMAGE_DATA_URL_CHARS * MAX_LISTING_IMAGES + 1024;
+
 const parseExistingImageInput = (raw: unknown): string[] | undefined => {
   if (raw === undefined) return undefined;
-  if (Array.isArray(raw)) return raw.map(value => safeString(value, 200_000)).filter(Boolean);
+  if (Array.isArray(raw)) return raw.map(value => safeString(value, MAX_IMAGE_DATA_URL_CHARS)).filter(Boolean);
 
-  const text = safeString(raw, 1_000_000);
+  const text = safeString(raw, MAX_EXISTING_IMAGES_JSON_CHARS);
   if (!text) return [];
 
   try {
     const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) return parsed.map(value => safeString(value, 200_000)).filter(Boolean);
+    if (Array.isArray(parsed)) return parsed.map(value => safeString(value, MAX_IMAGE_DATA_URL_CHARS)).filter(Boolean);
   } catch {
     // Fallback: allow a single existing image string if the client does not send JSON.
   }
@@ -104,8 +121,8 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
   if (reservePrice !== undefined && (!Number.isFinite(reservePrice) || reservePrice < starting)) throw badRequest('Reserve price must be a valid number greater than or equal to the starting price.');
   if (buyNowPrice !== undefined && (!Number.isFinite(buyNowPrice) || buyNowPrice <= starting)) throw badRequest('Buy-Now price must be greater than the starting price.');
 
-  const title = sanitizeText(body.title, 120);
-  const description = sanitizeText(body.description, 1200);
+  const title = sanitizeListingText(body.title, 120, 'title');
+  const description = sanitizeListingText(body.description, 1200, 'description');
   const category = sanitizeText(body.category, 60);
   if (title.length < 3 || description.length < 10 || category.length < 2) throw badRequest('Listing title, description, and category are required.');
 
@@ -189,8 +206,8 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
     }
   }
 
-  const title = body.title !== undefined ? sanitizeText(body.title, 120) : listing.title;
-  const description = body.description !== undefined ? sanitizeText(body.description, 1200) : listing.description;
+  const title = body.title !== undefined ? sanitizeListingText(body.title, 120, 'title') : listing.title;
+  const description = body.description !== undefined ? sanitizeListingText(body.description, 1200, 'description') : listing.description;
   const category = body.category !== undefined ? sanitizeText(body.category, 60) : listing.category;
   if (title.length < 3 || description.length < 10 || category.length < 2) throw badRequest('Listing title, description, and category are required.');
 
@@ -199,6 +216,13 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
   listing.category = category;
   if (body.condition && ['new', 'like_new', 'good', 'fair'].includes(String(body.condition))) listing.condition = String(body.condition) as Listing['condition'];
   listing.images = buildUpdatedImages(listing, body, req);
+
+  // A donor editing a rejected listing is resubmitting it: move it back into the review
+  // queue, otherwise the admin pending list never surfaces it again and the edit is moot.
+  if (!isAdmin && listing.status === 'rejected') {
+    listing.status = 'pending';
+    await audit(req, 'LISTING_RESUBMITTED_FOR_REVIEW', { uuid, previousStatus: 'rejected' }, 'listing', listing.uuid, req.user?.id);
+  }
 
   await updateListing(listing);
   await audit(req, 'LISTING_UPDATED', { uuid, imageCount: listing.images.length }, 'listing', listing.uuid, req.user?.id);
@@ -236,6 +260,12 @@ export const approveListing = async (uuid: string, req: Request): Promise<Listin
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
   if (listing.status !== 'pending') throw badRequest('Only pending listings can be approved.');
+  // Approval resets start_time to now, so the end_time must still be in the future —
+  // otherwise the listing would go active with an already-elapsed window and be swept
+  // straight to 'expired' on the next deadline pass, never becoming biddable.
+  if (new Date(listing.end_time).getTime() <= Date.now()) {
+    throw badRequest('This listing\'s auction end time has already passed. Ask the donor to update the auction window before approval.', 'LISTING_WINDOW_EXPIRED');
+  }
   listing.status = 'active';
   listing.start_time = new Date().toISOString();
   await updateListing(listing);
