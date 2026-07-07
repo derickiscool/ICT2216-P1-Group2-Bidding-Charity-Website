@@ -330,9 +330,17 @@ export const provideTracking = async (uuid: string, trackingNumber: string, cour
   const heldPayment = payments.find(p => p.escrow_state === 'held');
   if (!heldPayment) throw badRequest('Payment must be completed before providing shipping details.', 'SHIPPING_PAYMENT_NOT_HELD');
 
+  // Validate format before sanitizing — reject garbage early with a user-readable message
+  const TRACKING_RE = /^[A-Za-z0-9 \-]{4,50}$/;
+  const COURIER_RE = /^[A-Za-z0-9 \-\.&]{2,60}$/;
+  const rawTracking = String(trackingNumber ?? '').trim();
+  const rawCourier = String(courier ?? '').trim();
+  if (!TRACKING_RE.test(rawTracking)) throw badRequest('Tracking number must be 4–50 alphanumeric characters, hyphens, or spaces.', 'TRACKING_INVALID_FORMAT');
+  if (!COURIER_RE.test(rawCourier)) throw badRequest('Courier name must be 2–60 alphanumeric characters, spaces, hyphens, periods, or ampersands.', 'COURIER_INVALID_FORMAT');
+
   // Sanitize inputs to prevent stored XSS
-  const cleanedTracking = sanitizeText(trackingNumber, 120);
-  const cleanedCourier = sanitizeText(courier, 60);
+  const cleanedTracking = sanitizeText(rawTracking, 50);
+  const cleanedCourier = sanitizeText(rawCourier, 60);
   if (!cleanedTracking || !cleanedCourier) throw badRequest('Tracking number and courier name are required.');
 
   let delivery = await getDeliveryByListingId(listing.id);
