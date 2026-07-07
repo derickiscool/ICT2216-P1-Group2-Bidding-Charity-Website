@@ -82,7 +82,7 @@ export default function ForgotPasswordPage() {
                 style={{ background: C.emeraldLight, border: '1px solid rgba(4,120,87,0.20)' }}>
                 <CheckCircle2 className="w-5 h-5 flex-shrink-0" style={{ color: C.emerald }} />
                 <p className="text-sm font-medium" style={{ color: C.emerald }}>
-                  A reset code has been sent. Check the backend console for the code.
+                  A reset code has been sent. Please check your email.
                 </p>
               </div>
               <button

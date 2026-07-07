@@ -94,6 +94,7 @@ export interface CharityOrganisation {
   documentName: string;
   documentMime: 'application/pdf' | 'image/png' | 'image/jpeg';
   documentSha256: string;
+  documentData?: Buffer | null;
   status: CharityStatus;
   reviewedBy?: number;
   reviewedAt?: string;

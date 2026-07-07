@@ -120,6 +120,7 @@ interface CharityRow {
   document_name: string;
   document_mime: 'application/pdf' | 'image/png' | 'image/jpeg';
   document_sha256: string;
+  document_data?: Buffer | null;
   status: 'pending' | 'approved' | 'rejected';
   reviewed_by: number | null;
   reviewed_at: DbDate | null;
@@ -354,6 +355,7 @@ const mapCharity = (row: CharityRow): CharityOrganisation => ({
   documentName: row.document_name,
   documentMime: row.document_mime,
   documentSha256: row.document_sha256,
+  documentData: row.document_data,
   status: row.status,
   reviewedBy: optionalNumber(row.reviewed_by),
   reviewedAt: optionalIso(row.reviewed_at),
@@ -714,10 +716,18 @@ const removePasswordResetToken = async (email: string): Promise<void> => {
 const addCharity = async (input: NewCharityInput): Promise<CharityOrganisation> => {
   const row = await firstRow<CharityRow>(
     `INSERT INTO charities
-       (owner_user_id, organisation_name, description, document_name, document_mime, document_sha256, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+       (owner_user_id, organisation_name, description, document_name, document_mime, document_sha256, document_data, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
      RETURNING *`,
-    [input.ownerUserId, input.organisationName, input.description, input.documentName, input.documentMime, input.documentSha256],
+    [
+      input.ownerUserId,
+      input.organisationName,
+      input.description,
+      input.documentName,
+      input.documentMime,
+      input.documentSha256,
+      input.documentData ?? null,
+    ],
   );
   if (!row) throw new Error('Failed to create charity registration.');
   return mapCharity(row);
@@ -742,8 +752,8 @@ const updateCharity = async (record: CharityOrganisation): Promise<void> => {
   await query(
     `UPDATE charities
      SET owner_user_id = $2, organisation_name = $3, description = $4, document_name = $5,
-         document_mime = $6, document_sha256 = $7, status = $8, reviewed_by = $9,
-         reviewed_at = $10, rejection_reason = $11
+         document_mime = $6, document_sha256 = $7, document_data = $8, status = $9, reviewed_by = $10,
+         reviewed_at = $11, rejection_reason = $12
      WHERE uuid = $1`,
     [
       record.uuid,
@@ -753,6 +763,7 @@ const updateCharity = async (record: CharityOrganisation): Promise<void> => {
       record.documentName,
       record.documentMime,
       record.documentSha256,
+      record.documentData ?? null,
       record.status,
       record.reviewedBy ?? null,
       record.reviewedAt ?? null,

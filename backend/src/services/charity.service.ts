@@ -34,7 +34,8 @@ export const registerCharity = async (req: Request): Promise<CharityOrganisation
     description,
     documentName: sanitizeText(file.originalname, 120),
     documentMime: detected,
-    documentSha256: sha256(file.buffer)
+    documentSha256: sha256(file.buffer),
+    documentData: file.buffer
   });
   await audit(req, 'CHARITY_REGISTER_PENDING', { organisationName, documentSha256: record.documentSha256 }, 'charity', record.uuid, req.user.id);
   return record;
@@ -62,6 +63,12 @@ export const getApprovedCharities = async (): Promise<CharityOrganisation[]> => 
   return all.filter(c => c.status === 'approved');
 };
 
+export const streamCharityDocument = async (uuid: string): Promise<{ data: Buffer; mime: string } | null> => {
+  const charity = await getCharityByUuid(uuid);
+  if (!charity || !charity.documentData) return null;
+  return { data: charity.documentData, mime: charity.documentMime };
+};
+
 export const getCharityDashboard = async (userId: number): Promise<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }> => {
   const user = await findUserById(userId);
   if (!user) throw notFound('User not found.');
@@ -69,14 +76,41 @@ export const getCharityDashboard = async (userId: number): Promise<{ charity: Ch
   let charity: CharityOrganisation | null = null;
 
   if (user.roles.includes('charity_staff') && user.charityId) {
-    // Charity Staff do not own the organisation record. Their access is linked
-    // through users.charity_id, so the dashboard must resolve the organisation
-    // from that association instead of ownerUserId.
+    // Charity Staff do not own the organisation record.
+    // Their access is linked through users.charity_id, so resolve the dashboard
+    // from that charity association instead of ownerUserId.
     charity = (await getCharityById(user.charityId)) ?? null;
   } else {
     const allCharities = await listCharities();
     charity = allCharities.find(c => c.ownerUserId === userId) ?? null;
   }
+
+  const allListings = await listListings();
+  const organisationName = charity?.organisationName ?? '';
+  const listings = charity
+    ? allListings.filter(l => l.charityName.toLowerCase() === organisationName.toLowerCase())
+    : [];
+
+  // Fetch payments for this charity's listings to compute fund statistics.
+  const allPayments: Payment[] = (
+    await Promise.all(listings.map(l => getPaymentsForListing(l.id)))
+  ).flat();
+
+  const paymentsReleased = allPayments.filter(p => p.escrow_state === 'released');
+  const paymentsHeld = allPayments.filter(p => p.escrow_state === 'held');
+
+  const stats: CharityStats = {
+    totalItems: listings.length,
+    activeItems: listings.filter(l => l.status === 'active').length,
+    totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
+    paymentsReceived: paymentsReleased.reduce((sum, p) => sum + p.amount, 0),
+    paymentsPending: paymentsHeld.reduce((sum, p) => sum + p.amount, 0),
+    paymentsReleasedCount: paymentsReleased.length,
+    paymentsHeldCount: paymentsHeld.length,
+  };
+
+  return { charity, listings, stats };
+};
 
   const allListings = await listListings();
   const organisationName = charity?.organisationName ?? '';
