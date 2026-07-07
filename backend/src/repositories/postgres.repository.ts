@@ -16,6 +16,7 @@ import type {
   PasswordResetToken,
   PendingRegistration,
   LoginOtp,
+  EmailChangeRequest,
   SessionRecord,
   UpdateCampaignInput,
   User,
@@ -80,6 +81,17 @@ interface LoginOtpRow {
 interface PasswordResetTokenRow {
   email: string;
   token_hash: string;
+  expires_at: DbDate;
+  attempts: number;
+  created_at: DbDate;
+}
+
+interface EmailChangeRequestRow {
+  user_id: number | string;
+  new_email: string;
+  old_email: string;
+  new_email_otp_hash: string;
+  old_email_otp_hash: string;
   expires_at: DbDate;
   attempts: number;
   created_at: DbDate;
@@ -293,6 +305,17 @@ const mapLoginOtp = (row: LoginOtpRow): LoginOtp => ({
   user_id: Number(row.user_id),
   email: row.email,
   otpHash: row.otp_hash,
+  expiresAt: toDate(row.expires_at),
+  attempts: Number(row.attempts),
+  createdAt: toDate(row.created_at),
+});
+
+const mapEmailChangeRequest = (row: EmailChangeRequestRow): EmailChangeRequest => ({
+  user_id: Number(row.user_id),
+  newEmail: row.new_email,
+  oldEmail: row.old_email,
+  newEmailOtpHash: row.new_email_otp_hash,
+  oldEmailOtpHash: row.old_email_otp_hash,
   expiresAt: toDate(row.expires_at),
   attempts: Number(row.attempts),
   createdAt: toDate(row.created_at),
@@ -597,6 +620,40 @@ const getLoginOtp = async (userId: number): Promise<LoginOtp | undefined> => {
 
 const removeLoginOtp = async (userId: number): Promise<void> => {
   await query('DELETE FROM login_otps WHERE user_id = $1', [userId]);
+};
+
+const saveEmailChangeRequest = async (request: EmailChangeRequest): Promise<void> => {
+  await query(
+    `INSERT INTO email_change_requests (user_id, new_email, old_email, new_email_otp_hash, old_email_otp_hash, expires_at, attempts, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (user_id) DO UPDATE SET
+       new_email = EXCLUDED.new_email,
+       old_email = EXCLUDED.old_email,
+       new_email_otp_hash = EXCLUDED.new_email_otp_hash,
+       old_email_otp_hash = EXCLUDED.old_email_otp_hash,
+       expires_at = EXCLUDED.expires_at,
+       attempts = EXCLUDED.attempts,
+       created_at = EXCLUDED.created_at`,
+    [
+      request.user_id,
+      request.newEmail,
+      request.oldEmail,
+      request.newEmailOtpHash,
+      request.oldEmailOtpHash,
+      request.expiresAt,
+      request.attempts,
+      request.createdAt,
+    ],
+  );
+};
+
+const getEmailChangeRequest = async (userId: number): Promise<EmailChangeRequest | undefined> => {
+  const row = await firstRow<EmailChangeRequestRow>('SELECT * FROM email_change_requests WHERE user_id = $1 LIMIT 1', [userId]);
+  return row ? mapEmailChangeRequest(row) : undefined;
+};
+
+const removeEmailChangeRequest = async (userId: number): Promise<void> => {
+  await query('DELETE FROM email_change_requests WHERE user_id = $1', [userId]);
 };
 
 const addSession = async (record: SessionRecord): Promise<void> => {
@@ -1300,7 +1357,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, auto_bids, payments, bids, listings, campaigns, charities, sessions, pending_registrations, login_otps, password_reset_tokens, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, auto_bids, payments, bids, listings, campaigns, charities, sessions, pending_registrations, login_otps, password_reset_tokens, email_change_requests, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -1321,6 +1378,10 @@ export const postgresRepository: BidForGoodRepository = {
   saveLoginOtp,
   getLoginOtp,
   removeLoginOtp,
+
+  saveEmailChangeRequest,
+  getEmailChangeRequest,
+  removeEmailChangeRequest,
 
   addSession,
   getSession,
