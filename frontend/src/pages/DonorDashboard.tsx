@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
 import {
-  Package, Clock, CheckCircle, Plus, Loader2, AlertCircle,
-  Truck, ExternalLink, RefreshCw, X, Pencil, ImageIcon,
+  Clock, CheckCircle, Plus, Loader2, AlertCircle,
+  Truck, RefreshCw, X,
   DollarSign, FileText, ListOrdered,
 } from 'lucide-react'
 import api from '../services/api'
-import type { Listing, DonorStats, ApiError, DonorListingTrackingResponse } from '../types'
+import type { Listing, DonorStats, ApiError } from '../types'
+import DonorCreateListingForm from './DonorCreateListingForm'
+import DonorManageListingsTab from './DonorManageListingsTab'
 
 // Donor listing with backend-enriched payment/shipping fields
 type DonorListing = Listing & {
@@ -26,16 +27,6 @@ const C = {
 
 const money = (value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-const timeLeftStr = (endTime: string, nowMs: number): string => {
-  const diff = new Date(endTime).getTime() - nowMs
-  if (diff <= 0) return 'Ended'
-  const hours = Math.floor(diff / 3_600_000)
-  const minutes = Math.floor((diff % 3_600_000) / 60_000)
-  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`
-  if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
-}
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Tab = 'my-listings' | 'create-listing' | 'shipping' | 'donation-proceeds'
@@ -45,27 +36,6 @@ interface TabNavItem {
   label: string
   icon: React.ReactNode
   badge?: number
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const statusBadge = (status: string, label?: string) => {
-  const colors = new Map<string, { bg: string; text: string }>([
-    ['draft', { bg: '#F3F4F6', text: '#6B7280' }],
-    ['pending', { bg: '#FEF3C7', text: '#92400E' }],
-    ['active', { bg: '#ECFDF5', text: '#047857' }],
-    ['sold', { bg: '#DBEAFE', text: '#1E40AF' }],
-    ['expired', { bg: '#FEE2E2', text: '#991B1B' }],
-    ['cancelled', { bg: '#FEE2E2', text: '#991B1B' }],
-    ['rejected', { bg: '#FEE2E2', text: '#991B1B' }],
-  ])
-  const style = colors.get(status) ?? colors.get('draft')!
-  return (
-    <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full"
-      style={{ background: style.bg, color: style.text }}>
-      {label || status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
-  )
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -114,39 +84,12 @@ export default function DonorDashboard() {
 
   // Data
   const [listings, setListings] = useState<Listing[]>([])
-  const [trackingDashboard, setTrackingDashboard] = useState<DonorListingTrackingResponse | null>(null)
   const [stats, setStats] = useState<DonorStats | null>(null)
-  const [nowMs, setNowMs] = useState(0)
 
   // UI state
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [page, setPage] = useState(0)
-  const [sortKey, setSortKey] = useState<string>('')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const PAGE_SIZE = 15
-
-  const handleFilterChange = (filter: string) => {
-    setStatusFilter(filter)
-    setPage(0)
-  }
-
-  const handleSort = (key: string) => {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
-    setPage(0)
-  }
-
-  const sortArrow = (key: string) => {
-    if (sortKey !== key) return <span className="ml-1 opacity-20">↕</span>
-    return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
-  }
 
   // Shipping state
   const [shippingUuid, setShippingUuid] = useState<string | null>(null)
@@ -155,9 +98,6 @@ export default function DonorDashboard() {
   const [shippingLoading, setShippingLoading] = useState<string | null>(null)
 
   // ─── Derived data ───────────────────────────────────────────────────────
-
-  const trackingItems = useMemo(() => trackingDashboard?.listings ?? [], [trackingDashboard])
-  const summary = useMemo(() => trackingDashboard?.summary, [trackingDashboard])
 
   const donorListings = listings as DonorListing[]
 
@@ -178,50 +118,6 @@ export default function DonorDashboard() {
     [donorListings],
   )
 
-  const filterOptions = useMemo(() => [
-    { value: 'all', label: 'All', count: summary?.total ?? 0 },
-    { value: 'draft', label: 'Draft', count: summary?.draft ?? 0 },
-    { value: 'pending', label: 'Pending', count: summary?.pending ?? 0 },
-    { value: 'active', label: 'Active', count: summary?.active ?? 0 },
-    { value: 'sold', label: 'Sold', count: summary?.sold ?? 0 },
-    { value: 'expired', label: 'Expired', count: summary?.expired ?? 0 },
-    { value: 'cancelled', label: 'Cancelled', count: summary?.cancelled ?? 0 },
-  ], [summary])
-
-  const filteredTrackingItems = useMemo(() => {
-    const filtered = statusFilter === 'all' ? [...trackingItems] : trackingItems.filter(i => i.status === statusFilter)
-    if (!sortKey) return filtered
-    filtered.sort((a, b) => {
-      let cmp = 0
-      switch (sortKey) {
-        case 'title':
-          cmp = a.title.localeCompare(b.title)
-          break
-        case 'campaign':
-          cmp = (a.charityName ?? '').localeCompare(b.charityName ?? '')
-          break
-        case 'bid':
-          cmp = (a.status === 'active' || a.status === 'sold' ? a.current_bid : 0) -
-                (b.status === 'active' || b.status === 'sold' ? b.current_bid : 0)
-          break
-        case 'status':
-          cmp = a.status.localeCompare(b.status)
-          break
-        default:
-          return 0
-      }
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-    return filtered
-  }, [trackingItems, statusFilter, sortKey, sortDir])
-
-  const paginatedItems = useMemo(() => {
-    const start = page * PAGE_SIZE
-    return filteredTrackingItems.slice(start, start + PAGE_SIZE)
-  }, [filteredTrackingItems, page])
-
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredTrackingItems.length / PAGE_SIZE)), [filteredTrackingItems])
-
   // ─── API calls ─────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -229,25 +125,14 @@ export default function DonorDashboard() {
     setError(null)
     setMessage(null)
     try {
-      const [listingsRes, trackingRes] = await Promise.all([
-        api.get<{ listings: Listing[]; stats: DonorStats }>('/listings/donor').catch(() => ({ data: { listings: [] as Listing[], stats: { total: 0, active: 0, sold: 0, pending: 0, draft: 0, totalRaised: 0 } } })),
-        api.get<DonorListingTrackingResponse>('/listings/mine/tracking').catch(() => ({ data: { generatedAt: '', summary: { total: 0, draft: 0, pending: 0, changes_requested: 0, charity_review: 0, active: 0, sold: 0, shipped: 0, delivered: 0, expired: 0, cancelled: 0, rejected: 0 }, listings: [] } })),
-      ])
-      setListings(listingsRes.data.listings)
-      setStats(listingsRes.data.stats)
-      setTrackingDashboard(trackingRes.data)
+      const res = await api.get<{ listings: Listing[]; stats: DonorStats }>('/listings/donor')
+      setListings(res.data.listings)
+      setStats(res.data.stats)
     } catch (err) {
       setError((err as ApiError).message || 'Failed to load dashboard.')
     } finally {
       setLoading(false)
     }
-  }, [])
-
-  // Tick every 60s for time-relative displays
-  useEffect(() => {
-    const id = window.setTimeout(() => setNowMs(Date.now()), 0)
-    const iv = window.setInterval(() => setNowMs(Date.now()), 60_000)
-    return () => { window.clearTimeout(id); window.clearInterval(iv) }
   }, [])
 
   useEffect(() => { const id = window.setTimeout(() => { void loadData() }, 0); return () => window.clearTimeout(id) }, [loadData])
@@ -300,7 +185,7 @@ export default function DonorDashboard() {
   // ─── Tabs ──────────────────────────────────────────────────────────────
 
   const tabs: TabNavItem[] = [
-    { id: 'my-listings', label: 'My Listings', icon: <ListOrdered className="w-4 h-4" />, badge: trackingItems.length },
+    { id: 'my-listings', label: 'My Listings', icon: <ListOrdered className="w-4 h-4" />, badge: listings.length },
     { id: 'create-listing', label: 'Create Listing', icon: <Plus className="w-4 h-4" /> },
     { id: 'shipping', label: 'Shipping', icon: <Truck className="w-4 h-4" />, badge: shipReadyListings.length },
     { id: 'donation-proceeds', label: 'Donation Proceeds', icon: <DollarSign className="w-4 h-4" /> },
@@ -381,170 +266,21 @@ export default function DonorDashboard() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>My Listings</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>Manage your donated auction items</p>
                 </div>
-                <Link to="/listings/create"
+                <button onClick={() => setActiveTab('create-listing')}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                   style={{ background: C.emerald }}>
                   <Plus className="w-4 h-4" /> Create New Listing
-                </Link>
+                </button>
               </div>
-
-              {/* Filter tabs */}
-              <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-                {filterOptions.map(opt => (
-                  <button key={opt.value} onClick={() => handleFilterChange(opt.value)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap"
-                    style={{
-                      background: statusFilter === opt.value ? C.emerald : C.linen,
-                      color: statusFilter === opt.value ? '#fff' : C.muted,
-                    }}>
-                    {opt.label}
-                    <span className="text-[10px] opacity-70">({opt.count})</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Table */}
-              {paginatedItems.length === 0 ? (
-                <div className="rounded-2xl bg-white p-12 text-center" style={{ border: `1px solid ${C.beige}` }}>
-                  <Package className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
-                  <p className="font-bold" style={{ color: C.slate }}>No listings found</p>
-                  <p className="text-sm mt-1 mb-4" style={{ color: C.muted }}>Create your first auction listing to start raising funds for charity.</p>
-                  <Link to="/listings/create"
-                    className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
-                    style={{ background: C.emerald }}>
-                    <Plus className="w-4 h-4" /> Create Listing
-                  </Link>
-                </div>
-              ) : (
-                <div className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr style={{ background: C.linen }}>
-                          <th className="w-12 px-2 py-3"></th>
-                          <th className="text-left px-4 py-3 font-bold text-[10px] uppercase tracking-widest cursor-pointer select-none hover:opacity-70" style={{ color: C.muted }}
-                            onClick={() => handleSort('title')}>
-                            Title{sortArrow('title')}
-                          </th>
-                          <th className="text-left px-4 py-3 font-bold text-[10px] uppercase tracking-widest cursor-pointer select-none hover:opacity-70" style={{ color: C.muted }}
-                            onClick={() => handleSort('campaign')}>
-                            Campaign{sortArrow('campaign')}
-                          </th>
-                          <th className="text-right px-4 py-3 font-bold text-[10px] uppercase tracking-widest cursor-pointer select-none hover:opacity-70" style={{ color: C.muted }}
-                            onClick={() => handleSort('bid')}>
-                            Current Bid{sortArrow('bid')}
-                          </th>
-                          <th className="text-center px-4 py-3 font-bold text-[10px] uppercase tracking-widest cursor-pointer select-none hover:opacity-70" style={{ color: C.muted }}
-                            onClick={() => handleSort('status')}>
-                            Status{sortArrow('status')}
-                          </th>
-                          <th className="text-center px-4 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Time Left</th>
-                          <th className="text-right px-4 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedItems.map(item => {
-                          const image = item.images?.[0]
-                          const isActive = item.status === 'active'
-                          const isViewable = item.status === 'active'
-                          const timeLeft = isActive && item.end_time ? timeLeftStr(item.end_time, nowMs) : '—'
-                          return (
-                            <tr key={item.uuid ?? item.id} className="border-t" style={{ borderColor: C.beige }}>
-                              <td className="px-2 py-4">
-                                <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden"
-                                  style={{ background: C.linen }}>
-                                  {image ? (
-                                    <img src={image} alt={item.title} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <ImageIcon className="w-5 h-5" style={{ color: C.beige }} />
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-4">
-                                <p className="font-medium" style={{ color: C.slate }}>{item.title}</p>
-                              </td>
-                              <td className="px-4 py-4 text-xs" style={{ color: C.muted }}>
-                                {item.charityName || '—'}
-                              </td>
-                              <td className="px-4 py-4 text-right font-bold font-mono" style={{ color: C.emerald }}>
-                                {isViewable ? money(item.current_bid) : '—'}
-                              </td>
-                              <td className="px-4 py-4 text-center">
-                                {statusBadge(item.status, item.statusLabel)}
-                              </td>
-                              <td className="px-4 py-4 text-center text-xs font-bold"
-                                style={{ color: isActive ? C.slate : C.muted }}>
-                                {timeLeft}
-                              </td>
-                              <td className="px-4 py-4 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  {isViewable && item.uuid && (
-                                    <Link to={`/auctions/${item.uuid}`}
-                                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-                                      style={{ color: C.muted }}
-                                      title="View listing">
-                                      <ExternalLink className="w-3.5 h-3.5" />
-                                    </Link>
-                                  )}
-                                  {(item.canEdit || item.canDelete) && (
-                                    <Link to="/listings/manage"
-                                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-                                      style={{ color: C.muted }}
-                                      title="Edit or manage listing">
-                                      <Pencil className="w-3.5 h-3.5" />
-                                    </Link>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="px-6 py-3 border-t flex items-center justify-between" style={{ borderColor: C.beige }}>
-                    <div className="text-xs" style={{ color: C.muted }}>
-                      <Link to="/listings/manage" className="font-bold underline underline-offset-2" style={{ color: C.emerald }}>
-                        Go to full listing manager →
-                      </Link>
-                      &nbsp;for edit/delete actions
-                    </div>
-                    {totalPages > 1 && (
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-                          className="px-3 py-1 rounded-lg text-xs font-bold disabled:opacity-30 transition-opacity"
-                          style={{ border: `1px solid ${C.beige}`, color: page === 0 ? C.muted : C.slate }}>
-                          Previous
-                        </button>
-                        <span className="text-xs font-medium" style={{ color: C.muted }}>
-                          {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filteredTrackingItems.length)} of {filteredTrackingItems.length}
-                        </span>
-                        <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
-                          className="px-3 py-1 rounded-lg text-xs font-bold disabled:opacity-30 transition-opacity"
-                          style={{ border: `1px solid ${C.beige}`, color: page >= totalPages - 1 ? C.muted : C.slate }}>
-                          Next
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+              <DonorManageListingsTab />
             </div>
           )}
 
           {/* ───────────── CREATE LISTING ───────────── */}
           {activeTab === 'create-listing' && (
-            <div className="rounded-2xl bg-white p-12 text-center" style={{ border: `1px solid ${C.beige}` }}>
-              <Plus className="w-16 h-16 mx-auto mb-4" style={{ color: C.emerald }} />
-              <h2 className="text-2xl font-black mb-2" style={{ color: C.slate }}>Create a New Listing</h2>
-              <p className="text-sm mb-8 max-w-md mx-auto" style={{ color: C.muted }}>
-                Donate an item or experience to a charitable auction campaign. Your listing will be reviewed by an admin before going live.
-              </p>
-              <Link to="/listings/create"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
-                style={{ background: C.emerald }}>
-                <Plus className="w-4 h-4" /> Go to Create Listing
-              </Link>
+            <div>
+              <h1 className="text-2xl font-black mb-6" style={{ color: C.slate }}>Create New Listing</h1>
+              <DonorCreateListingForm onCreated={() => setActiveTab('my-listings')} />
             </div>
           )}
 
