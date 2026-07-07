@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Package, Loader2, AlertCircle, Info,
@@ -8,6 +8,12 @@ import {
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { Listing, CharityStats, ApiError, Campaign } from '../types'
+
+// Listing enriched with payment flags from backend
+interface SoldListingWithPayment extends Listing {
+  payment_released?: boolean
+  payment_held?: boolean
+}
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -117,7 +123,7 @@ export default function CharityDashboard() {
 
   const isOwner = user?.roles?.includes('charity')
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -139,9 +145,9 @@ export default function CharityDashboard() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isOwner])
 
-  useEffect(() => { const id = window.setTimeout(() => { void loadData() }, 0); return () => window.clearTimeout(id) }, [])
+  useEffect(() => { const id = window.setTimeout(() => { void loadData() }, 0); return () => window.clearTimeout(id) }, [loadData])
 
   // ─── Derived data ───────────────────────────────────────────────────────
 
@@ -164,6 +170,18 @@ export default function CharityDashboard() {
   const heldAmount = stats?.paymentsPending ?? 0
   const releasedCount = stats?.paymentsReleasedCount ?? 0
   const heldCount = stats?.paymentsHeldCount ?? 0
+
+  // Sold items with payment state from backend enrichment
+  const soldItems = useMemo(() =>
+    (listings as SoldListingWithPayment[])
+      .filter(l => l.status === 'sold')
+      .map(l => ({
+        ...l,
+        payment_released: l.payment_released === true,
+        payment_held: l.payment_held === true,
+      })),
+    [listings],
+  )
 
   // ─── Loading / Error / Not Registered ──────────────────────────────────
 
@@ -446,43 +464,65 @@ export default function CharityDashboard() {
                 </div>
               </div>
 
-              {/* Per-campaign breakdown */}
+
+
+              {/* Per-item breakdown */}
               <div className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
                 <div className="px-6 py-4 border-b" style={{ borderColor: C.beige }}>
-                  <h2 className="font-bold text-sm" style={{ color: C.slate }}>Per Campaign Breakdown</h2>
+                  <h2 className="font-bold text-sm" style={{ color: C.slate }}>Sold Items</h2>
                 </div>
-                {campaigns.length === 0 ? (
+                {soldItems.length === 0 ? (
                   <div className="px-6 py-8 text-center text-sm" style={{ color: C.muted }}>
-                    No campaigns created yet.
+                    No items have been sold yet.
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr style={{ background: C.linen }}>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Item</th>
                           <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Campaign</th>
-                          <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Total Raised</th>
-                          <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Active Auctions</th>
-                          <th className="text-center px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Status</th>
+                          <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Winning Bid</th>
+                          <th className="text-center px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Payment Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {campaigns.map(c => (
-                          <tr key={c.uuid} className="border-t" style={{ borderColor: C.beige }}>
-                            <td className="px-6 py-4">
-                              <p className="font-medium" style={{ color: C.slate }}>{c.name}</p>
-                            </td>
-                            <td className="px-6 py-4 text-right font-bold font-mono" style={{ color: C.emerald }}>
-                              {money(c.total_raised)}
-                            </td>
-                            <td className="px-6 py-4 text-right font-bold" style={{ color: C.slate }}>
-                              {c.active_auctions}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              {statusPill(c.status)}
-                            </td>
-                          </tr>
-                        ))}
+                        {soldItems.map(l => {
+                          let statusLabel: string
+                          let statusStyle: { bg: string; text: string }
+                          if (l.payment_released) {
+                            statusLabel = 'Released'
+                            statusStyle = { bg: C.emeraldLight, text: C.emerald }
+                          } else if (l.payment_held) {
+                            statusLabel = 'Holding'
+                            statusStyle = { bg: '#FEF3C7', text: '#92400E' }
+                          } else {
+                            statusLabel = 'Pending'
+                            statusStyle = { bg: '#F3F4F6', text: '#6B7280' }
+                          }
+                          return (
+                            <tr key={l.uuid ?? l.id} className="border-t" style={{ borderColor: C.beige }}>
+                              <td className="px-6 py-4">
+                                <p className="font-medium" style={{ color: C.slate }}>{l.title}</p>
+                              </td>
+                              <td className="px-6 py-4 text-xs" style={{ color: C.muted }}>
+                                {l.charityName || '—'}
+                              </td>
+                              <td className="px-6 py-4 text-right font-bold font-mono" style={{ color: C.emerald }}>
+                                {money(l.current_bid)}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full"
+                                  style={{ background: statusStyle.bg, color: statusStyle.text }}>
+                                  {statusLabel === 'Released' && '✅'}
+                                  {statusLabel === 'Holding' && '⏳'}
+                                  {statusLabel === 'Pending' && '⏸'}
+                                  {' '}{statusLabel}
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

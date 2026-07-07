@@ -45,5 +45,6 @@ export const listPublicCampaigns = async (_req: Request, res: Response): Promise
 
 export const charityDashboard = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) return;
-  res.json(await getCharityDashboard(req.user.id));
+  const charityId = req.user.roles.includes('charity_staff') ? req.user.charityId : undefined;
+  res.json(await getCharityDashboard(req.user.id, charityId));
 };

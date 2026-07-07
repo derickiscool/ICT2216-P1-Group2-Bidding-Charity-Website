@@ -62,32 +62,58 @@ export const getApprovedCharities = async (): Promise<CharityOrganisation[]> => 
   return all.filter(c => c.status === 'approved');
 };
 
-export const getCharityDashboard = async (ownerUserId: number): Promise<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }> => {
+export const getCharityDashboard = async (ownerUserId: number, charityId?: number): Promise<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }> => {
   const allCharities = await listCharities();
-  const charity = allCharities.find(c => c.ownerUserId === ownerUserId) ?? null;
+  const charity = charityId
+    ? allCharities.find(c => c.id === charityId) ?? null
+    : allCharities.find(c => c.ownerUserId === ownerUserId) ?? null;
 
   const allListings = await listListings();
   const organisationName = charity?.organisationName ?? '';
   const listings = allListings.filter(l => l.charityName.toLowerCase() === organisationName.toLowerCase());
 
-  // Fetch payments for this charity's listings to compute fund statistics
-  const allPayments: Payment[] = (
-    await Promise.all(listings.map(l => getPaymentsForListing(l.id)))
-  ).flat();
+  // Fetch payments for each sold listing to compute fund statistics and per-item flags
+  const soldListings = listings.filter(l => l.status === 'sold');
+  const paymentResults = await Promise.all(
+    soldListings.map(async (listing) => {
+      const payments = await getPaymentsForListing(listing.id);
+      const released = payments.find(p => p.escrow_state === 'released');
+      const held = payments.find(p => p.escrow_state === 'held');
+      return {
+        listingId: listing.id,
+        isReleased: !!released,
+        isHeld: !!held,
+        releasedAmount: released?.amount ?? 0,
+        heldAmount: held?.amount ?? 0,
+      };
+    }),
+  );
+  const releasedMap = new Map(paymentResults.map(r => [r.listingId, r.isReleased]));
+  const heldMap = new Map(paymentResults.map(r => [r.listingId, r.isHeld]));
 
-  const paymentsReleased = allPayments.filter(p => p.escrow_state === 'released');
-  const paymentsHeld = allPayments.filter(p => p.escrow_state === 'held');
+  // Enrich sold listings with payment flags
+  const enrichedListings = listings.map(l => {
+    if (l.status === 'sold') {
+      const r = paymentResults.find(p => p.listingId === l.id);
+      return {
+        ...l,
+        payment_released: r?.isReleased ?? false,
+        payment_held: r?.isHeld ?? false,
+      };
+    }
+    return l;
+  });
 
   const stats: CharityStats = {
     totalItems: listings.length,
     activeItems: listings.filter(l => l.status === 'active').length,
     totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
-    paymentsReceived: paymentsReleased.reduce((sum, p) => sum + p.amount, 0),
-    paymentsPending: paymentsHeld.reduce((sum, p) => sum + p.amount, 0),
-    paymentsReleasedCount: paymentsReleased.length,
-    paymentsHeldCount: paymentsHeld.length,
+    paymentsReceived: paymentResults.reduce((sum, r) => r.isReleased ? sum + r.releasedAmount : sum, 0),
+    paymentsPending: paymentResults.reduce((sum, r) => r.isHeld ? sum + r.heldAmount : sum, 0),
+    paymentsReleasedCount: paymentResults.filter(r => r.isReleased).length,
+    paymentsHeldCount: paymentResults.filter(r => r.isHeld).length,
   };
-  return { charity, listings, stats };
+  return { charity, listings: enrichedListings, stats };
 };
 
 export interface CharityStats {
