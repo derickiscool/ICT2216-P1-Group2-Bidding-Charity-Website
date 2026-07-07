@@ -17,7 +17,9 @@ const LOCKED_FIELDS = new Set([
 ]);
 
 // `charity_review` is intentionally NOT editable — the listing is locked while the charity reviews it.
-export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'rejected'];
+// `rejected` is intentionally NOT editable — reject is a terminal decision (SFR09). A donor who wants
+// another attempt must create a new listing; the fixable path is `changes_requested` (request-changes).
+export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested'];
 export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'rejected', 'expired', 'cancelled'];
 const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
 
@@ -197,7 +199,7 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
   const isAdmin = req.user?.roles.includes('admin') ?? false;
   if (!isAdmin && !DONOR_EDITABLE_STATUSES.includes(listing.status)) {
     await audit(req, 'LISTING_EDIT_REJECTED_BY_STATUS', { status: listing.status }, 'listing', listing.uuid, req.user?.id);
-    throw forbidden('Only draft, pending, or rejected listings can be edited by the donor.');
+    throw forbidden('Only draft, pending, or changes-requested listings can be edited by the donor.');
   }
 
   if (listing.status === 'active') {
@@ -219,10 +221,10 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
   if (body.condition && ['new', 'like_new', 'good', 'fair'].includes(String(body.condition))) listing.condition = String(body.condition) as Listing['condition'];
   listing.images = buildUpdatedImages(listing, body, req);
 
-  // A donor editing a rejected or changes-requested listing is resubmitting it: move it back
-  // into the admin review queue and clear the stale reviewer note, otherwise the admin pending
-  // list never surfaces it again and the edit is moot.
-  if (!isAdmin && (listing.status === 'rejected' || listing.status === 'changes_requested')) {
+  // A donor editing a changes-requested listing is resubmitting it: move it back into the admin
+  // review queue and clear the stale reviewer note, otherwise the admin pending list never surfaces
+  // it again and the edit is moot. `rejected` is terminal and never reaches here (not editable).
+  if (!isAdmin && listing.status === 'changes_requested') {
     const previousStatus = listing.status;
     listing.status = 'pending';
     listing.review_note = undefined;

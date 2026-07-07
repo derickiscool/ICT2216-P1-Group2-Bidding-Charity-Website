@@ -156,6 +156,34 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
     assert.equal(edit.body.status, 'pending');
   });
 
+  test('reject is terminal — the donor cannot edit or resubmit a rejected listing', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const admin = await loginAs('admin@bidforgood.test');
+
+    const listing = await createDonorListing(donor, 'SFR09 Terminal Reject Item');
+
+    const reject = await postJson(
+      `/api/listings/${listing.uuid}/reject`,
+      { reason: 'Prohibited item — cannot be listed on this platform.' },
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(reject.response.status, 200);
+    assert.equal(reject.body.status, 'rejected');
+
+    // Donor edit must be refused (403) — reject is final, not a resubmit path.
+    const edit = await request(`/api/listings/${listing.uuid}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: donor.cookie, 'x-csrf-token': donor.csrf },
+      body: JSON.stringify({ title: 'SFR09 Terminal Reject Item (sneaky resubmit)' }),
+    });
+    assert.equal(edit.response.status, 403);
+
+    // Status is unchanged — it did NOT bounce back into the admin queue.
+    const mine = await request('/api/listings/mine', { headers: { cookie: donor.cookie } });
+    const found = (mine.body.data as { uuid: string; status: string }[]).find(l => l.uuid === listing.uuid);
+    assert.equal(found?.status, 'rejected');
+  });
+
   test('enforces RBAC and stage ordering on the review endpoints', async () => {
     const donor = await loginAs('donor@bidforgood.test');
     const admin = await loginAs('admin@bidforgood.test');

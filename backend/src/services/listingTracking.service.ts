@@ -101,8 +101,8 @@ const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLab
       return {
         statusLabel: 'Rejected',
         statusMessage: listing.review_note
-          ? `The listing was rejected during review: "${listing.review_note}". You may edit it and resubmit if needed.`
-          : 'The listing was rejected during review. You may edit it and resubmit if needed.',
+          ? `The listing was rejected during review: "${listing.review_note}". This decision is final; to try again, submit a new listing.`
+          : 'The listing was rejected during review. This decision is final; to try again, submit a new listing.',
       };
     case 'cancelled':
       return {
