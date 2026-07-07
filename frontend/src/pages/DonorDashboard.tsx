@@ -6,7 +6,6 @@ import {
 } from 'lucide-react'
 import api from '../services/api'
 import type { Listing, DonorStats, ApiError } from '../types'
-import DonorCreateListingForm from './DonorCreateListingForm'
 import DonorManageListingsTab from './DonorManageListingsTab'
 
 // Donor listing with backend-enriched payment/shipping fields
@@ -29,7 +28,7 @@ const money = (value: number) => `$${value.toLocaleString(undefined, { minimumFr
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Tab = 'my-listings' | 'create-listing' | 'shipping' | 'donation-proceeds'
+type Tab = 'my-listings' | 'shipping' | 'donation-proceeds'
 
 interface TabNavItem {
   id: Tab
@@ -186,7 +185,6 @@ export default function DonorDashboard() {
 
   const tabs: TabNavItem[] = [
     { id: 'my-listings', label: 'My Listings', icon: <ListOrdered className="w-4 h-4" />, badge: listings.length },
-    { id: 'create-listing', label: 'Create Listing', icon: <Plus className="w-4 h-4" /> },
     { id: 'shipping', label: 'Shipping', icon: <Truck className="w-4 h-4" />, badge: shipReadyListings.length },
     { id: 'donation-proceeds', label: 'Donation Proceeds', icon: <DollarSign className="w-4 h-4" /> },
   ]
@@ -217,12 +215,7 @@ export default function DonorDashboard() {
     </div>
   )
 
-  // Separate handler for mobile tabs — navigate to create listing page
   const onTabChangeMobile = (tab: Tab) => {
-    if (tab === 'create-listing') {
-      window.location.href = '/listings/create'
-      return
-    }
     setActiveTab(tab)
   }
 
@@ -230,13 +223,7 @@ export default function DonorDashboard() {
     <div className="min-h-[calc(100vh-64px)]" style={{ background: C.linen }}>
       <div className="flex">
         {/* Desktop sidebar */}
-        <Sidebar tabs={tabs} activeTab={activeTab} onTabChange={(tab) => {
-          if (tab === 'create-listing') {
-            window.location.href = '/listings/create'
-            return
-          }
-          setActiveTab(tab)
-        }} />
+        <Sidebar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
         {/* Main content */}
         <div className="flex-1 min-w-0 px-4 sm:px-6 py-8">
@@ -266,21 +253,13 @@ export default function DonorDashboard() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>My Listings</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>Manage your donated auction items</p>
                 </div>
-                <button onClick={() => setActiveTab('create-listing')}
+                <a href="/listings/create"
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                   style={{ background: C.emerald }}>
                   <Plus className="w-4 h-4" /> Create New Listing
-                </button>
+                </a>
               </div>
               <DonorManageListingsTab />
-            </div>
-          )}
-
-          {/* ───────────── CREATE LISTING ───────────── */}
-          {activeTab === 'create-listing' && (
-            <div>
-              <h1 className="text-2xl font-black mb-6" style={{ color: C.slate }}>Create New Listing</h1>
-              <DonorCreateListingForm onCreated={() => setActiveTab('my-listings')} />
             </div>
           )}
 
