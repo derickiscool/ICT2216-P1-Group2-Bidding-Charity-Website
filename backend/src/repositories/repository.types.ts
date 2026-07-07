@@ -15,6 +15,7 @@ import type {
   PasswordResetToken,
   PendingRegistration,
   LoginOtp,
+  EmailChangeRequest,
   SessionRecord,
   UpdateCampaignInput,
   User,
@@ -51,6 +52,10 @@ export interface BidForGoodRepository {
   saveLoginOtp(otp: LoginOtp): Promise<void>;
   getLoginOtp(userId: number): Promise<LoginOtp | undefined>;
   removeLoginOtp(userId: number): Promise<void>;
+
+  saveEmailChangeRequest(request: EmailChangeRequest): Promise<void>;
+  getEmailChangeRequest(userId: number): Promise<EmailChangeRequest | undefined>;
+  removeEmailChangeRequest(userId: number): Promise<void>;
 
   addSession(record: SessionRecord): Promise<void>;
   getSession(sid: string): Promise<SessionRecord | undefined>;

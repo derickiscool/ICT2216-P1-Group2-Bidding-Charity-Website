@@ -4,7 +4,8 @@ import { createApp } from '../../app';
 import {
   resetRepositoryForTests,
 } from '../../repositories/postgres.repository';
-import { readDevOtpForTest, clearDevOtpForTest } from '../../services/otpDelivery.service';
+import { readDevOtpForTest, clearDevOtpForTest, clearDevPasswordChangeOtpForTest } from '../../services/otpDelivery.service';
+import { clearLoginAttemptCacheForTests } from '../../services/loginAttemptCache.service';
 import { closePool } from '../../utils/db';
 
 export type TestListing = {
@@ -22,7 +23,7 @@ export type ApiResponse = {
   code: string;
   token?: string;
   errors: { password: string };
-  user: { email: string };
+  user: { email: string; contactNumber?: string };
   data: TestListing[];
   id: number;
   uuid: string;
@@ -38,7 +39,12 @@ let baseUrl = '';
 export const startServer = async () => {
   process.env.NODE_ENV = 'test';
   process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-ci';
+  process.env.MAIL_DELIVERY_DISABLED = 'true';
+  delete process.env.LOGIN_ATTEMPT_CACHE;
+  delete process.env.REDIS_URL;
   clearDevOtpForTest();
+  clearDevPasswordChangeOtpForTest();
+  clearLoginAttemptCacheForTests();
   await resetRepositoryForTests();
   const app = createApp();
   server = createServer(app);
@@ -62,6 +68,17 @@ export const request = async (path: string, init: RequestInit = {}) => {
     : ({ message: await response.text() } as ApiResponse);
   return { response, body, setCookie, csrf };
 };
+
+export const putJson = (
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) =>
+  request(path, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
 
 export const postJson = (
   path: string,

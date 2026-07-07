@@ -21,4 +21,13 @@ DB_NAME=bidforgood
 DB_USER=postgres
 DB_PASSWORD=your_password_here
 JWT_SECRET=replace_with_at_least_32_random_characters
+LOGIN_ATTEMPT_CACHE=memory
+```
+
+For a multi-server deployment, use the central Redis-compatible in-memory
+cache for failed-login tracking:
+
+```bash
+LOGIN_ATTEMPT_CACHE=redis
+REDIS_URL=redis://127.0.0.1:6379/0
 ```
