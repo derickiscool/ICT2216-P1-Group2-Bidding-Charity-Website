@@ -79,7 +79,7 @@ export const createManagedStaff = async (req: Request): Promise<PublicUser> => {
   const temporaryPassword = String(req.body.temporaryPassword ?? '');
   if (!isStrongPassword(temporaryPassword)) {
     throw badRequest('Staff input failed validation.', 'VALIDATION_ERROR', {
-      temporaryPassword: 'Temporary password must be 8-128 characters and must not match known breached or common passwords.'
+      temporaryPassword: 'Temporary password must be 8-128 characters and must not match known breached, common, or dictionary passwords.'
     });
   }
 
