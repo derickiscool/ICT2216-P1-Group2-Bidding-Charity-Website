@@ -41,6 +41,82 @@ interface TabNavItem {
   badge?: number
 }
 
+const PAGE_SIZE = 15
+
+// ─── Pagination bar ──────────────────────────────────────────────────────────
+
+function PaginationBar({ page, totalPages, totalItems, onPageChange }: {
+  page: number; totalPages: number; totalItems: number; onPageChange: (p: number) => void
+}) {
+  if (totalPages <= 1) return null
+  return (
+    <div className="flex items-center justify-between px-6 py-3 border-t" style={{ borderColor: C.beige }}>
+      <span className="text-xs" style={{ color: C.muted }}>
+        {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalItems)} of {totalItems}
+      </span>
+      <div className="flex items-center gap-2">
+        <button onClick={() => onPageChange(page - 1)} disabled={page === 0}
+          className="px-3 py-1 rounded-lg text-xs font-bold disabled:opacity-30 transition-opacity"
+          style={{ border: `1px solid ${C.beige}`, color: page === 0 ? C.muted : C.slate }}>
+          Previous
+        </button>
+        <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages - 1}
+          className="px-3 py-1 rounded-lg text-xs font-bold disabled:opacity-30 transition-opacity"
+          style={{ border: `1px solid ${C.beige}`, color: page >= totalPages - 1 ? C.muted : C.slate }}>
+          Next
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Rejection modal ──────────────────────────────────────────────────────────
+
+function RejectModal({ onConfirm, onClose }: {
+  onConfirm: (reason: string) => Promise<void>
+  onClose: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const [loading, setLoading] = useState(false)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.55)' }}
+      onClick={onClose}>
+      <div className="rounded-2xl bg-white w-full max-w-md mx-4 overflow-hidden shadow-xl"
+        style={{ border: `1px solid ${C.beige}` }}
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: C.beige }}>
+          <h2 className="font-black text-base" style={{ color: C.slate }}>Rejection Reason</h2>
+          <button onClick={onClose}><X className="w-5 h-5" style={{ color: C.muted }} /></button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-sm" style={{ color: C.muted }}>
+            Please provide a reason for rejecting this item. This will be visible to the submitter.
+          </p>
+          <textarea value={reason} autoFocus rows={4}
+            onChange={e => setReason(e.target.value)}
+            placeholder="Enter rejection reason..."
+            className="w-full px-3 py-2 text-sm rounded-xl outline-none resize-none"
+            style={{ border: `1px solid ${C.beige}`, background: C.linen, color: C.slate }} />
+        </div>
+        <div className="px-6 pb-5 flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+            style={{ border: `1px solid ${C.beige}`, color: C.slate }}>
+            Cancel
+          </button>
+          <button onClick={async () => { setLoading(true); try { await onConfirm(reason) } finally { setLoading(false) } }}
+            disabled={!reason.trim() || loading}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+            style={{ background: C.danger }}>
+            {loading ? 'Rejecting…' : 'Confirm Reject'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const relativeTime = (timestamp: string): string => {
   const diff = Date.now() - new Date(timestamp).getTime()
   const mins = Math.floor(diff / 60_000)
@@ -110,10 +186,21 @@ export default function AdminPage() {
   const [charityFilter, setCharityFilter] = useState<string>('all')
   const [listingsData, setListingsData] = useState<Listing[]>([])
   const [listingsFilter, setListingsFilter] = useState<string>('pending')
-  const handleListingsFilter = (f: string) => { setListingsFilter(f); setRejectUuid(null) }
-  const [rejectUuid, setRejectUuid] = useState<string | null>(null)
-  const [rejectReason, setRejectReason] = useState('')
+  const handleListingsFilter = (f: string) => { setListingsFilter(f); setListingsPage(0) }
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  // Pagination
+  const [usersPage, setUsersPage] = useState(0)
+  const [charitiesPage, setCharitiesPage] = useState(0)
+  const [listingsPage, setListingsPage] = useState(0)
+  const [auditPage, setAuditPage] = useState(0)
+
+  // Rejection modal
+  const [rejectModal, setRejectModal] = useState<{ type: 'listing' | 'charity'; uuid: string } | null>(null)
+
+  // Audit search
+  const [auditSearch, setAuditSearch] = useState('')
+  const [auditActionFilter, setAuditActionFilter] = useState('all')
 
   const loadData = async () => {
     setLoading(true)
@@ -188,13 +275,13 @@ export default function AdminPage() {
     }
   }
 
-  const handleRejectListing = async (uuid: string) => {
-    setActionLoading(uuid)
+  const handleRejectListing = async (reason: string) => {
+    if (!rejectModal || rejectModal.type !== 'listing') return
+    setActionLoading(rejectModal.uuid)
     try {
-      await api.post(`/listings/${uuid}/reject`, { reason: rejectReason })
-      setListingsData(prev => prev.filter(l => l.uuid !== uuid))
-      setRejectUuid(null)
-      setRejectReason('')
+      await api.post(`/listings/${rejectModal.uuid}/reject`, { reason })
+      setListingsData(prev => prev.filter(l => l.uuid !== rejectModal.uuid))
+      setRejectModal(null)
     } catch (err) {
       setError((err as ApiError).message || 'Failed to reject listing.')
     } finally {
@@ -214,19 +301,69 @@ export default function AdminPage() {
     }
   }
 
-  const handleReviewCharity = async (uuid: string, decision: 'approved' | 'rejected') => {
-    setActionLoading(uuid)
+  const handleRejectCharity = async (reason: string) => {
+    if (!rejectModal || rejectModal.type !== 'charity') return
+    setActionLoading(rejectModal.uuid)
     try {
-      await api.post(`/charities/${uuid}/review`, { decision, reason: decision === 'rejected' ? rejectReason : undefined })
-      setCharities(prev => prev.filter(c => c.uuid !== uuid))
-      setRejectUuid(null)
-      setRejectReason('')
+      await api.post(`/charities/${rejectModal.uuid}/review`, { decision: 'rejected', reason })
+      setCharities(prev => prev.filter(c => c.uuid !== rejectModal.uuid))
+      setRejectModal(null)
     } catch (err) {
-      setError((err as ApiError).message || 'Failed to review charity.')
+      setError((err as ApiError).message || 'Failed to reject charity.')
     } finally {
       setActionLoading(null)
     }
   }
+
+  // Paginated slices
+  const paginatedUsers = useMemo(() => {
+    const start = usersPage * PAGE_SIZE
+    return filteredUsers.slice(start, start + PAGE_SIZE)
+  }, [filteredUsers, usersPage])
+
+  const paginatedCharities = useMemo(() => {
+    const start = charitiesPage * PAGE_SIZE
+    return filteredCharities.slice(start, start + PAGE_SIZE)
+  }, [filteredCharities, charitiesPage])
+
+  const paginatedListings = useMemo(() => {
+    const start = listingsPage * PAGE_SIZE
+    return filteredListings.slice(start, start + PAGE_SIZE)
+  }, [filteredListings, listingsPage])
+
+  // Audits
+  const auditActions = useMemo(() => {
+    const set = new Set(events.map(e => e.action))
+    return ['all', ...Array.from(set).sort()]
+  }, [events])
+
+  const filteredAuditEvents = useMemo(() => {
+    let result = [...events].reverse()
+    if (auditSearch.trim()) {
+      const q = auditSearch.toLowerCase()
+      result = result.filter(e =>
+        e.action.toLowerCase().includes(q) ||
+        `#${e.actorUserId ?? ''}`.includes(q) ||
+        (e.resourceType ?? '').toLowerCase().includes(q) ||
+        (e.resourceId ?? '').toLowerCase().includes(q)
+      )
+    }
+    if (auditActionFilter !== 'all') {
+      result = result.filter(e => e.action === auditActionFilter)
+    }
+    return result
+  }, [events, auditSearch, auditActionFilter])
+
+  const paginatedAuditEvents = useMemo(() => {
+    const start = auditPage * PAGE_SIZE
+    return filteredAuditEvents.slice(start, start + PAGE_SIZE)
+  }, [filteredAuditEvents, auditPage])
+
+  // Reset page when filters change
+  useEffect(() => { const id = window.setTimeout(() => setUsersPage(0), 0); return () => window.clearTimeout(id) }, [searchQuery, roleFilter, statusFilter])
+  useEffect(() => { const id = window.setTimeout(() => setCharitiesPage(0), 0); return () => window.clearTimeout(id) }, [charityFilter])
+  useEffect(() => { const id = window.setTimeout(() => setListingsPage(0), 0); return () => window.clearTimeout(id) }, [listingsFilter])
+  useEffect(() => { const id = window.setTimeout(() => setAuditPage(0), 0); return () => window.clearTimeout(id) }, [auditSearch, auditActionFilter])
 
   const handleToggleUser = async (uuid: string, currentlyActive: boolean) => {
     setToggling(uuid)
@@ -449,7 +586,7 @@ export default function AdminPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredUsers.map(u => (
+                        {paginatedUsers.map(u => (
                           <tr key={u.uuid} className="border-t" style={{ borderColor: C.beige }}>
                             <td className="px-6 py-4">
                               <p className="font-medium" style={{ color: C.slate }}>{u.full_name}</p>
@@ -490,6 +627,7 @@ export default function AdminPage() {
                       </tbody>
                     </table>
                   </div>
+                  <PaginationBar page={usersPage} totalPages={Math.ceil(filteredUsers.length / PAGE_SIZE)} totalItems={filteredUsers.length} onPageChange={setUsersPage} />
                 </div>
               )}
             </div>
@@ -518,7 +656,7 @@ export default function AdminPage() {
                   { value: 'approved', label: 'Approved', count: charities.filter(c => c.status === 'approved').length },
                   { value: 'rejected', label: 'Rejected', count: charities.filter(c => c.status === 'rejected').length },
                 ].map(opt => (
-                  <button key={opt.value} onClick={() => { setCharityFilter(opt.value); setRejectUuid(null) }}
+                  <button key={opt.value} onClick={() => { setCharityFilter(opt.value); setRejectModal(null) }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap"
                     style={{
                       background: charityFilter === opt.value ? C.emerald : C.linen,
@@ -548,7 +686,7 @@ export default function AdminPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredCharities.map(c => (
+                        {paginatedCharities.map(c => (
                           <tr key={c.uuid} className="border-t" style={{ borderColor: C.beige }}>
                             <td className="px-6 py-4">
                               <p className="font-medium" style={{ color: C.slate }}>{c.organisationName}</p>
@@ -562,41 +700,28 @@ export default function AdminPage() {
                             <td className="px-6 py-4 text-right">
                               {c.status === 'pending' ? (
                                 <div className="flex items-center justify-end gap-2">
-                                  {rejectUuid === c.uuid ? (
-                                    <div className="flex items-center gap-2">
-                                      <input type="text" value={rejectReason} autoFocus
-                                        onChange={e => setRejectReason(e.target.value)}
-                                        placeholder="Rejection reason..."
-                                        className="w-40 px-2 py-1 text-xs rounded-lg outline-none"
-                                        style={{ border: `1px solid ${C.beige}` }}
-                                      />
-                                      <button onClick={() => handleReviewCharity(c.uuid, 'rejected')}
-                                        disabled={actionLoading === c.uuid || !rejectReason.trim()}
-                                        className="px-2 py-1 rounded-lg text-[10px] font-bold text-white disabled:opacity-50"
-                                        style={{ background: C.danger }}>
-                                        {actionLoading === c.uuid ? '…' : 'Confirm'}
-                                      </button>
-                                      <button onClick={() => { setRejectUuid(null); setRejectReason('') }}
-                                        className="px-2 py-1 rounded-lg text-[10px] font-bold" style={{ color: C.muted }}>
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <button onClick={() => handleReviewCharity(c.uuid, 'approved')}
-                                        disabled={actionLoading === c.uuid}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                                        style={{ background: C.emerald }}>
-                                        {actionLoading === c.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                                        Approve
-                                      </button>
-                                      <button onClick={() => setRejectUuid(c.uuid)}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-opacity hover:opacity-90"
-                                        style={{ color: C.danger, border: `1px solid ${C.dangerBorder}`, background: C.dangerLight }}>
-                                        Reject
-                                      </button>
-                                    </>
-                                  )}
+                                  <button onClick={async () => {
+                                    setActionLoading(c.uuid)
+                                    try {
+                                      await api.post(`/charities/${c.uuid}/review`, { decision: 'approved' })
+                                      setCharities(prev => prev.filter(x => x.uuid !== c.uuid))
+                                    } catch (err) {
+                                      setError((err as ApiError).message || 'Failed to approve charity.')
+                                    } finally {
+                                      setActionLoading(null)
+                                    }
+                                  }}
+                                    disabled={actionLoading === c.uuid}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                                    style={{ background: C.emerald }}>
+                                    {actionLoading === c.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                    Approve
+                                  </button>
+                                  <button onClick={() => setRejectModal({ type: 'charity', uuid: c.uuid })}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-opacity hover:opacity-90"
+                                    style={{ color: C.danger, border: `1px solid ${C.dangerBorder}`, background: C.dangerLight }}>
+                                    Reject
+                                  </button>
                                 </div>
                               ) : (
                                 <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full"
@@ -613,11 +738,11 @@ export default function AdminPage() {
                       </tbody>
                     </table>
                   </div>
+                  <PaginationBar page={charitiesPage} totalPages={Math.ceil(filteredCharities.length / PAGE_SIZE)} totalItems={filteredCharities.length} onPageChange={setCharitiesPage} />
                 </div>
               )}
             </div>
           )}
-
           {/* ───────────── LISTINGS ───────────── */}
           {activeTab === 'listings' && (
             <div>
@@ -670,7 +795,7 @@ export default function AdminPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredListings.map(l => (
+                        {paginatedListings.map(l => (
                           <tr key={l.uuid ?? l.id} className="border-t" style={{ borderColor: C.beige }}>
                             <td className="px-6 py-4">
                               <p className="font-medium" style={{ color: C.slate }}>{l.title}</p>
@@ -702,32 +827,11 @@ export default function AdminPage() {
                                       {actionLoading === l.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                                       Approve
                                     </button>
-                                    {rejectUuid === l.uuid ? (
-                                      <div className="flex items-center gap-1">
-                                        <input type="text" value={rejectReason} autoFocus
-                                          onChange={e => setRejectReason(e.target.value)}
-                                          placeholder="Reason..."
-                                          className="w-28 px-2 py-1 text-[10px] rounded-lg outline-none"
-                                          style={{ border: `1px solid ${C.beige}` }}
-                                        />
-                                        <button onClick={() => handleRejectListing(l.uuid!)}
-                                          disabled={actionLoading === l.uuid || !rejectReason.trim()}
-                                          className="px-2 py-1 rounded-lg text-[10px] font-bold text-white disabled:opacity-50"
-                                          style={{ background: C.danger }}>
-                                          {actionLoading === l.uuid ? '…' : 'Go'}
-                                        </button>
-                                        <button onClick={() => { setRejectUuid(null); setRejectReason('') }}
-                                          className="px-2 py-1 rounded-lg text-[10px] font-bold" style={{ color: C.muted }}>
-                                          X
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <button onClick={() => setRejectUuid(l.uuid!)}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold"
-                                        style={{ color: C.danger, border: `1px solid ${C.dangerBorder}`, background: C.dangerLight }}>
-                                        Reject
-                                      </button>
-                                    )}
+                                    <button onClick={() => setRejectModal({ type: 'listing', uuid: l.uuid! })}
+                                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold"
+                                      style={{ color: C.danger, border: `1px solid ${C.dangerBorder}`, background: C.dangerLight }}>
+                                      Reject
+                                    </button>
                                   </>
                                 )}
                                 {l.status === 'active' && (
@@ -752,6 +856,7 @@ export default function AdminPage() {
                       </tbody>
                     </table>
                   </div>
+                  <PaginationBar page={listingsPage} totalPages={Math.ceil(filteredListings.length / PAGE_SIZE)} totalItems={filteredListings.length} onPageChange={setListingsPage} />
                 </div>
               )}
             </div>
@@ -772,10 +877,30 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              {events.length === 0 ? (
+              {/* Audit search/filter */}
+              <div className="flex flex-wrap gap-3 mb-6">
+                <input type="text" value={auditSearch}
+                  onChange={e => setAuditSearch(e.target.value)}
+                  placeholder="Search by action, user, resource..."
+                  className="flex-1 min-w-[200px] px-3 py-2 rounded-xl text-sm outline-none"
+                  style={{ border: `1px solid ${C.beige}`, background: '#fff', color: C.slate }}
+                />
+                <select value={auditActionFilter} onChange={e => setAuditActionFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-sm outline-none"
+                  style={{ border: `1px solid ${C.beige}`, background: '#fff', color: C.slate }}>
+                  {auditActions.map(action => (
+                    <option key={action} value={action}>
+                      {action === 'all' ? 'All Action Types' : action}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {filteredAuditEvents.length === 0 ? (
                 <div className="rounded-2xl bg-white p-12 text-center" style={{ border: `1px solid ${C.beige}` }}>
                   <ScrollText className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
-                  <p className="font-bold" style={{ color: C.slate }}>No audit events recorded yet</p>
+                  <p className="font-bold" style={{ color: C.slate }}>No audit events found</p>
+                  <p className="text-sm mt-1" style={{ color: C.muted }}>Try adjusting your search or filters.</p>
                 </div>
               ) : (
                 <div className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
@@ -791,7 +916,7 @@ export default function AdminPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {[...events].reverse().map(e => (
+                        {paginatedAuditEvents.map(e => (
                           <tr key={e.id} className="border-t" style={{ borderColor: C.beige }}>
                             <td className="px-6 py-4 whitespace-nowrap text-xs" style={{ color: C.muted }}>
                               {new Date(e.timestamp).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -815,6 +940,7 @@ export default function AdminPage() {
                       </tbody>
                     </table>
                   </div>
+                  <PaginationBar page={auditPage} totalPages={Math.ceil(filteredAuditEvents.length / PAGE_SIZE)} totalItems={filteredAuditEvents.length} onPageChange={setAuditPage} />
                 </div>
               )}
             </div>
@@ -822,6 +948,17 @@ export default function AdminPage() {
 
         </div>
       </div>
+
+      {/* Rejection modal */}
+      {rejectModal && (
+        <RejectModal
+          onConfirm={async (reason) => {
+            if (rejectModal.type === 'listing') await handleRejectListing(reason)
+            else await handleRejectCharity(reason)
+          }}
+          onClose={() => setRejectModal(null)}
+        />
+      )}
     </div>
   )
 }
