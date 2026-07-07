@@ -9,6 +9,7 @@ import type {
   CharityOrganisation,
   Delivery,
   Listing,
+  ListingStatus,
   Payment,
   PaymentWithListing,
   Receipt,
@@ -142,12 +143,14 @@ interface ListingRow {
   buy_now_price: number | string | null;
   current_bid: number | string;
   bid_count: number;
-  status: 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+  status: ListingStatus;
   start_time: DbDate;
   end_time: DbDate;
   winner_id: number | null;
   charity_name: string;
   min_increment: number | string;
+  review_note: string | null;
+  review_stage: 'admin' | 'charity' | null;
   created_at: DbDate;
 }
 
@@ -188,7 +191,7 @@ interface AutoBidRow {
 interface AutoBidWithListingRow extends AutoBidRow {
   listing_title?: string;
   listing_uuid?: string;
-  listing_status?: 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+  listing_status?: ListingStatus;
   current_bid?: number | string;
   end_time?: DbDate;
 }
@@ -382,6 +385,8 @@ const mapListing = (row: ListingRow): Listing => ({
   winner_id: optionalNumber(row.winner_id),
   charityName: row.charity_name,
   min_increment: Number(row.min_increment),
+  review_note: row.review_note ?? undefined,
+  review_stage: row.review_stage ?? undefined,
   created_at: toIso(row.created_at),
 });
 
@@ -929,8 +934,8 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
     `INSERT INTO listings
        (donor_id, campaign_id, title, description, condition, category, images, starting_price,
         reserve_price, buy_now_price, current_bid, bid_count, status, start_time, end_time,
-        charity_name, min_increment)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, 0, $11, $12, $13, $14, $15)
+        charity_name, min_increment, review_note, review_stage)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, 0, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
       input.donor_id,
@@ -948,6 +953,8 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
       input.end_time,
       input.charityName,
       input.min_increment,
+      input.review_note ?? null,
+      input.review_stage ?? null,
     ],
   );
   if (!row) throw new Error('Failed to create listing.');
@@ -971,7 +978,7 @@ const updateListing = async (listing: Listing): Promise<void> => {
          category = $7, images = $8, starting_price = $9, reserve_price = $10,
          buy_now_price = $11, current_bid = $12, bid_count = $13, status = $14,
          start_time = $15, end_time = $16, winner_id = $17, charity_name = $18,
-         min_increment = $19
+         min_increment = $19, review_note = $20, review_stage = $21
      WHERE id = $1`,
     [
       listing.id,
@@ -993,6 +1000,8 @@ const updateListing = async (listing: Listing): Promise<void> => {
       listing.winner_id ?? null,
       listing.charityName,
       listing.min_increment,
+      listing.review_note ?? null,
+      listing.review_stage ?? null,
     ],
   );
 };
@@ -1015,6 +1024,12 @@ const listActiveListings = async (): Promise<Listing[]> => {
 
 const listPendingListings = async (): Promise<Listing[]> => {
   const rows = await allRows<ListingRow>("SELECT * FROM listings WHERE status = 'pending' ORDER BY created_at DESC, id DESC");
+  return rows.map(mapListing);
+};
+
+// SFR09 stage 2: listings the admin has approved and forwarded to the charity for review.
+const listCharityReviewQueue = async (): Promise<Listing[]> => {
+  const rows = await allRows<ListingRow>("SELECT * FROM listings WHERE status = 'charity_review' ORDER BY created_at DESC, id DESC");
   return rows.map(mapListing);
 };
 
@@ -1445,6 +1460,7 @@ export const postgresRepository: BidForGoodRepository = {
   listListings,
   listActiveListings,
   listPendingListings,
+  listCharityReviewQueue,
   listListingsByDonor,
   listUsers,
 

@@ -142,12 +142,16 @@ CREATE TABLE IF NOT EXISTS listings (
   buy_now_price NUMERIC(12, 2),
   current_bid NUMERIC(12, 2) NOT NULL CHECK (current_bid >= 0),
   bid_count INTEGER NOT NULL DEFAULT 0 CHECK (bid_count >= 0),
-  status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected')),
+  status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'changes_requested', 'charity_review', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected')),
   start_time TIMESTAMPTZ NOT NULL,
   end_time TIMESTAMPTZ NOT NULL,
   winner_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
   charity_name TEXT NOT NULL,
   min_increment NUMERIC(12, 2) NOT NULL CHECK (min_increment > 0),
+  -- SFR09: latest reviewer note (admin reject / request-changes reason) shown to the donor.
+  review_note TEXT,
+  -- SFR09: which stage produced the note — 'admin' (stage 1) or 'charity' (stage 2).
+  review_stage TEXT CHECK (review_stage IN ('admin', 'charity')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT listings_time_order_chk CHECK (end_time > start_time)
 );
@@ -255,10 +259,15 @@ CREATE INDEX IF NOT EXISTS audit_events_actor_user_id_idx ON audit_events (actor
 CREATE INDEX IF NOT EXISTS audit_events_resource_idx ON audit_events (resource_type, resource_id);
 CREATE INDEX IF NOT EXISTS audit_events_timestamp_idx ON audit_events (timestamp DESC);
 
--- Post-sale fulfillment statuses (used by SFR15 shipping flow)
+-- Post-sale fulfillment statuses (SFR15) + SFR09 two-stage review statuses.
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_note TEXT;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_stage TEXT;
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_review_stage_check;
+ALTER TABLE listings ADD CONSTRAINT listings_review_stage_check
+  CHECK (review_stage IS NULL OR review_stage IN ('admin', 'charity'));
 ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_status_check;
 ALTER TABLE listings ADD CONSTRAINT listings_status_check
-  CHECK (status IN ('draft', 'pending', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'));
+  CHECK (status IN ('draft', 'pending', 'changes_requested', 'charity_review', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'));
 
 -- Digital donation receipts — immutable, UNIQUE per payment prevents duplicates
 CREATE TABLE IF NOT EXISTS receipts (
