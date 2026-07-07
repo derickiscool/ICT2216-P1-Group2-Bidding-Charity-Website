@@ -26,6 +26,21 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
   res.status(204).send();
 };
 
+export const requestLoginOtp = async (req: Request, res: Response): Promise<void> => {
+  const result = await authService.requestLoginOtp(String(req.body.email ?? ''), req);
+  res.status(202).json(result);
+};
+
+export const verifyLoginOtp = async (req: Request, res: Response): Promise<void> => {
+  const result = await authService.verifyLoginOtp(
+    String(req.body.email ?? ''),
+    String(req.body.otp ?? ''),
+    req,
+    res
+  );
+  res.json(result);
+};
+
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
   const result = await authService.requestPasswordReset(String(req.body.email ?? ''), req);
   res.json(result);

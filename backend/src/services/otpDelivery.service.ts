@@ -8,6 +8,13 @@ export const sendRegistrationOtp = async (email: string, otp: string): Promise<v
   }
 };
 
+export const sendLoginOtp = async (email: string, otp: string): Promise<void> => {
+  if (process.env.NODE_ENV !== 'production') {
+    devOtpOutbox.set(email, otp);
+    console.info(`[BidForGood DEV LOGIN OTP] email=${email} otp=${otp}`);
+  }
+};
+
 export const sendPasswordResetOtp = async (email: string, otp: string): Promise<void> => {
   if (process.env.NODE_ENV !== 'production') {
     devResetTokenOutbox.set(email, otp);
