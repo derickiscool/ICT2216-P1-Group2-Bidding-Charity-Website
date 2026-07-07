@@ -1,29 +1,64 @@
+import { sendMail } from '../utils/mailer';
+
 const devOtpOutbox = new Map<string, string>();
 const devResetTokenOutbox = new Map<string, string>();
 const devEmailChangeOtpOutbox = new Map<string, string>();
 
 export const sendRegistrationOtp = async (email: string, otp: string): Promise<void> => {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'production') {
+    await sendMail({
+      to: email,
+      subject: 'BidForGood — Your verification code',
+      body: `Hello,\n\nYour BidForGood email verification code is:\n\n    ${otp}\n\nThis code expires in 3 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
+  } else {
     devOtpOutbox.set(email, otp);
     console.info(`[BidForGood DEV OTP] otp=${otp}`);
+    await sendMail({
+      to: email,
+      subject: 'BidForGood — Your verification code',
+      body: `Hello,\n\nYour BidForGood email verification code is:\n\n    ${otp}\n\nThis code expires in 3 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
   }
 };
 
 export const sendLoginOtp = async (email: string, otp: string): Promise<void> => {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'production') {
+    await sendMail({
+      to: email,
+      subject: 'BidForGood — Your login code',
+      body: `Hello,\n\nYour BidForGood login code is:\n\n    ${otp}\n\nThis code expires in 3 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
+  } else {
     devOtpOutbox.set(email, otp);
     console.info(`[BidForGood DEV LOGIN OTP] email=${email} otp=${otp}`);
+    await sendMail({
+      to: email,
+      subject: 'BidForGood — Your login code',
+      body: `Hello,\n\nYour BidForGood login code is:\n\n    ${otp}\n\nThis code expires in 3 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
   }
 };
 
 export const sendPasswordResetOtp = async (email: string, otp: string): Promise<void> => {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'production') {
+    await sendMail({
+      to: email,
+      subject: 'BidForGood — Your password reset code',
+      body: `Hello,\n\nYour BidForGood password reset code is:\n\n    ${otp}\n\nThis code expires in 3 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
+  } else {
     devResetTokenOutbox.set(email, otp);
     console.log('========================================');
     console.log('  PASSWORD RESET OTP');
     console.log(`  email : ${email}`);
     console.log(`  otp   : ${otp}`);
     console.log('========================================');
+    await sendMail({
+      to: email,
+      subject: 'BidForGood — Your password reset code',
+      body: `Hello,\n\nYour BidForGood password reset code is:\n\n    ${otp}\n\nThis code expires in 3 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
   }
 };
 
