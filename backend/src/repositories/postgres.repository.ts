@@ -90,8 +90,9 @@ interface EmailChangeRequestRow {
   user_id: number | string;
   new_email: string;
   old_email: string;
-  new_email_otp_hash: string;
   old_email_otp_hash: string;
+  new_email_otp_hash: string | null;
+  old_email_confirmed: boolean;
   expires_at: DbDate;
   attempts: number;
   created_at: DbDate;
@@ -314,8 +315,9 @@ const mapEmailChangeRequest = (row: EmailChangeRequestRow): EmailChangeRequest =
   user_id: Number(row.user_id),
   newEmail: row.new_email,
   oldEmail: row.old_email,
-  newEmailOtpHash: row.new_email_otp_hash,
   oldEmailOtpHash: row.old_email_otp_hash,
+  newEmailOtpHash: row.new_email_otp_hash,
+  oldEmailConfirmed: row.old_email_confirmed,
   expiresAt: toDate(row.expires_at),
   attempts: Number(row.attempts),
   createdAt: toDate(row.created_at),
@@ -624,13 +626,14 @@ const removeLoginOtp = async (userId: number): Promise<void> => {
 
 const saveEmailChangeRequest = async (request: EmailChangeRequest): Promise<void> => {
   await query(
-    `INSERT INTO email_change_requests (user_id, new_email, old_email, new_email_otp_hash, old_email_otp_hash, expires_at, attempts, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO email_change_requests (user_id, new_email, old_email, old_email_otp_hash, new_email_otp_hash, old_email_confirmed, expires_at, attempts, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (user_id) DO UPDATE SET
        new_email = EXCLUDED.new_email,
        old_email = EXCLUDED.old_email,
-       new_email_otp_hash = EXCLUDED.new_email_otp_hash,
        old_email_otp_hash = EXCLUDED.old_email_otp_hash,
+       new_email_otp_hash = EXCLUDED.new_email_otp_hash,
+       old_email_confirmed = EXCLUDED.old_email_confirmed,
        expires_at = EXCLUDED.expires_at,
        attempts = EXCLUDED.attempts,
        created_at = EXCLUDED.created_at`,
@@ -638,8 +641,9 @@ const saveEmailChangeRequest = async (request: EmailChangeRequest): Promise<void
       request.user_id,
       request.newEmail,
       request.oldEmail,
-      request.newEmailOtpHash,
       request.oldEmailOtpHash,
+      request.newEmailOtpHash,
+      request.oldEmailConfirmed,
       request.expiresAt,
       request.attempts,
       request.createdAt,

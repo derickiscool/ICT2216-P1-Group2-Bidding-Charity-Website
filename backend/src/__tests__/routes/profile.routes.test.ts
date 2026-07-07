@@ -53,7 +53,36 @@ describe('SFR03 — Verified email change (OWASP no-MFA dual confirmation)', () 
     assert.ok(errors.newEmail);
   });
 
-  test('applies the change only after BOTH codes are confirmed, then revokes the session', async () => {
+  test('does not contact the new address until the current address is confirmed (anti-abuse)', async () => {
+    const email = 'echange5@example.com';
+    const newEmail = 'echange5-new@example.com';
+    await registerVerifiedUser({ email, username: 'echange5', full_name: 'E Change Five', password: PASSWORD, roles: ['bidder'] });
+    const { cookie, csrf } = await loginAs(email, PASSWORD);
+    clearDevEmailChangeOtpForTest();
+
+    const requested = await postJson(
+      '/api/users/profile/email',
+      { newEmail, currentPassword: PASSWORD },
+      { cookie, 'x-csrf-token': csrf },
+    );
+    assert.equal(requested.response.status, 202);
+
+    // Only the current address has been mailed at this point.
+    assert.match(String(readDevEmailChangeOtpForTest(email)), /^\d{6}$/);
+    assert.equal(readDevEmailChangeOtpForTest(newEmail), undefined);
+
+    // Confirming the new-email step before the current step is rejected.
+    const premature = await postJson(
+      '/api/users/profile/email/confirm',
+      { newEmailOtp: '123456' },
+      { cookie, 'x-csrf-token': csrf },
+    );
+    assert.equal(premature.response.status, 400);
+    assert.equal(premature.body.code, 'EMAIL_CHANGE_STEP_REQUIRED');
+    assert.equal(readDevEmailChangeOtpForTest(newEmail), undefined);
+  });
+
+  test('applies the change after current then new codes are confirmed, and revokes the session', async () => {
     const email = 'echange3@example.com';
     const newEmail = 'echange3-new@example.com';
     await registerVerifiedUser({ email, username: 'echange3', full_name: 'E Change Three', password: PASSWORD, roles: ['bidder'] });
@@ -66,24 +95,24 @@ describe('SFR03 — Verified email change (OWASP no-MFA dual confirmation)', () 
       { cookie, 'x-csrf-token': csrf },
     );
     assert.equal(requested.response.status, 202);
-
-    const newCode = readDevEmailChangeOtpForTest(newEmail);
     const oldCode = readDevEmailChangeOtpForTest(email);
-    assert.match(String(newCode), /^\d{6}$/);
     assert.match(String(oldCode), /^\d{6}$/);
-    assert.notEqual(newCode, oldCode);
 
-    // Only one code is not enough.
-    const halfway = await postJson(
-      '/api/users/profile/email/confirm',
-      { newEmailOtp: newCode, oldEmailOtp: '000000' },
+    // Step 2: confirm the current address → this triggers the code to the new address.
+    const verified = await postJson(
+      '/api/users/profile/email/verify-current',
+      { oldEmailOtp: oldCode },
       { cookie, 'x-csrf-token': csrf },
     );
-    assert.equal(halfway.response.status, 400);
+    assert.equal(verified.response.status, 202);
+    const newCode = readDevEmailChangeOtpForTest(newEmail);
+    assert.match(String(newCode), /^\d{6}$/);
+    assert.notEqual(newCode, oldCode);
 
+    // Step 3: confirm the new address → change applied.
     const confirmed = await postJson(
       '/api/users/profile/email/confirm',
-      { newEmailOtp: newCode, oldEmailOtp: oldCode },
+      { newEmailOtp: newCode },
       { cookie, 'x-csrf-token': csrf },
     );
     assert.equal(confirmed.response.status, 200);
@@ -99,7 +128,7 @@ describe('SFR03 — Verified email change (OWASP no-MFA dual confirmation)', () 
     assert.equal(newLogin.response.status, 200);
   });
 
-  test('locks the confirmation after too many wrong attempts', async () => {
+  test('locks the current-email step after too many wrong attempts', async () => {
     const email = 'echange4@example.com';
     const newEmail = 'echange4-new@example.com';
     await registerVerifiedUser({ email, username: 'echange4', full_name: 'E Change Four', password: PASSWORD, roles: ['bidder'] });
@@ -112,23 +141,23 @@ describe('SFR03 — Verified email change (OWASP no-MFA dual confirmation)', () 
       { cookie, 'x-csrf-token': csrf },
     );
     assert.equal(requested.response.status, 202);
-    const oldCode = readDevEmailChangeOtpForTest(email);
 
     let lastStatus = 0;
     for (let i = 0; i < 5; i += 1) {
       const attempt = await postJson(
-        '/api/users/profile/email/confirm',
-        { newEmailOtp: '111111', oldEmailOtp: oldCode },
+        '/api/users/profile/email/verify-current',
+        { oldEmailOtp: '111111' },
         { cookie, 'x-csrf-token': csrf },
       );
       lastStatus = attempt.response.status;
     }
     assert.equal(lastStatus, 429);
 
-    // Request is cleared after lockout, so even the real code no longer confirms.
+    // Request is cleared after lockout, so the real code no longer works.
+    const realCode = readDevEmailChangeOtpForTest(email);
     const afterLock = await postJson(
-      '/api/users/profile/email/confirm',
-      { newEmailOtp: '111111', oldEmailOtp: oldCode },
+      '/api/users/profile/email/verify-current',
+      { oldEmailOtp: realCode },
       { cookie, 'x-csrf-token': csrf },
     );
     assert.equal(afterLock.response.status, 400);

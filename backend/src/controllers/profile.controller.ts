@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { changePassword, updateProfile, requestEmailChange, confirmEmailChange } from '../services/profile.service';
+import { changePassword, updateProfile, requestEmailChange, verifyCurrentEmailForChange, confirmEmailChange } from '../services/profile.service';
 import { clearSessionCookie } from '../services/session.service';
 
 export const patchProfile = async (req: Request, res: Response): Promise<void> => {
@@ -14,6 +14,11 @@ export const putPassword = async (req: Request, res: Response): Promise<void> =>
 
 export const postEmailChangeRequest = async (req: Request, res: Response): Promise<void> => {
   const result = await requestEmailChange(req.user!.id, req.body, req);
+  res.status(202).json(result);
+};
+
+export const postEmailChangeVerifyCurrent = async (req: Request, res: Response): Promise<void> => {
+  const result = await verifyCurrentEmailForChange(req.user!.id, req.body, req);
   res.status(202).json(result);
 };
 

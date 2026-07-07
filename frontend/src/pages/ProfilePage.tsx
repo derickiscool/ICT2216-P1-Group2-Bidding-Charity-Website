@@ -367,20 +367,22 @@ export default function ProfilePage() {
 }
 
 /*
-  SFR03 verified email change (OWASP no-MFA dual confirmation).
-  Stage 1 (request): user re-authenticates with their current password and provides
-  the new email → backend sends a 6-digit code to BOTH the current and new address.
-  Stage 2 (confirm): user enters both codes → backend applies the change and revokes
-  all sessions, so on success we log the user out and send them to the login page.
+  SFR03 verified email change (OWASP no-MFA, sequential current-first confirmation).
+  Stage 1 (request):        re-authenticate with current password + new email → a code is
+                            sent to the CURRENT address only.
+  Stage 2 (verify current): enter that code → the new address is proven-safe to contact and
+                            only then receives its own code.
+  Stage 3 (confirm new):    enter the new-address code → backend applies the change and
+                            revokes all sessions, so on success we log out and go to login.
 */
-type EmailStage = 'idle' | 'request' | 'confirm' | 'done'
+type EmailStage = 'idle' | 'request' | 'verifyCurrent' | 'confirmNew' | 'done'
 
 function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; onChanged: () => void }) {
   const [stage, setStage] = useState<EmailStage>('idle')
   const [newEmail, setNewEmail] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
-  const [newEmailOtp, setNewEmailOtp] = useState('')
   const [oldEmailOtp, setOldEmailOtp] = useState('')
+  const [newEmailOtp, setNewEmailOtp] = useState('')
   const [errs, setErrs] = useState<Record<string, string>>({})
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -388,7 +390,7 @@ function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; on
 
   function reset() {
     setStage('idle'); setNewEmail(''); setCurrentPassword('')
-    setNewEmailOtp(''); setOldEmailOtp(''); setErrs({}); setMsg(null)
+    setOldEmailOtp(''); setNewEmailOtp(''); setErrs({}); setMsg(null)
   }
 
   async function submitRequest(e: FormEvent) {
@@ -405,8 +407,8 @@ function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; on
     try {
       setBusy(true)
       await api.post('/users/profile/email', { newEmail: email, currentPassword })
-      setStage('confirm')
-      setMsg({ type: 'success', text: 'We sent a 6-digit code to your current email and another to your new email. Enter both below to confirm.' })
+      setStage('verifyCurrent')
+      setMsg({ type: 'success', text: `We sent a 6-digit code to your current email (${currentEmail}). Enter it below to prove this is your account.` })
     } catch (err) {
       const ae = err as ApiError
       if (ae.errors) setErrs(ae.errors)
@@ -414,17 +416,31 @@ function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; on
     } finally { setBusy(false) }
   }
 
-  async function submitConfirm(e: FormEvent) {
+  async function submitVerifyCurrent(e: FormEvent) {
     e.preventDefault(); setMsg(null); setErrs({})
 
-    const local: Record<string, string> = {}
-    if (!newEmailOtp.trim()) local.newEmailOtp = 'Enter the code sent to your new email.'
-    if (!oldEmailOtp.trim()) local.oldEmailOtp = 'Enter the code sent to your current email.'
-    if (Object.keys(local).length) { setErrs(local); return }
+    if (!oldEmailOtp.trim()) { setErrs({ oldEmailOtp: 'Enter the code sent to your current email.' }); return }
 
     try {
       setBusy(true)
-      await api.post('/users/profile/email/confirm', { newEmailOtp: newEmailOtp.trim(), oldEmailOtp: oldEmailOtp.trim() })
+      await api.post('/users/profile/email/verify-current', { oldEmailOtp: oldEmailOtp.trim() })
+      setStage('confirmNew')
+      setMsg({ type: 'success', text: `Current email confirmed. We've now sent a code to your new email (${newEmail.trim()}). Enter it to finish.` })
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setErrs(ae.errors)
+      else setMsg({ type: 'error', text: ae.message || 'Unable to verify that code right now. Please try again later.' })
+    } finally { setBusy(false) }
+  }
+
+  async function submitConfirmNew(e: FormEvent) {
+    e.preventDefault(); setMsg(null); setErrs({})
+
+    if (!newEmailOtp.trim()) { setErrs({ newEmailOtp: 'Enter the code sent to your new email.' }); return }
+
+    try {
+      setBusy(true)
+      await api.post('/users/profile/email/confirm', { newEmailOtp: newEmailOtp.trim() })
       setStage('done')
       setMsg({ type: 'success', text: 'Your email address has been changed. For security you have been signed out — please log in again with your new email.' })
     } catch (err) {
@@ -435,13 +451,13 @@ function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; on
   }
 
   return (
-    <Card icon={<AtSign className="w-5 h-5" />} title="Change email address" desc="Changing your email requires your password and confirmation from both addresses." accent="mauve">
+    <Card icon={<AtSign className="w-5 h-5" />} title="Change email address" desc="Changing your email requires your password, then confirmation from your current and new addresses in turn." accent="mauve">
       {stage === 'idle' && (
         <div className="space-y-4">
           <Alert msg={msg} />
           <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
-            To protect your account, updating your email needs your current password and a one-time code
-            sent to <strong>both</strong> your current and new addresses.
+            To protect your account, updating your email needs your current password and a one-time code —
+            first to confirm your <strong>current</strong> address, then your <strong>new</strong> one.
           </p>
           <button type="button" onClick={() => { setMsg(null); setStage('request') }}
             className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
@@ -464,21 +480,33 @@ function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; on
             <button type="submit" disabled={busy}
               className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
               style={{ background: busy ? '#6ba88e' : C.emerald, cursor: busy ? 'not-allowed' : 'pointer' }}>
-              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send codes</>}
+              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send code</>}
             </button>
           </div>
         </form>
       )}
 
-      {stage === 'confirm' && (
-        <form onSubmit={submitConfirm} noValidate className="space-y-5">
+      {stage === 'verifyCurrent' && (
+        <form onSubmit={submitVerifyCurrent} noValidate className="space-y-5">
           <Alert msg={msg} />
-          <div className="grid md:grid-cols-2 gap-4">
-            <TextInput label="Code sent to current email" value={oldEmailOtp} error={errs.oldEmailOtp}
-              onChange={e => { setOldEmailOtp(e.target.value); setErrs(p => ({ ...p, oldEmailOtp: '' })) }} autoComplete="one-time-code" />
-            <TextInput label="Code sent to new email" value={newEmailOtp} error={errs.newEmailOtp}
-              onChange={e => { setNewEmailOtp(e.target.value); setErrs(p => ({ ...p, newEmailOtp: '' })) }} autoComplete="one-time-code" />
+          <TextInput label="Code sent to your current email" value={oldEmailOtp} error={errs.oldEmailOtp}
+            onChange={e => { setOldEmailOtp(e.target.value); setErrs(p => ({ ...p, oldEmailOtp: '' })) }} autoComplete="one-time-code" />
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: C.muted, cursor: 'pointer' }}>Cancel</button>
+            <button type="submit" disabled={busy}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+              style={{ background: busy ? '#6ba88e' : C.emerald, cursor: busy ? 'not-allowed' : 'pointer' }}>
+              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Verifying…</> : <><CheckCircle2 className="w-4 h-4" />Verify current email</>}
+            </button>
           </div>
+        </form>
+      )}
+
+      {stage === 'confirmNew' && (
+        <form onSubmit={submitConfirmNew} noValidate className="space-y-5">
+          <Alert msg={msg} />
+          <TextInput label="Code sent to your new email" value={newEmailOtp} error={errs.newEmailOtp}
+            onChange={e => { setNewEmailOtp(e.target.value); setErrs(p => ({ ...p, newEmailOtp: '' })) }} autoComplete="one-time-code" />
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: C.muted, cursor: 'pointer' }}>Cancel</button>
             <button type="submit" disabled={busy}

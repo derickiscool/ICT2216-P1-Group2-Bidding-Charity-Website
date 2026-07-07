@@ -99,10 +99,16 @@ export const changePassword = async (userId: number, input: ChangePasswordInput,
   await audit(req, 'PASSWORD_CHANGED', {}, 'user', user.uuid, user.id);
 };
 
-// SFR03 verified email change (OWASP no-MFA): re-authenticate with the current password,
-// then require BOTH the old and new address to confirm a one-time code before applying.
+// SFR03 verified email change (OWASP no-MFA, sequential current-first confirmation):
+// 1. requestEmailChange     — re-auth with current password; send a code to the CURRENT address only.
+// 2. verifyCurrentEmail...  — confirm that code; ONLY THEN issue a code to the NEW address.
+// 3. confirmEmailChange     — confirm the new-address code; apply the change and revoke all sessions.
+// Deferring contact with the (possibly attacker-chosen) new address until current control is
+// proven is the anti-abuse property this ordering buys over sending both codes up front.
 const EMAIL_CHANGE_TTL_MS = 15 * 60 * 1000;
 const MAX_EMAIL_CHANGE_ATTEMPTS = 5;
+
+const genOtp = (): string => crypto.randomInt(100000, 1000000).toString();
 
 export interface RequestEmailChangeInput {
   newEmail?: unknown;
@@ -136,36 +142,36 @@ export const requestEmailChange = async (userId: number, input: RequestEmailChan
     throw badRequest('Email change failed.', 'VALIDATION_ERROR', { newEmail: 'This email cannot be used.' });
   }
 
-  const newOtp = crypto.randomInt(100000, 1000000).toString();
-  const oldOtp = crypto.randomInt(100000, 1000000).toString();
+  // Only the CURRENT address is contacted at this stage. The new-address code is not
+  // generated until the user proves control of the current inbox (anti-abuse).
+  const oldOtp = genOtp();
   await saveEmailChangeRequest({
     user_id: user.id,
     newEmail,
     oldEmail: normalizeEmail(user.email),
-    newEmailOtpHash: sha256(newOtp),
     oldEmailOtpHash: sha256(oldOtp),
+    newEmailOtpHash: null,
+    oldEmailConfirmed: false,
     expiresAt: new Date(Date.now() + EMAIL_CHANGE_TTL_MS),
     attempts: 0,
     createdAt: new Date(),
   });
 
-  await sendEmailChangeOtp(newEmail, newOtp);
   await sendEmailChangeConfirmOtp(normalizeEmail(user.email), oldOtp);
   await audit(req, 'EMAIL_CHANGE_REQUESTED', { newEmail }, 'user', user.uuid, user.id);
 
-  return { message: 'Verification codes have been sent to both your current and new email addresses.' };
+  return { message: 'A verification code has been sent to your current email address.' };
 };
 
-export interface ConfirmEmailChangeInput {
-  newEmailOtp?: unknown;
+export interface VerifyCurrentEmailInput {
   oldEmailOtp?: unknown;
 }
 
-export const confirmEmailChange = async (userId: number, input: ConfirmEmailChangeInput, req?: Request): Promise<PublicUser> => {
+export const verifyCurrentEmailForChange = async (userId: number, input: VerifyCurrentEmailInput, req?: Request): Promise<{ message: string }> => {
   const user = await findUserById(userId);
   if (!user) throw notFound('User not found.');
 
-  const invalid = badRequest('The verification codes are invalid or have expired. Please start again.', 'EMAIL_CHANGE_OTP_INVALID');
+  const invalid = badRequest('The verification code is invalid or has expired. Please start again.', 'EMAIL_CHANGE_OTP_INVALID');
 
   const request = await getEmailChangeRequest(user.id);
   if (!request || request.expiresAt.getTime() <= Date.now()) {
@@ -177,11 +183,59 @@ export const confirmEmailChange = async (userId: number, input: ConfirmEmailChan
     throw tooManyRequests('Too many verification attempts. Please start again.');
   }
 
-  const newEmailOtp = String(input.newEmailOtp ?? '');
   const oldEmailOtp = String(input.oldEmailOtp ?? '');
-  const newOk = request.newEmailOtpHash === sha256(newEmailOtp);
-  const oldOk = request.oldEmailOtpHash === sha256(oldEmailOtp);
-  if (!newOk || !oldOk) {
+  if (request.oldEmailOtpHash !== sha256(oldEmailOtp)) {
+    request.attempts += 1;
+    await audit(req, 'EMAIL_CHANGE_CURRENT_VERIFY_FAILED', { attempts: request.attempts }, 'user', user.uuid, user.id);
+    if (request.attempts >= MAX_EMAIL_CHANGE_ATTEMPTS) {
+      await removeEmailChangeRequest(user.id);
+      throw tooManyRequests('Too many verification attempts. Please start again.');
+    }
+    await saveEmailChangeRequest(request);
+    throw invalid;
+  }
+
+  // Current inbox proven — now (and only now) issue a code to the new address, with a
+  // fresh attempt budget and window for the second stage.
+  const newOtp = genOtp();
+  request.oldEmailConfirmed = true;
+  request.newEmailOtpHash = sha256(newOtp);
+  request.attempts = 0;
+  request.expiresAt = new Date(Date.now() + EMAIL_CHANGE_TTL_MS);
+  await saveEmailChangeRequest(request);
+
+  await sendEmailChangeOtp(request.newEmail, newOtp);
+  await audit(req, 'EMAIL_CHANGE_CURRENT_VERIFIED', { newEmail: request.newEmail }, 'user', user.uuid, user.id);
+
+  return { message: 'Your current email is confirmed. A verification code has been sent to your new email address.' };
+};
+
+export interface ConfirmEmailChangeInput {
+  newEmailOtp?: unknown;
+}
+
+export const confirmEmailChange = async (userId: number, input: ConfirmEmailChangeInput, req?: Request): Promise<PublicUser> => {
+  const user = await findUserById(userId);
+  if (!user) throw notFound('User not found.');
+
+  const invalid = badRequest('The verification code is invalid or has expired. Please start again.', 'EMAIL_CHANGE_OTP_INVALID');
+
+  const request = await getEmailChangeRequest(user.id);
+  if (!request || request.expiresAt.getTime() <= Date.now()) {
+    if (request) await removeEmailChangeRequest(user.id);
+    throw invalid;
+  }
+  // The new-address code only exists after the current address has been confirmed.
+  if (!request.oldEmailConfirmed || !request.newEmailOtpHash) {
+    throw badRequest('Please confirm your current email address first.', 'EMAIL_CHANGE_STEP_REQUIRED');
+  }
+  if (request.attempts >= MAX_EMAIL_CHANGE_ATTEMPTS) {
+    await removeEmailChangeRequest(user.id);
+    throw tooManyRequests('Too many verification attempts. Please start again.');
+  }
+
+  const newEmailOtp = String(input.newEmailOtp ?? '');
+  if (request.newEmailOtpHash !== sha256(newEmailOtp)) {
     request.attempts += 1;
     await audit(req, 'EMAIL_CHANGE_VERIFY_FAILED', { attempts: request.attempts }, 'user', user.uuid, user.id);
     if (request.attempts >= MAX_EMAIL_CHANGE_ATTEMPTS) {

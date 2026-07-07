@@ -44,8 +44,9 @@ export interface EmailChangeRequest {
   user_id: number;
   newEmail: string;
   oldEmail: string;
-  newEmailOtpHash: string;
   oldEmailOtpHash: string;
+  newEmailOtpHash: string | null;
+  oldEmailConfirmed: boolean;
   expiresAt: Date;
   attempts: number;
   createdAt: Date;
