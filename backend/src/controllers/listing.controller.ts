@@ -4,6 +4,7 @@ import {
   confirmDelivery,
   createListing,
   deleteListing,
+  getAdminListings,
   getDonorListings,
   getPendingListings,
   getPublicListing,
@@ -50,6 +51,11 @@ export const remove = async (req: Request, res: Response): Promise<void> => {
 
 export const pending = async (_req: Request, res: Response): Promise<void> => {
   res.json(await getPendingListings());
+};
+
+export const adminListings = async (req: Request, res: Response): Promise<void> => {
+  const status = req.query.status as string | undefined;
+  res.json(await getAdminListings(status));
 };
 
 export const approve = async (req: Request, res: Response): Promise<void> => {

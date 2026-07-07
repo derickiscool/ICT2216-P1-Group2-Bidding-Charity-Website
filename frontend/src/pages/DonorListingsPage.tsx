@@ -288,6 +288,11 @@ export default function DonorListingsPage() {
     return (
         <div className="min-h-[calc(100vh-64px)] px-6 py-10" style={{ background: C.linen }}>
             <div className="max-w-7xl mx-auto">
+                <nav className="flex items-center gap-2 text-xs font-medium mb-4" style={{ color: C.muted }}>
+                    <Link to="/dashboard" className="hover:underline" style={{ color: C.emerald }}>Dashboard</Link>
+                    <span>/</span>
+                    <span>My Listings</span>
+                </nav>
                 <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-8">
                     <div>
                         <h1 className="text-3xl font-black mt-2" style={{ color: C.slate }}>My Auction Listings</h1>

@@ -99,6 +99,7 @@ export interface CharityOrganisation {
   reviewedAt?: string;
   rejectionReason?: string;
   created_at: string;
+  ownerEmail?: string;
 }
 
 export type ListingStatus = 'draft' | 'pending' | 'changes_requested' | 'charity_review' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
@@ -198,6 +199,10 @@ export interface AutoBidWithListing extends AutoBidSetting {
 export interface BidWithListing extends Bid {
   listingTitle?: string;
   listingUuid?: string;
+  currentBid?: number;
+  winnerId?: number;
+  endTime?: string;
+  listingStatus?: ListingStatus;
 }
 
 export interface Delivery {
@@ -251,6 +256,7 @@ export interface PaymentWithListing extends Payment {
   listing_title: string;
   charity_name: string;
   has_shipping: boolean;
+  listing_image?: string;
 }
 
 export interface PasswordResetToken {

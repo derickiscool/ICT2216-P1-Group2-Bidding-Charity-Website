@@ -49,6 +49,7 @@ export const {
   listListings,
   listActiveListings,
   listPendingListings,
+  listListingsByStatus,
   listCharityReviewQueue,
   listListingsByDonor,
   listUsers,

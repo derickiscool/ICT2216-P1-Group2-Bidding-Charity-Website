@@ -90,6 +90,7 @@ export interface BidForGoodRepository {
   listListings(): Promise<Listing[]>;
   listActiveListings(): Promise<Listing[]>;
   listPendingListings(): Promise<Listing[]>;
+  listListingsByStatus(status?: string): Promise<Listing[]>;
   listCharityReviewQueue(): Promise<Listing[]>;
   listListingsByDonor(donorId: number): Promise<Listing[]>;
 

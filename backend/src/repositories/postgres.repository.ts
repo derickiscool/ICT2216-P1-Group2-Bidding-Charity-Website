@@ -126,6 +126,7 @@ interface CharityRow {
   reviewed_at: DbDate | null;
   rejection_reason: string | null;
   created_at: DbDate;
+  owner_email?: string;
 }
 
 interface ListingRow {
@@ -217,6 +218,7 @@ interface PaymentWithListingRow extends PaymentRow {
   listing_uuid?: string;
   charity_name?: string;
   has_shipping?: boolean;
+  listing_image?: string;
 }
 
 interface AuditEventRow {
@@ -362,6 +364,7 @@ const mapCharity = (row: CharityRow): CharityOrganisation => ({
   reviewedAt: optionalIso(row.reviewed_at),
   rejectionReason: row.rejection_reason ?? undefined,
   created_at: toIso(row.created_at),
+  ownerEmail: row.owner_email ?? undefined,
 });
 
 const mapListing = (row: ListingRow): Listing => ({
@@ -455,6 +458,7 @@ const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing =
   listing_title: row.listing_title ?? '',
   charity_name: row.charity_name ?? '',
   has_shipping: row.has_shipping ?? false,
+  listing_image: row.listing_image ?? undefined,
 });
 
 const mapReceipt = (row: ReceiptRow): Receipt => ({
@@ -746,7 +750,12 @@ const getCharityByOwnerUserId = async (ownerUserId: number): Promise<CharityOrga
 };
 
 const listCharities = async (): Promise<CharityOrganisation[]> => {
-  const rows = await allRows<CharityRow>('SELECT * FROM charities ORDER BY created_at DESC, id DESC');
+  const rows = await allRows<CharityRow>(
+    `SELECT c.*, u.email AS owner_email
+     FROM charities c
+     LEFT JOIN users u ON c.owner_user_id = u.id
+     ORDER BY c.created_at DESC, c.id DESC`
+  );
   return rows.map(mapCharity);
 };
 
@@ -1011,6 +1020,15 @@ const listListings = async (): Promise<Listing[]> => {
   return rows.map(mapListing);
 };
 
+const listListingsByStatus = async (status?: string): Promise<Listing[]> => {
+  if (!status) return listListings();
+  const rows = await allRows<ListingRow>(
+    'SELECT * FROM listings WHERE status = $1 ORDER BY created_at DESC, id DESC',
+    [status],
+  );
+  return rows.map(mapListing);
+};
+
 const listActiveListings = async (): Promise<Listing[]> => {
   const rows = await allRows<ListingRow>(`
     SELECT l.* FROM listings l
@@ -1070,17 +1088,26 @@ const getBidsForListing = async (listingId: number): Promise<Bid[]> => {
 interface BidWithListingRow extends BidRow {
   listing_title?: string;
   listing_uuid?: string;
+  current_bid?: number;
+  winner_id?: number;
+  end_time?: DbDate;
+  listing_status?: string;
 }
 
 const mapBidWithListing = (row: BidWithListingRow): BidWithListing => ({
   ...mapBid(row),
   listingTitle: row.listing_title ?? undefined,
   listingUuid: row.listing_uuid ?? undefined,
+  currentBid: row.current_bid != null ? Number(row.current_bid) : undefined,
+  winnerId: row.winner_id != null ? Number(row.winner_id) : undefined,
+  endTime: row.end_time ? toIso(row.end_time) : undefined,
+  listingStatus: (row.listing_status ?? undefined) as ListingStatus | undefined,
 });
 
 const getBidsByBidder = async (bidderId: number): Promise<BidWithListing[]> => {
   const rows = await allRows<BidWithListingRow>(
-    `SELECT b.*, l.title AS listing_title, l.uuid AS listing_uuid
+    `SELECT b.*, l.title AS listing_title, l.uuid AS listing_uuid,
+            l.current_bid, l.winner_id, l.end_time, l.status AS listing_status
      FROM bids b
      LEFT JOIN listings l ON b.listing_id = l.id
      WHERE b.bidder_id = $1
@@ -1282,7 +1309,8 @@ const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListin
        l.uuid AS listing_uuid,
        l.title AS listing_title,
        l.charity_name AS charity_name,
-       (d.tracking_number IS NOT NULL) AS has_shipping
+       (d.tracking_number IS NOT NULL) AS has_shipping,
+       l.images[1] AS listing_image
      FROM payments p
      INNER JOIN listings l ON l.id = p.listing_id
      LEFT JOIN deliveries d ON d.listing_id = p.listing_id
@@ -1460,6 +1488,7 @@ export const postgresRepository: BidForGoodRepository = {
   listListings,
   listActiveListings,
   listPendingListings,
+  listListingsByStatus,
   listCharityReviewQueue,
   listListingsByDonor,
   listUsers,

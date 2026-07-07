@@ -5,6 +5,7 @@ import { requireCsrf } from '../middleware/csrf.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 import { uploadListingImages } from '../middleware/upload.middleware';
 import {
+  adminListings,
   approve,
   confirmDeliveryHandler,
   create,
@@ -32,6 +33,7 @@ router.get('/donor', asyncHandler(authenticate), requireRole('donor', 'admin'), 
 router.get('/mine/tracking', asyncHandler(authenticate), requireRole('donor', 'admin'), asyncHandler(listMineTracking));
 router.get('/mine', asyncHandler(authenticate), requireRole('donor', 'admin'), asyncHandler(listMine));
 router.get('/admin/pending', asyncHandler(authenticate), requireRole('admin'), asyncHandler(pending));
+router.get('/admin/all', asyncHandler(authenticate), requireRole('admin'), asyncHandler(adminListings));
 router.get('/charity/review', asyncHandler(authenticate), requireRole('charity', 'charity_staff'), asyncHandler(listCharityReviewListings));
 
 // Separation of duties: only donors may create listings. Admins review them (approve/reject/
