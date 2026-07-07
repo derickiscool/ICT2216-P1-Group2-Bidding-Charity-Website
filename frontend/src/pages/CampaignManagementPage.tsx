@@ -48,7 +48,7 @@ type CampaignFormErrors = Partial<Record<CampaignField | 'image_file', string>>
 
 const emptyForm: CampaignForm = { name: '', description: '', end_date: '', image_file: null, image_preview_url: '' }
 
-const CAMPAIGNS_PER_PAGE = 6
+const CAMPAIGNS_PER_PAGE = 4
 
 const END_DATE_HELP_TEXT =
   'Optional. If selected, the campaign stays active until 11:59 PM Singapore time on that date. Leave blank to keep it open until manually closed.'
@@ -202,11 +202,6 @@ export default function CampaignManagementPage() {
     const start = (safeCurrentPage - 1) * CAMPAIGNS_PER_PAGE
     return filteredCampaigns.slice(start, start + CAMPAIGNS_PER_PAGE)
   }, [filteredCampaigns, safeCurrentPage])
-
-  const activeCount = useMemo(() => campaigns.filter((c) => c.status === 'active').length, [campaigns])
-  const closedCount = campaigns.length - activeCount
-  const totalRaised = useMemo(() => campaigns.reduce((sum, c) => sum + c.total_raised, 0), [campaigns])
-  const linkedAuctionCount = useMemo(() => campaigns.reduce((sum, c) => sum + c.active_auctions, 0), [campaigns])
 
   function updateCreateField(field: CampaignField, value: string) {
     setCreateForm((prev) => updateKnownField(prev, field, value))
@@ -369,8 +364,6 @@ export default function CampaignManagementPage() {
         {message && <Alert msg={message} />}
 
         <div className="space-y-6 mt-6">
-          <OverviewCard total={campaigns.length} active={activeCount} closed={closedCount} totalRaised={totalRaised} linkedAuctions={linkedAuctionCount} />
-
           <Card icon={<Plus className="w-5 h-5" />} title="Create campaign" desc="Set up a fundraising campaign that auction listings can support.">
             <form onSubmit={saveCreateCampaign} noValidate className="space-y-5">
               <TextInput label="Campaign name" value={createForm.name} error={createErrors.name} disabled={!canManageCampaigns || creating} autoComplete="off" placeholder="e.g. Build Schools in Rural Communities" onChange={(e) => updateCreateField('name', e.target.value)} />
@@ -446,7 +439,7 @@ function CampaignGrid({ campaigns, canManageCampaigns, confirmCloseId, closingId
   }
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {campaigns.map((campaign) => (
         <CampaignCard key={campaign.uuid} campaign={campaign} canManageCampaigns={canManageCampaigns} isConfirmingClose={confirmCloseId === campaign.uuid} isClosing={closingId === campaign.uuid} onEdit={onEdit} onAskClose={onAskClose} onCancelClose={onCancelClose} onConfirmClose={onConfirmClose} />
       ))}
@@ -476,8 +469,33 @@ function CampaignCard({ campaign, canManageCampaigns, isConfirmingClose, isClosi
 
       <div className="flex items-start justify-between gap-3 mt-4">
         <div className="min-w-0 flex-1">
-          <h3 className="font-bold text-base leading-snug break-words" style={{ color: C.slate, overflowWrap: 'anywhere' }}>{campaign.name}</h3>
-          <p className="text-sm leading-relaxed mt-3 break-words" style={{ color: C.muted, overflowWrap: 'anywhere' }}>{campaign.description}</p>
+          <h3
+            className="font-bold text-base leading-snug break-words"
+            style={{
+              color: C.slate,
+              overflowWrap: 'anywhere',
+              display: '-webkit-box',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 2,
+              overflow: 'hidden',
+            }}
+          >
+            {campaign.name}
+          </h3>
+
+          <p
+            className="text-sm leading-relaxed mt-3 break-words"
+            style={{
+              color: C.muted,
+              overflowWrap: 'anywhere',
+              display: '-webkit-box',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 3,
+              overflow: 'hidden',
+            }}
+          >
+            {campaign.description}
+          </p>
         </div>
         <StatusBadge status={campaign.status} />
       </div>
@@ -560,31 +578,6 @@ function EditCampaignModal({ campaign, form, errors, saving, onClose, onSave, on
     </div>
   )
 }
-
-function OverviewCard({ total, active, closed, totalRaised, linkedAuctions }: { total: number; active: number; closed: number; totalRaised: number; linkedAuctions: number }) {
-  // Full-width summary keeps the campaign records area wide, while preserving
-  // the useful dashboard numbers that were previously shown in the side panel.
-  return (
-    <section className="bg-white rounded-2xl shadow-sm p-6" style={{ border: `1px solid ${C.beige}` }}>
-      <div className="flex items-center gap-3 mb-5">
-        <IconBox><HeartHandshake className="w-5 h-5" /></IconBox>
-        <div>
-          <h2 className="text-base font-bold" style={{ color: C.slate }}>Campaign overview</h2>
-          <p className="text-xs" style={{ color: C.muted }}>For your organisation</p>
-        </div>
-      </div>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
-        <StatusTile label="Total campaigns" value={String(total)} color={C.slate} />
-        <StatusTile label="Active campaigns" value={String(active)} color={C.emerald} />
-        <StatusTile label="Closed campaigns" value={String(closed)} color={C.danger} />
-        <StatusTile label="Linked active auctions" value={String(linkedAuctions)} color={C.blue} />
-        <StatusTile label="Total raised" value={formatMoney(totalRaised)} color={C.emeraldDark} />
-      </div>
-    </section>
-  )
-}
-
-
 
 function PaginationControls({ currentPage, totalPages, totalItems, pageSize, onPageChange }: { currentPage: number; totalPages: number; totalItems: number; pageSize: number; onPageChange: (page: number) => void }) {
   const startItem = (currentPage - 1) * pageSize + 1
@@ -833,13 +826,4 @@ function MetaItem({ icon, label, value }: { icon: ReactNode; label: string; valu
 
 function IconBox({ children }: { children: ReactNode }) {
   return <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.emeraldLight, color: C.emerald }}>{children}</div>
-}
-
-function StatusTile({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="rounded-2xl p-4" style={{ background: C.linen, border: `1px solid ${C.beige}` }}>
-      <p className="text-xs uppercase tracking-wide" style={{ color: C.muted }}>{label}</p>
-      <p className="text-xl font-bold mt-1 break-words" style={{ color, overflowWrap: 'anywhere' }}>{value}</p>
-    </div>
-  )
 }
