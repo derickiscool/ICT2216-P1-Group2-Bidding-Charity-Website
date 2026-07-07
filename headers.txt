@@ -1,0 +1,23 @@
+HTTP/1.1 200 OK
+X-Powered-By: Express
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: no-referrer
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'
+Access-Control-Allow-Origin: http://localhost:5173
+Vary: Origin
+Access-Control-Allow-Credentials: true
+RateLimit-Policy: 120;w=60
+RateLimit-Limit: 120
+RateLimit-Remaining: 118
+RateLimit-Reset: 36
+Set-Cookie: bfg_session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwic2lkIjoiOGM3YWE3MTQtY2UzNi00MDk3LTkwZTItNzhlODZkOTU4OWVlIiwicm9sZSI6ImFkbWluIiwicm9sZXMiOlsiYWRtaW4iXSwianRpIjoidVd3VGZYeVV6Rm1OVlF2X2xza0xUX3VHbV9ZV0htUGtkUlhxbkpEdmp1byIsImlhdCI6MTc4MzI0NDQ2OSwiZXhwIjoxNzgzMjQ1MzY5LCJhdWQiOiJiaWRmb3Jnb29kLXdlYiIsImlzcyI6ImJpZGZvcmdvb2QifQ.GYlLJJj_eudn3VuJij0YwfN_8FjpeN1en4Wq3lh3Htc; Max-Age=900; Path=/; Expires=Sun, 05 Jul 2026 09:56:09 GMT; HttpOnly; SameSite=Strict
+X-CSRF-Token: WvfWzJS9MNPy7hyU-aFkQmkKoWzNOTg5yPKwzCz0GN4
+Content-Type: application/json; charset=utf-8
+Content-Length: 356
+ETag: W/"164-P5TkmNvDTiAlYBJi2ybGWXuzMcA"
+Date: Sun, 05 Jul 2026 09:41:09 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
