@@ -187,7 +187,6 @@ export default function LoginPage() {
                   <p className="font-semibold" style={{ color: C.slate }}>OTP Code Sent</p>
                   <p className="text-xs mt-1" style={{ color: C.muted }}>
                     We sent a 6-digit OTP code to <span className="font-medium">{email}</span>.
-                    For development, the code is printed in your backend console.
                   </p>
                   <button type="button" onClick={() => { setStep('request'); setError(null); setInfoMsg(null); setOtp('') }}
                     className="text-xs font-semibold underline mt-2" style={{ color: C.emerald }}>

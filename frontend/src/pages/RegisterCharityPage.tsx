@@ -1,4 +1,3 @@
-// File: frontend/src/pages/RegisterCharityPage.tsx
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Eye, EyeOff, AlertCircle, Loader2, Building2, ShieldCheck, UploadCloud, FileText, X } from 'lucide-react'
@@ -17,22 +16,32 @@ const C = {
 function inputSt(hasErr: boolean, extra?: React.CSSProperties): React.CSSProperties {
   return {
     width: '100%', padding: '10px 14px', borderRadius: '12px',
-    border: `1px solid ${hasErr ? C.danger : C.beige}`,
+    border: `1.5px solid ${hasErr ? C.danger : C.beige}`,
     background: C.white, color: C.slate, fontSize: '14px', outline: 'none',
     ...extra,
   }
 }
+
+function pwdStrength(p: string) {
+  if (!p) return { score: 0, label: '', color: '' }
+  if (p.length < 8) return { score: 1, label: 'Too short', color: '#B91C1C' }
+  if (p.length < 12) return { score: 2, label: 'Acceptable length', color: '#D97706' }
+  if (p.length < 16) return { score: 3, label: 'Good length', color: C.emerald }
+  return { score: 4, label: 'Strong length', color: '#065f46' }
+}
+
 
 export default function RegisterCharityPage() {
   const { register, verifyRegistration, login, isLoading } = useAuthStore()
 
   const [form, setForm] = useState({ 
     org_name: '', description: '', 
-    full_name: '', email: '', username: '', password: '' 
+    full_name: '', email: '', password: '', confirm: '' 
   })
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [showPwd, setShowPwd] = useState(false)
+  const [showCfm, setShowCfm] = useState(false)
   
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [globalErr, setGlobalErr] = useState<string | null>(null)
@@ -48,6 +57,8 @@ export default function RegisterCharityPage() {
     setForm(prev => ({ ...prev, [f]: e.target.value }))
     setErrors(prev => ({ ...prev, [f]: '' }))
   }
+
+  const strength = pwdStrength(form.password)
 
   // File Upload Handlers
   const handleFileSelect = (selectedFile: File) => {
@@ -94,8 +105,8 @@ export default function RegisterCharityPage() {
     
     if (!form.full_name.trim()) e.full_name = 'Representative name is required.'
     if (!form.email.trim()) e.email = 'Email is required.'
-    if (!form.username.trim()) e.username = 'Username is required.'
     if (form.password.length < 8) e.password = 'Min 8 characters required.'
+    if (form.password !== form.confirm) e.confirm = 'Passwords do not match.'
     
     setErrors(e); return Object.keys(e).length === 0
   }
@@ -106,10 +117,12 @@ export default function RegisterCharityPage() {
     
     try {
       // 1. Create User Account
+      const emailPrefix = form.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
+      const generatedUsername = (emailPrefix.length < 3 ? (emailPrefix + 'user') : emailPrefix).slice(0, 30) + Math.floor(1000 + Math.random() * 9000);
       const message = await register({ 
         full_name: form.full_name, 
         email: form.email, 
-        username: form.username, 
+        username: generatedUsername, 
         password: form.password, 
         roles: ['charity'] // Must match backend required roles for /charities/register
       })
@@ -118,8 +131,14 @@ export default function RegisterCharityPage() {
       setStep('otp') // Move to OTP verification step
     } catch (err) {
       const ae = err as ApiError
-      if (ae.errors) setErrors(ae.errors);
-      else setGlobalErr(ae.message || 'Registration failed. Please try again.')
+      if (ae.errors) {
+        setErrors(ae.errors);
+        if (ae.errors.username) {
+          setGlobalErr(`Registration error (Username): ${ae.errors.username}`);
+        }
+      } else {
+        setGlobalErr(ae.message || 'Registration failed. Please try again.');
+      }
     }
   }
 
@@ -182,11 +201,8 @@ export default function RegisterCharityPage() {
           <ShieldCheck className="w-7 h-7" style={{ color: C.emerald }} />
         </div>
         <h2 className="text-xl font-bold text-center mb-2" style={{ color: C.slate }}>Verify your email</h2>
-        <p className="text-sm text-center mb-2" style={{ color: C.muted }}>
+        <p className="text-sm text-center mb-6" style={{ color: C.muted }}>
           Enter the 6-digit OTP sent to <span className="font-medium" style={{ color: C.slate }}>{form.email}</span>.
-        </p>
-        <p className="text-xs text-center mb-6" style={{ color: C.beige }}>
-          For local development, the OTP is printed in the backend console.
         </p>
 
         {notice && <div className="mb-4 rounded-xl px-4 py-3 text-xs" style={{ background: C.emeraldLight, color: '#065F46' }}>{notice}</div>}
@@ -208,6 +224,9 @@ export default function RegisterCharityPage() {
             className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all"
             style={{ background: isSubmitting ? '#6ba88e' : C.emerald, cursor: isSubmitting ? 'not-allowed' : 'pointer' }}>
             {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting Application...</> : 'Verify & Submit'}
+          </button>
+          <button type="button" className="w-full text-sm font-medium mt-2" style={{ color: C.muted }} onClick={() => setStep('form')}>
+            Back to registration form
           </button>
         </form>
       </div>
@@ -302,8 +321,8 @@ export default function RegisterCharityPage() {
             {/* Representative Details Section */}
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b pb-2" style={{ color: C.slate, borderColor: C.beige }}>Representative Account</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 space-y-0">
-                <div className="md:col-span-2">
+              <div className="space-y-4">
+                <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Full Name</label>
                   <input type="text" value={form.full_name} onChange={set('full_name')} style={inputSt(!!errors.full_name)} />
                   {errors.full_name && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.full_name}</p>}
@@ -314,11 +333,6 @@ export default function RegisterCharityPage() {
                   {errors.email && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.email}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Username</label>
-                  <input type="text" value={form.username} onChange={set('username')} style={inputSt(!!errors.username)} />
-                  {errors.username && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.username}</p>}
-                </div>
-                <div className="md:col-span-2">
                   <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Password</label>
                   <div className="relative">
                     <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={set('password')} style={inputSt(!!errors.password, { paddingRight: '42px' })} />
@@ -326,7 +340,28 @@ export default function RegisterCharityPage() {
                       {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {form.password && (
+                    <div className="mt-2">
+                      <div className="flex gap-1 mb-1">
+                        {[1, 2, 3, 4].map(i => (
+                          <div key={i} className="h-1 flex-1 rounded-full transition-colors"
+                            style={{ background: i <= strength.score ? strength.color : '#E5E7EB' }} />
+                        ))}
+                      </div>
+                      <p className="text-xs font-medium" style={{ color: strength.color }}>{strength.label}</p>
+                    </div>
+                  )}
                   {errors.password && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.password}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Confirm Password</label>
+                  <div className="relative">
+                    <input type={showCfm ? 'text' : 'password'} value={form.confirm} onChange={set('confirm')} style={inputSt(!!errors.confirm, { paddingRight: '42px' })} />
+                    <button type="button" onClick={() => setShowCfm(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
+                      {showCfm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {errors.confirm && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.confirm}</p>}
                 </div>
               </div>
             </div>
