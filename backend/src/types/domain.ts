@@ -79,7 +79,7 @@ export interface CharityOrganisation {
   created_at: string;
 }
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
 export interface Listing {
   id: number;
   uuid: string;
@@ -110,6 +110,8 @@ export interface DonorListingStatusSummary {
   pending: number;
   active: number;
   sold: number;
+  shipped: number;
+  delivered: number;
   expired: number;
   cancelled: number;
   rejected: number;

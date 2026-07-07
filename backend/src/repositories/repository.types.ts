@@ -8,9 +8,9 @@ import type {
   CharityOrganisation,
   Delivery,
   Listing,
-  Receipt,
   Payment,
   PaymentWithListing,
+  Receipt,
   NewCampaignInput,
   PasswordResetToken,
   PendingRegistration,
@@ -28,6 +28,7 @@ export type NewListingInput = Omit<Listing, 'id' | 'uuid' | 'created_at' | 'curr
 export type NewBidInput = Omit<Bid, 'id' | 'uuid' | 'created_at'>;
 export type NewAutoBidInput = Omit<AutoBidSetting, 'id' | 'uuid' | 'created_at' | 'updated_at'>;
 export type NewPaymentInput = Omit<Payment, 'id' | 'uuid' | 'created_at' | 'updated_at' | 'paid_at'> & { paid_at?: string };
+
 export type NewAuditEventInput = Omit<AuditEvent, 'id' | 'timestamp' | 'previousHash' | 'currentHash' | 'payload'> & {
   payload?: Record<string, unknown>;
 };

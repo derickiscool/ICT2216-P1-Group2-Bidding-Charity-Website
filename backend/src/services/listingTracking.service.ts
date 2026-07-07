@@ -5,7 +5,7 @@ import { audit } from './audit.service';
 import { DONOR_DELETABLE_STATUSES, DONOR_EDITABLE_STATUSES, listMyListings } from './listing.service';
 import { processAuctionDeadlines } from './payment.service';
 
-const TRACKABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'active', 'sold', 'expired', 'cancelled', 'rejected'];
+const TRACKABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'];
 
 const emptyStatusSummary = (): DonorListingTrackingDashboard['summary'] => ({
   total: 0,
@@ -13,6 +13,8 @@ const emptyStatusSummary = (): DonorListingTrackingDashboard['summary'] => ({
   pending: 0,
   active: 0,
   sold: 0,
+  shipped: 0,
+  delivered: 0,
   expired: 0,
   cancelled: 0,
   rejected: 0,

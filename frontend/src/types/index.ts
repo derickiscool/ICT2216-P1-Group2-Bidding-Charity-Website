@@ -175,6 +175,7 @@ export interface PaymentWithListing extends Payment {
   listing_title: string
   charity_name: string
   has_shipping: boolean
+  listing_status?: string
 }
 
 export interface Receipt {
