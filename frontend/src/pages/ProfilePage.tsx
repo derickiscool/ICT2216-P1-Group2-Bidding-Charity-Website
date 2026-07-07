@@ -1,5 +1,6 @@
-import { useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Mail, Phone, Save, ShieldCheck, UserCircle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { AlertCircle, AtSign, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Mail, Phone, Save, ShieldCheck, UserCircle } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { ApiError, User } from '../types'
@@ -79,7 +80,15 @@ function errMsg(err: unknown, fallback: string) {
 }
 
 export default function ProfilePage() {
-  const { user, fetchMe } = useAuthStore()
+  const { user, fetchMe, logout } = useAuthStore()
+  const navigate = useNavigate()
+
+  // After a verified email change the backend revokes all sessions, so we clear
+  // client auth state and send the user back to the login page to sign in afresh.
+  const handleEmailChanged = useCallback(async () => {
+    try { await logout() } catch { /* session already revoked server-side */ }
+    navigate('/login', { replace: true })
+  }, [logout, navigate])
 
   const [profileEdits, setProfileEdits] = useState<Partial<ProfileForm>>({})
   const [passwords, setPasswords] = useState<PasswordForm>(emptyPwd)
@@ -265,7 +274,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
-                  <IconInput label="Email address" icon={<Mail className="w-4 h-4" />} value={profile.email} disabled note="Email changes require verification." />
+                  <IconInput label="Email address" icon={<Mail className="w-4 h-4" />} value={profile.email} disabled note="Use “Change email address” below to update it." />
                   <IconInput label="Contact number" icon={<Phone className="w-4 h-4" />} value={profile.contact_number} error={profileErrs.contact_number} onChange={setProfileField('contact_number')} autoComplete="tel" placeholder="+65 9123 4567" />
                 </div>
 
@@ -310,6 +319,8 @@ export default function ProfilePage() {
                 </div>
               </form>
             </Card>
+
+            <EmailChangeCard currentEmail={original.email} onChanged={handleEmailChanged} />
           </div>
 
           <aside className="space-y-6">
@@ -352,6 +363,182 @@ export default function ProfilePage() {
         </div>
       </div>
     </div>
+  )
+}
+
+/*
+  SFR03 verified email change (OWASP no-MFA, sequential current-first confirmation).
+  Stage 1 (request):        re-authenticate with current password + new email → a code is
+                            sent to the CURRENT address only.
+  Stage 2 (verify current): enter that code → the new address is proven-safe to contact and
+                            only then receives its own code.
+  Stage 3 (confirm new):    enter the new-address code → backend applies the change and
+                            revokes all sessions, so on success we log out and go to login.
+*/
+type EmailStage = 'idle' | 'request' | 'verifyCurrent' | 'confirmNew' | 'done'
+
+function EmailChangeCard({ currentEmail, onChanged }: { currentEmail: string; onChanged: () => void }) {
+  const [stage, setStage] = useState<EmailStage>('idle')
+  const [newEmail, setNewEmail] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [oldEmailOtp, setOldEmailOtp] = useState('')
+  const [newEmailOtp, setNewEmailOtp] = useState('')
+  const [errs, setErrs] = useState<Record<string, string>>({})
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [showPwd, setShowPwd] = useState(false)
+
+  function reset() {
+    setStage('idle'); setNewEmail(''); setCurrentPassword('')
+    setOldEmailOtp(''); setNewEmailOtp(''); setErrs({}); setMsg(null)
+  }
+
+  // Once the change is applied the backend has already revoked every session, so force
+  // the client to log out and return to login — with a brief pause so the user can read
+  // the confirmation. The button below is a manual fallback if the timer is interrupted.
+  useEffect(() => {
+    if (stage !== 'done') return
+    const timer = setTimeout(() => { void onChanged() }, 3000)
+    return () => clearTimeout(timer)
+  }, [stage, onChanged])
+
+  async function submitRequest(e: FormEvent) {
+    e.preventDefault(); setMsg(null); setErrs({})
+
+    const email = newEmail.trim()
+    const local: Record<string, string> = {}
+    if (!email) local.newEmail = 'New email is required.'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) local.newEmail = 'Enter a valid email address.'
+    else if (email.toLowerCase() === currentEmail.toLowerCase()) local.newEmail = 'New email must be different from your current email.'
+    if (!currentPassword) local.currentPassword = 'Current password is required.'
+    if (Object.keys(local).length) { setErrs(local); return }
+
+    try {
+      setBusy(true)
+      await api.post('/users/profile/email', { newEmail: email, currentPassword })
+      setStage('verifyCurrent')
+      setMsg({ type: 'success', text: `We sent a 6-digit code to your current email (${currentEmail}). Enter it below to prove this is your account.` })
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setErrs(ae.errors)
+      else setMsg({ type: 'error', text: ae.message || 'Unable to start email change right now. Please try again later.' })
+    } finally { setBusy(false) }
+  }
+
+  async function submitVerifyCurrent(e: FormEvent) {
+    e.preventDefault(); setMsg(null); setErrs({})
+
+    if (!oldEmailOtp.trim()) { setErrs({ oldEmailOtp: 'Enter the code sent to your current email.' }); return }
+
+    try {
+      setBusy(true)
+      await api.post('/users/profile/email/verify-current', { oldEmailOtp: oldEmailOtp.trim() })
+      setStage('confirmNew')
+      setMsg({ type: 'success', text: `Current email confirmed. We've now sent a code to your new email (${newEmail.trim()}). Enter it to finish.` })
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setErrs(ae.errors)
+      else setMsg({ type: 'error', text: ae.message || 'Unable to verify that code right now. Please try again later.' })
+    } finally { setBusy(false) }
+  }
+
+  async function submitConfirmNew(e: FormEvent) {
+    e.preventDefault(); setMsg(null); setErrs({})
+
+    if (!newEmailOtp.trim()) { setErrs({ newEmailOtp: 'Enter the code sent to your new email.' }); return }
+
+    try {
+      setBusy(true)
+      await api.post('/users/profile/email/confirm', { newEmailOtp: newEmailOtp.trim() })
+      setStage('done')
+      setMsg({ type: 'success', text: 'Your email address has been changed. For security you have been signed out — please log in again with your new email.' })
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setErrs(ae.errors)
+      else setMsg({ type: 'error', text: ae.message || 'Unable to confirm email change right now. Please try again later.' })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <Card icon={<AtSign className="w-5 h-5" />} title="Change email address" desc="Changing your email requires your password, then confirmation from your current and new addresses in turn." accent="mauve">
+      {stage === 'idle' && (
+        <div className="space-y-4">
+          <Alert msg={msg} />
+          <p className="text-sm leading-relaxed" style={{ color: C.muted }}>
+            To protect your account, updating your email needs your current password and a one-time code —
+            first to confirm your <strong>current</strong> address, then your <strong>new</strong> one.
+          </p>
+          <button type="button" onClick={() => { setMsg(null); setStage('request') }}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+            style={{ background: C.emerald, cursor: 'pointer' }}>
+            <AtSign className="w-4 h-4" />Change email
+          </button>
+        </div>
+      )}
+
+      {stage === 'request' && (
+        <form onSubmit={submitRequest} noValidate className="space-y-5">
+          <Alert msg={msg} />
+          <TextInput label="New email address" value={newEmail} error={errs.newEmail}
+            onChange={e => { setNewEmail(e.target.value); setErrs(p => ({ ...p, newEmail: '' })) }} autoComplete="email" />
+          <PasswordInput label="Current password" value={currentPassword} error={errs.currentPassword}
+            show={showPwd} setShow={setShowPwd}
+            onChange={e => { setCurrentPassword(e.target.value); setErrs(p => ({ ...p, currentPassword: '' })) }} autoComplete="current-password" />
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: C.muted, cursor: 'pointer' }}>Cancel</button>
+            <button type="submit" disabled={busy}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+              style={{ background: busy ? '#6ba88e' : C.emerald, cursor: busy ? 'not-allowed' : 'pointer' }}>
+              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send code</>}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {stage === 'verifyCurrent' && (
+        <form onSubmit={submitVerifyCurrent} noValidate className="space-y-5">
+          <Alert msg={msg} />
+          <TextInput label="Code sent to your current email" value={oldEmailOtp} error={errs.oldEmailOtp}
+            onChange={e => { setOldEmailOtp(e.target.value); setErrs(p => ({ ...p, oldEmailOtp: '' })) }} autoComplete="one-time-code" />
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: C.muted, cursor: 'pointer' }}>Cancel</button>
+            <button type="submit" disabled={busy}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+              style={{ background: busy ? '#6ba88e' : C.emerald, cursor: busy ? 'not-allowed' : 'pointer' }}>
+              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Verifying…</> : <><CheckCircle2 className="w-4 h-4" />Verify current email</>}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {stage === 'confirmNew' && (
+        <form onSubmit={submitConfirmNew} noValidate className="space-y-5">
+          <Alert msg={msg} />
+          <TextInput label="Code sent to your new email" value={newEmailOtp} error={errs.newEmailOtp}
+            onChange={e => { setNewEmailOtp(e.target.value); setErrs(p => ({ ...p, newEmailOtp: '' })) }} autoComplete="one-time-code" />
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={reset} className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ color: C.muted, cursor: 'pointer' }}>Cancel</button>
+            <button type="submit" disabled={busy}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+              style={{ background: busy ? '#6ba88e' : C.emerald, cursor: busy ? 'not-allowed' : 'pointer' }}>
+              {busy ? <><Loader2 className="w-4 h-4 animate-spin" />Confirming…</> : <><CheckCircle2 className="w-4 h-4" />Confirm change</>}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {stage === 'done' && (
+        <div className="space-y-4">
+          <Alert msg={msg} />
+          <p className="text-sm" style={{ color: C.muted }}>Redirecting you to the login page…</p>
+          <button type="button" onClick={() => { void onChanged() }}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+            style={{ background: C.emerald, cursor: 'pointer' }}>
+            Continue to login now
+          </button>
+        </div>
+      )}
+    </Card>
   )
 }
 

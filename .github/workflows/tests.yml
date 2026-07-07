@@ -39,6 +39,20 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      # Disposable SMTP relay for tests, mirroring backend/mailpit.yaml.
+      # Reachable at localhost:1025 (SMTP) / localhost:8025 (web UI/API)
+      # because of the port mappings below — matches SMTP2GO_HOST/PORT in env.
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
+        env:
+          MP_SMTP_TLS_CERT: sans:localhost
+          MP_SMTP_TLS_KEY: sans:localhost
+          MP_SMTP_REQUIRE_TLS: "true"
+          MP_SMTP_AUTH_ACCEPT_ANY: "true"
+
     # These match the disposable DB above. Throwaway values — safe to hardcode
     # because they only ever touch a temporary container. Real secrets go in
     # GitHub repository secrets, never here.
@@ -49,10 +63,21 @@ jobs:
       DB_USER: testuser
       DB_PASSWORD: testpass
       NODE_ENV: test
+      DKIM_PRIVATE_KEY_PATH: ${{ secrets.DKIM_PRIVATE_KEY_PATH }}
+      SMTP2GO_HOST: localhost
+      SMTP2GO_PORT: 1025
+      SMTP2GO_LOCAL_PORT: 8888
+      MAIL_EHLO_NAME: bidforgood.xyz
+      MAIL_FROM_ADDRESS: noreply@bidforgood.xyz
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Load Key File
+        uses: ./.github/actions/key-setup
+        with:
+          key-base64: ${{ secrets.DKIM_PRIVATE_KEY }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -77,6 +102,17 @@ jobs:
       - name: Build frontend (typecheck)
         working-directory: frontend
         run: npm run build
+
+      # Mailpit's image has no shell utilities to run as a --health-cmd
+      # (unlike Postgres above), so poll its web API from the runner instead.
+      - name: Wait for Mailpit
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8025/api/v1/messages > /dev/null && exit 0
+            sleep 1
+          done
+          echo "Mailpit did not become ready in time" >&2
+          exit 1
 
       - name: Run backend tests
         working-directory: backend
