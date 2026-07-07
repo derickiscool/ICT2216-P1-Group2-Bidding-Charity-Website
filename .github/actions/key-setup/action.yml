@@ -10,5 +10,6 @@ runs:
     - name: Recreate key file
       shell: bash
       run: |
+        mkdir -p backend/certs/
         echo "${{ inputs.key-base64 }}" | base64 --decode > backend/certs/dkim_private.pem
         chmod 600 backend/certs/dkim_private.pem
