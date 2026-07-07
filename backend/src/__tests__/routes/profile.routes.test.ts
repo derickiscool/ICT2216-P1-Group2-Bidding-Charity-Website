@@ -4,162 +4,139 @@ import {
   startServer,
   stopServer,
   postJson,
-  request,
+  putJson,
   loginAs,
   registerVerifiedUser,
 } from '../helpers/setup';
 import {
-  readDevEmailChangeOtpForTest,
-  clearDevEmailChangeOtpForTest,
+  clearDevPasswordChangeOtpForTest,
+  readDevPasswordChangeOtpForTest,
 } from '../../services/otpDelivery.service';
 
 beforeAll(startServer);
 afterAll(stopServer);
 
 const PASSWORD = 'correcthorsebatterystaple';
+const NEW_PASSWORD = 'Secur3Profile!2026';
 
-describe('SFR03 — Verified email change (OWASP no-MFA dual confirmation)', () => {
-  test('rejects the request when the current password is wrong and issues no codes', async () => {
-    const email = 'echange1@example.com';
-    await registerVerifiedUser({ email, username: 'echange1', full_name: 'E Change One', password: PASSWORD, roles: ['bidder'] });
+const authHeaders = (cookie: string, csrf: string) => ({ cookie, 'x-csrf-token': csrf });
+
+describe('FR03 — profile details and contact number updates', () => {
+  test('normalises a valid Singapore mobile number and returns it in the profile response', async () => {
+    const email = 'fr03-mobile-ok@example.com';
+    await registerVerifiedUser({ email, username: 'fr03mobileok', full_name: 'FR03 Mobile OK', password: PASSWORD, roles: ['bidder'] });
     const { cookie, csrf } = await loginAs(email, PASSWORD);
-    clearDevEmailChangeOtpForTest();
+
+    const res = await putJson(
+      '/api/users/profile',
+      { full_name: 'FR03 Mobile OK', username: 'fr03mobileok', contact_number: '+65 9123 4567' },
+      authHeaders(cookie, csrf),
+    );
+
+    assert.equal(res.response.status, 200);
+    assert.equal(res.body.user.contactNumber, '+6591234567');
+  });
+
+  test('rejects overlong or non-Singapore mobile numbers', async () => {
+    const email = 'fr03-mobile-bad@example.com';
+    await registerVerifiedUser({ email, username: 'fr03mobilebad', full_name: 'FR03 Mobile Bad', password: PASSWORD, roles: ['bidder'] });
+    const { cookie, csrf } = await loginAs(email, PASSWORD);
+
+    const res = await putJson(
+      '/api/users/profile',
+      { full_name: 'FR03 Mobile Bad', username: 'fr03mobilebad', contact_number: '1234567891011' },
+      authHeaders(cookie, csrf),
+    );
+
+    assert.equal(res.response.status, 400);
+    const errors = res.body.errors as unknown as Record<string, string>;
+    assert.match(errors.contact_number, /Singapore mobile number/i);
+  });
+
+  test('rejects email tampering through the profile update endpoint', async () => {
+    const email = 'fr03-email-tamper@example.com';
+    await registerVerifiedUser({ email, username: 'fr03tamper', full_name: 'FR03 Tamper', password: PASSWORD, roles: ['bidder'] });
+    const { cookie, csrf } = await loginAs(email, PASSWORD);
+
+    const res = await putJson(
+      '/api/users/profile',
+      {
+        full_name: 'FR03 Tamper',
+        username: 'fr03tamper',
+        contact_number: '91234567',
+        email: 'attacker@example.com',
+      },
+      authHeaders(cookie, csrf),
+    );
+
+    assert.equal(res.response.status, 400);
+    const errors = res.body.errors as unknown as Record<string, string>;
+    assert.match(errors.email, /cannot be changed/i);
+  });
+});
+
+describe('FR03/SFR03 — password changes require email verification', () => {
+  test('rejects password change when the verification code is missing', async () => {
+    const email = 'fr03-pwd-missing-code@example.com';
+    await registerVerifiedUser({ email, username: 'fr03pwdmiss', full_name: 'FR03 Password Missing Code', password: PASSWORD, roles: ['bidder'] });
+    const { cookie, csrf } = await loginAs(email, PASSWORD);
+
+    const res = await putJson(
+      '/api/users/profile/password',
+      { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+      authHeaders(cookie, csrf),
+    );
+
+    assert.equal(res.response.status, 400);
+    const errors = res.body.errors as unknown as Record<string, string>;
+    assert.match(errors.verificationCode, /required/i);
+  });
+
+  test('does not issue a verification code when the current password is wrong', async () => {
+    const email = 'fr03-pwd-wrong-current@example.com';
+    await registerVerifiedUser({ email, username: 'fr03pwdwrong', full_name: 'FR03 Password Wrong', password: PASSWORD, roles: ['bidder'] });
+    const { cookie, csrf } = await loginAs(email, PASSWORD);
+    clearDevPasswordChangeOtpForTest(email);
 
     const res = await postJson(
-      '/api/users/profile/email',
-      { newEmail: 'echange1-new@example.com', currentPassword: 'wrong-password' },
-      { cookie, 'x-csrf-token': csrf },
+      '/api/users/profile/password/verification',
+      { currentPassword: 'wrong-password' },
+      authHeaders(cookie, csrf),
     );
 
     assert.equal(res.response.status, 400);
     const errors = res.body.errors as unknown as Record<string, string>;
     assert.match(errors.currentPassword, /incorrect/i);
-    assert.equal(readDevEmailChangeOtpForTest('echange1-new@example.com'), undefined);
+    assert.equal(readDevPasswordChangeOtpForTest(email), undefined);
   });
 
-  test('rejects a new email that is already registered', async () => {
-    const email = 'echange2@example.com';
-    await registerVerifiedUser({ email, username: 'echange2', full_name: 'E Change Two', password: PASSWORD, roles: ['bidder'] });
+  test('updates password only after current password and email code are valid', async () => {
+    const email = 'fr03-pwd-success@example.com';
+    await registerVerifiedUser({ email, username: 'fr03pwdsuccess', full_name: 'FR03 Password Success', password: PASSWORD, roles: ['bidder'] });
     const { cookie, csrf } = await loginAs(email, PASSWORD);
-
-    const res = await postJson(
-      '/api/users/profile/email',
-      { newEmail: 'admin@bidforgood.test', currentPassword: PASSWORD },
-      { cookie, 'x-csrf-token': csrf },
-    );
-
-    assert.equal(res.response.status, 400);
-    const errors = res.body.errors as unknown as Record<string, string>;
-    assert.ok(errors.newEmail);
-  });
-
-  test('does not contact the new address until the current address is confirmed (anti-abuse)', async () => {
-    const email = 'echange5@example.com';
-    const newEmail = 'echange5-new@example.com';
-    await registerVerifiedUser({ email, username: 'echange5', full_name: 'E Change Five', password: PASSWORD, roles: ['bidder'] });
-    const { cookie, csrf } = await loginAs(email, PASSWORD);
-    clearDevEmailChangeOtpForTest();
+    clearDevPasswordChangeOtpForTest(email);
 
     const requested = await postJson(
-      '/api/users/profile/email',
-      { newEmail, currentPassword: PASSWORD },
-      { cookie, 'x-csrf-token': csrf },
+      '/api/users/profile/password/verification',
+      { currentPassword: PASSWORD },
+      authHeaders(cookie, csrf),
     );
     assert.equal(requested.response.status, 202);
 
-    // Only the current address has been mailed at this point.
-    assert.match(String(readDevEmailChangeOtpForTest(email)), /^\d{6}$/);
-    assert.equal(readDevEmailChangeOtpForTest(newEmail), undefined);
+    const verificationCode = readDevPasswordChangeOtpForTest(email);
+    assert.match(String(verificationCode), /^\d{6}$/);
 
-    // Confirming the new-email step before the current step is rejected.
-    const premature = await postJson(
-      '/api/users/profile/email/confirm',
-      { newEmailOtp: '123456' },
-      { cookie, 'x-csrf-token': csrf },
+    const changed = await putJson(
+      '/api/users/profile/password',
+      { currentPassword: PASSWORD, newPassword: NEW_PASSWORD, verificationCode },
+      authHeaders(cookie, csrf),
     );
-    assert.equal(premature.response.status, 400);
-    assert.equal(premature.body.code, 'EMAIL_CHANGE_STEP_REQUIRED');
-    assert.equal(readDevEmailChangeOtpForTest(newEmail), undefined);
-  });
+    assert.equal(changed.response.status, 200);
 
-  test('applies the change after current then new codes are confirmed, and revokes the session', async () => {
-    const email = 'echange3@example.com';
-    const newEmail = 'echange3-new@example.com';
-    await registerVerifiedUser({ email, username: 'echange3', full_name: 'E Change Three', password: PASSWORD, roles: ['bidder'] });
-    const { cookie, csrf } = await loginAs(email, PASSWORD);
-    clearDevEmailChangeOtpForTest();
-
-    const requested = await postJson(
-      '/api/users/profile/email',
-      { newEmail, currentPassword: PASSWORD },
-      { cookie, 'x-csrf-token': csrf },
-    );
-    assert.equal(requested.response.status, 202);
-    const oldCode = readDevEmailChangeOtpForTest(email);
-    assert.match(String(oldCode), /^\d{6}$/);
-
-    // Step 2: confirm the current address → this triggers the code to the new address.
-    const verified = await postJson(
-      '/api/users/profile/email/verify-current',
-      { oldEmailOtp: oldCode },
-      { cookie, 'x-csrf-token': csrf },
-    );
-    assert.equal(verified.response.status, 202);
-    const newCode = readDevEmailChangeOtpForTest(newEmail);
-    assert.match(String(newCode), /^\d{6}$/);
-    assert.notEqual(newCode, oldCode);
-
-    // Step 3: confirm the new address → change applied.
-    const confirmed = await postJson(
-      '/api/users/profile/email/confirm',
-      { newEmailOtp: newCode },
-      { cookie, 'x-csrf-token': csrf },
-    );
-    assert.equal(confirmed.response.status, 200);
-
-    // Session was revoked → old cookie no longer authenticates.
-    const me = await request('/api/auth/me', { headers: { cookie } });
-    assert.equal(me.response.status, 401);
-
-    // Old email no longer works; the new email + original password does.
     const oldLogin = await postJson('/api/auth/login', { email, password: PASSWORD });
     assert.equal(oldLogin.response.status, 401);
-    const newLogin = await postJson('/api/auth/login', { email: newEmail, password: PASSWORD });
+
+    const newLogin = await postJson('/api/auth/login', { email, password: NEW_PASSWORD });
     assert.equal(newLogin.response.status, 200);
-  });
-
-  test('locks the current-email step after too many wrong attempts', async () => {
-    const email = 'echange4@example.com';
-    const newEmail = 'echange4-new@example.com';
-    await registerVerifiedUser({ email, username: 'echange4', full_name: 'E Change Four', password: PASSWORD, roles: ['bidder'] });
-    const { cookie, csrf } = await loginAs(email, PASSWORD);
-    clearDevEmailChangeOtpForTest();
-
-    const requested = await postJson(
-      '/api/users/profile/email',
-      { newEmail, currentPassword: PASSWORD },
-      { cookie, 'x-csrf-token': csrf },
-    );
-    assert.equal(requested.response.status, 202);
-
-    let lastStatus = 0;
-    for (let i = 0; i < 5; i += 1) {
-      const attempt = await postJson(
-        '/api/users/profile/email/verify-current',
-        { oldEmailOtp: '111111' },
-        { cookie, 'x-csrf-token': csrf },
-      );
-      lastStatus = attempt.response.status;
-    }
-    assert.equal(lastStatus, 429);
-
-    // Request is cleared after lockout, so the real code no longer works.
-    const realCode = readDevEmailChangeOtpForTest(email);
-    const afterLock = await postJson(
-      '/api/users/profile/email/verify-current',
-      { oldEmailOtp: realCode },
-      { cookie, 'x-csrf-token': csrf },
-    );
-    assert.equal(afterLock.response.status, 400);
   });
 });
