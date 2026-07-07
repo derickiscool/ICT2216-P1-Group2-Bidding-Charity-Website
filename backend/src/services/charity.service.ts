@@ -34,7 +34,8 @@ export const registerCharity = async (req: Request): Promise<CharityOrganisation
     description,
     documentName: sanitizeText(file.originalname, 120),
     documentMime: detected,
-    documentSha256: sha256(file.buffer)
+    documentSha256: sha256(file.buffer),
+    documentData: file.buffer
   });
   await audit(req, 'CHARITY_REGISTER_PENDING', { organisationName, documentSha256: record.documentSha256 }, 'charity', record.uuid, req.user.id);
   return record;
@@ -60,6 +61,12 @@ export const getCharities = async (): Promise<CharityOrganisation[]> => listChar
 export const getApprovedCharities = async (): Promise<CharityOrganisation[]> => {
   const all = await listCharities();
   return all.filter(c => c.status === 'approved');
+};
+
+export const streamCharityDocument = async (uuid: string): Promise<{ data: Buffer; mime: string } | null> => {
+  const charity = await getCharityByUuid(uuid);
+  if (!charity || !charity.documentData) return null;
+  return { data: charity.documentData, mime: charity.documentMime };
 };
 
 export const getCharityDashboard = async (ownerUserId: number): Promise<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }> => {

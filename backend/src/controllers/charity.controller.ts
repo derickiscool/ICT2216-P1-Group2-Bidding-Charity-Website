@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { getApprovedCharities, getCharities, getCharityDashboard, registerCharity, reviewCharity } from '../services/charity.service';
+import { getApprovedCharities, getCharities, getCharityDashboard, registerCharity, reviewCharity, streamCharityDocument } from '../services/charity.service';
 import { listAllActiveCampaigns } from '../repositories';
 
 export const createCharityRegistration = async (req: Request, res: Response): Promise<void> => {
@@ -46,4 +46,12 @@ export const listPublicCampaigns = async (_req: Request, res: Response): Promise
 export const charityDashboard = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) return;
   res.json(await getCharityDashboard(req.user.id));
+};
+
+export const getCharityDocument = async (req: Request, res: Response): Promise<void> => {
+  const document = await streamCharityDocument(req.params.uuid);
+  if (!document) { res.status(404).json({ message: 'No document for this charity.' }); return; }
+  res.setHeader('Content-Type', document.mime);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.send(document.data);
 };
