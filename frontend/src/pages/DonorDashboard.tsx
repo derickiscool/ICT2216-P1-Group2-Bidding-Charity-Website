@@ -138,11 +138,23 @@ export default function DonorDashboard() {
 
   // ─── Actions ───────────────────────────────────────────────────────────
 
+  const sanitize = (value: string): string =>
+    value.replace(/<[^>]*>/g, '').replace(/[<>"'&]/g, '').trim()
+
   const handleShipping = async (uuid: string) => {
-    if (!trackingNumber.trim() || !courier.trim()) return
+    const cleanTracking = sanitize(trackingNumber)
+    const cleanCourier = sanitize(courier)
+    if (!cleanTracking || cleanTracking.length > 100) {
+      setError('Please enter a valid tracking number (max 100 characters).')
+      return
+    }
+    if (!cleanCourier || cleanCourier.length > 50) {
+      setError('Please enter a valid courier name (max 50 characters).')
+      return
+    }
     setShippingLoading(uuid)
     try {
-      await api.post(`/listings/${uuid}/shipping`, { tracking_number: trackingNumber, courier })
+      await api.post(`/listings/${uuid}/shipping`, { tracking_number: cleanTracking, courier: cleanCourier })
       setShippingUuid(null)
       setTrackingNumber('')
       setCourier('')

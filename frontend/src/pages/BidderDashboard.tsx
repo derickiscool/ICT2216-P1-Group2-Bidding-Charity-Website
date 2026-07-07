@@ -823,8 +823,16 @@ export default function BidderDashboard() {
                               </td>
                               <td className="px-6 py-4 text-sm" style={{ color: C.slate }}>{payment.charity_name}</td>
                               <td className="px-6 py-4 text-center">
-                                {isPaid && payment.escrow_state === 'released' ? (
-                                  <button onClick={() => viewReceipt(payment.uuid)}
+                                  {isPaid && payment.escrow_state === 'released' ? (
+                                  <button onClick={async () => {
+                                    try {
+                                      const res = await api.get<Receipt>(`/receipts/by-payment/${payment.uuid}`)
+                                      window.location.href = `/receipts/${res.data.uuid}`
+                                    } catch {
+                                      // fallback: try the modal
+                                      viewReceipt(payment.uuid)
+                                    }
+                                  }}
                                     className="text-xs font-bold underline underline-offset-2 transition-colors"
                                     style={{ color: C.emerald }}>
                                     View PDF
