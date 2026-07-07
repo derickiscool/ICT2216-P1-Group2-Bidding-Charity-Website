@@ -16,11 +16,13 @@ const LOCKED_FIELDS = new Set([
   'charityName', 'charity_name'
 ]);
 
+// `draft` is no longer part of the donor-facing FR10 flow. New submissions go straight to
+// `pending`, and legacy drafts are hidden from the tracking dashboard.
 // `charity_review` is intentionally NOT editable — the listing is locked while the charity reviews it.
 // `rejected` is intentionally NOT editable — reject is a terminal decision (SFR09). A donor who wants
 // another attempt must create a new listing; the fixable path is `changes_requested` (request-changes).
-export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested'];
-export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'rejected', 'expired', 'cancelled'];
+export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['pending', 'changes_requested'];
+export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['pending', 'changes_requested', 'rejected', 'expired', 'cancelled'];
 const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
 
 // SFR07: reject (not just escape) title/description text containing script-like content,
@@ -202,7 +204,7 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
   const isAdmin = req.user?.roles.includes('admin') ?? false;
   if (!isAdmin && !DONOR_EDITABLE_STATUSES.includes(listing.status)) {
     await audit(req, 'LISTING_EDIT_REJECTED_BY_STATUS', { status: listing.status }, 'listing', listing.uuid, req.user?.id);
-    throw forbidden('Only draft, pending, or changes-requested listings can be edited by the donor.');
+    throw forbidden('Only pending or changes-requested listings can be edited by the donor.');
   }
 
   if (listing.status === 'active') {
@@ -264,7 +266,11 @@ export const listMyListings = async (req: Request): Promise<Listing[]> => {
 
   const all = await listListings();
   if (req.user.roles.includes('admin')) return all;
-  return all.filter(listing => listing.donor_id === req.user?.id);
+
+  // FR10 change: donor-facing listing views no longer surface draft records.
+  // Keeping the database value avoids breaking older rows, but the UI/API now treats
+  // submission as pending-first instead of draft-first.
+  return all.filter(listing => listing.donor_id === req.user?.id && listing.status !== 'draft');
 };
 
 // SFR09 stage 1 (admin gate): approving does NOT publish — it forwards the listing to the
@@ -379,6 +385,20 @@ export const confirmDelivery = async (uuid: string, req: Request): Promise<{ del
 const ALLOWED_SORTS = new Set(['ending_soon', 'newest', 'price_low', 'price_high']);
 const ALLOWED_CONDITIONS = new Set(['new', 'like_new', 'good', 'fair']);
 
+const isPubliclyBiddableNow = (listing: Listing, nowMs = Date.now()): boolean => {
+  const startMs = new Date(listing.start_time).getTime();
+  const endMs = new Date(listing.end_time).getTime();
+
+  // A listing is only public/biddable after the start time and before the end time.
+  // This keeps approved future auctions out of /auctions while still letting donors
+  // track them as UPCOMING in FR10.
+  return listing.status === 'active'
+    && Number.isFinite(startMs)
+    && Number.isFinite(endMs)
+    && startMs <= nowMs
+    && endMs > nowMs;
+};
+
 export const searchPublicListings = async (query: Record<string, unknown>): Promise<Listing[]> => {
   const q = sanitizeText(query.q ?? query.search, 80);
   const category = sanitizeText(query.category, 60);
@@ -397,9 +417,10 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   if (priceMin !== undefined && priceMax !== undefined && priceMin > priceMax) throw badRequest('Minimum price cannot exceed maximum price.');
   if (campaignId !== undefined && (!Number.isInteger(campaignId) || campaignId < 1)) throw badRequest('Invalid campaign filter.');
 
-  // SFR: listActiveListings() only returns status='active' — draft, pending, rejected,
-  // cancelled, expired and sold listings are never included in search results.
-  const active = await listActiveListings();
+  // SFR/FR10: listActiveListings() only returns status='active'. The extra time-window
+  // check ensures UPCOMING active listings are approved but not yet publicly listed/biddable.
+  const nowMs = Date.now();
+  const active = (await listActiveListings()).filter(listing => isPubliclyBiddableNow(listing, nowMs));
 
   const results = active.filter(l => {
     const matchesQ = !q || `${l.title} ${l.description} ${l.charityName}`.toLowerCase().includes(q.toLowerCase());
@@ -423,7 +444,7 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
 export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
-  if (!isAdmin && listing.status !== 'active') throw notFound('Listing not found');
+  if (!isAdmin && !isPubliclyBiddableNow(listing)) throw notFound('Listing not found');
 
   // Attach campaign details (includes total_raised, description) for the auction detail page.
   let campaign: import('../types/domain').Campaign | undefined;
@@ -441,7 +462,11 @@ export const getAdminListings = async (status?: string): Promise<Listing[]> => {
 };
 
 export const getDonorListings = async (donorId: number): Promise<{ listings: Array<Listing & { can_ship?: boolean; payment_held?: boolean; has_shipped?: boolean; payment_released?: boolean }>; stats: DonorStats }> => {
-  const listings = await listListingsByDonor(donorId);
+  const allListings = await listListingsByDonor(donorId);
+
+  // FR10 change: hide legacy draft records from donor management. New listings are created
+  // directly as pending, so this only affects older seeded/local data.
+  const listings = allListings.filter(listing => listing.status !== 'draft');
 
   // For sold listings, check escrow state (held/released) and shipping status
   const paymentPromises = listings
@@ -476,7 +501,7 @@ export const getDonorListings = async (donorId: number): Promise<{ listings: Arr
     active: listings.filter(l => l.status === 'active').length,
     sold: listings.filter(l => l.status === 'sold').length,
     pending: listings.filter(l => l.status === 'pending').length,
-    draft: listings.filter(l => l.status === 'draft').length,
+    draft: 0,
     totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
   };
   return { listings: listingsWithPayment, stats };

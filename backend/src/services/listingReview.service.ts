@@ -114,15 +114,22 @@ export const reviewAssignedListing = async (
 
   listing.status = decision === 'approved' ? 'active' : 'rejected';
   if (decision === 'approved') {
-    // Charity approval publishes the listing. Re-anchor the auction window to now so bidders never
-    // see an already-counting auction that was hidden during review, but preserve the donor's
-    // intended duration. This keeps the window valid no matter how long admin+charity review took —
-    // otherwise a listing whose original end_time lapsed during review could neither be published
-    // (window already expired) nor edited by the donor (locked during charity_review): a deadlock.
-    const originalDurationMs = new Date(listing.end_time).getTime() - new Date(listing.start_time).getTime();
+    // Charity approval completes the two-stage FR09 workflow. Future-dated auctions must stay
+    // future-dated so FR10 can show them as UPCOMING. If the original hidden review window has
+    // already elapsed, re-anchor to now and preserve the donor's intended duration to avoid a
+    // dead listing that is approved but immediately expired.
+    const originalStartMs = new Date(listing.start_time).getTime();
+    const originalEndMs = new Date(listing.end_time).getTime();
+    const originalDurationMs = Math.max(originalEndMs - originalStartMs, 60 * 60 * 1000);
     const now = Date.now();
-    listing.start_time = new Date(now).toISOString();
-    listing.end_time = new Date(now + originalDurationMs).toISOString();
+
+    if (originalEndMs <= now || originalStartMs <= now) {
+      listing.start_time = new Date(now).toISOString();
+      listing.end_time = new Date(now + originalDurationMs).toISOString();
+    }
+
+    listing.review_note = undefined;
+    listing.review_stage = undefined;
   } else {
     listing.review_note = reason;
     listing.review_stage = 'charity';
