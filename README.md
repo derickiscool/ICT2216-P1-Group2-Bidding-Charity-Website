@@ -128,6 +128,14 @@ This creates the schema only. To also load the [Demo Accounts](#demo-accounts) a
 npm run seed
 ```
 
+Start Mailpit (Docker) to receive emails:
+
+```bash
+cd backend && docker compose -f mailpit.yaml up -d && cd ..
+```
+
+Go to `localhost:8025` to view emails.
+
 Run both backend and frontend locally:
 
 ```bash
