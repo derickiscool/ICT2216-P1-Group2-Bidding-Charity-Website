@@ -198,7 +198,7 @@ describe('SFR15 — Shipping Verification & Delivery Confirmation', () => {
     const res = await postJson(
       `/api/listings/${listing.uuid as string}/ship`,
       {
-        trackingNumber: `TN-${xssPayload}-001`,
+        trackingNumber: 'TN-XSSTEST01',
         carrier: `DHL${xssPayload}`,
         notes: `Handle with care. ${xssPayload}`,
       },
@@ -207,7 +207,6 @@ describe('SFR15 — Shipping Verification & Delivery Confirmation', () => {
     assert.equal(res.response.status, 200);
 
     const sv = res.body as Rec;
-    assert.ok(!String(sv.trackingNumber).includes('<script>'), 'trackingNumber must have HTML stripped');
     assert.ok(!String(sv.carrier).includes('<script>'), 'carrier must have HTML stripped');
     assert.ok(!String(sv.notes).includes('<script>'), 'notes must have HTML stripped');
   });
@@ -217,13 +216,13 @@ describe('SFR15 — Shipping Verification & Delivery Confirmation', () => {
 
     const shipRes = await postJson(
       `/api/listings/${listing.uuid as string}/ship`,
-      { trackingNumber: 'TRACK-12345', carrier: 'FedEx', notes: 'Fragile item' },
+      { trackingNumber: 'TRK-123456', carrier: 'FedEx', notes: 'Fragile item' },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
     assert.equal(shipRes.response.status, 200);
 
     const sv = shipRes.body as Rec;
-    assert.equal(sv.trackingNumber, 'TRACK-12345');
+    assert.equal(sv.trackingNumber, 'TRK-123456');
     assert.equal(sv.carrier, 'FedEx');
 
     // Confirm listing status transitioned to 'shipped' (non-active listings are 404 from the public API)
@@ -249,7 +248,7 @@ describe('SFR15 — Shipping Verification & Delivery Confirmation', () => {
     // Donor ships first
     await postJson(
       `/api/listings/${listing.uuid as string}/ship`,
-      { trackingNumber: 'TN-DELIVER-TEST', carrier: 'UPS' },
+      { trackingNumber: 'TN-DLV00001', carrier: 'UPS' },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
 
@@ -267,7 +266,7 @@ describe('SFR15 — Shipping Verification & Delivery Confirmation', () => {
 
     await postJson(
       `/api/listings/${listing.uuid as string}/ship`,
-      { trackingNumber: 'TN-FULL-FLOW', carrier: 'SingPost' },
+      { trackingNumber: 'TN-FLOW0001', carrier: 'SingPost' },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
 

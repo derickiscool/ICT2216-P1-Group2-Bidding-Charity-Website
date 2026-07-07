@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Package, TrendingUp, Clock, CheckCircle, Plus, Loader2, AlertCircle, Truck, X } from 'lucide-react'
 import api from '../services/api'
@@ -50,7 +50,7 @@ export default function DonorDashboard() {
   const [shipError, setShipError] = useState<string | null>(null)
   const trackingRef = useRef<HTMLInputElement>(null)
 
-  const loadListings = async () => {
+  const loadListings = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -63,9 +63,12 @@ export default function DonorDashboard() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { void loadListings() }, [])
+  useEffect(() => {
+    const id = window.setTimeout(() => { void loadListings() }, 0)
+    return () => window.clearTimeout(id)
+  }, [loadListings])
 
   const openShipModal = (listing: Listing) => {
     setShipTarget(listing)
