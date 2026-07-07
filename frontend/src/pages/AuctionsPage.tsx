@@ -9,7 +9,7 @@ interface PublicCampaign {
   name: string
 }
 
-const CATEGORIES = ['Sports', 'Experiences', 'Collectibles', 'Art']
+const CATEGORIES = ['Sports', 'Experiences', 'Collectibles', 'Art', 'Electronics', 'Fashion']
 
 const END_BEFORE_OPTIONS = [
   { label: 'Any time', value: '' },
