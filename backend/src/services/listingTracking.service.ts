@@ -5,14 +5,18 @@ import { audit } from './audit.service';
 import { DONOR_DELETABLE_STATUSES, DONOR_EDITABLE_STATUSES, listMyListings } from './listing.service';
 import { processAuctionDeadlines } from './payment.service';
 
-const TRACKABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'charity_review', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'];
+const TRACKABLE_STATUSES: ListingStatus[] = ['pending', 'changes_requested', 'charity_review', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'];
+
+type TrackingFilterStatus = DonorListingTrackingItem['trackingFilterStatus'];
 
 const emptyStatusSummary = (): DonorListingTrackingDashboard['summary'] => ({
   total: 0,
+  // Draft is kept in the API shape for backwards compatibility, but FR10 no longer displays it.
   draft: 0,
   pending: 0,
   changes_requested: 0,
   charity_review: 0,
+  upcoming: 0,
   active: 0,
   sold: 0,
   shipped: 0,
@@ -34,11 +38,25 @@ const formatDuration = (milliseconds: number): string => {
   return `${mins}m`;
 };
 
+const isUpcoming = (listing: Listing, nowMs: number): boolean => {
+  const startMs = new Date(listing.start_time).getTime();
+  return listing.status === 'active' && Number.isFinite(startMs) && startMs > nowMs;
+};
+
+const getTrackingFilterStatus = (listing: Listing, nowMs: number): TrackingFilterStatus => {
+  if (listing.status === 'pending' || listing.status === 'changes_requested' || listing.status === 'charity_review') return 'pending';
+  if (isUpcoming(listing, nowMs)) return 'upcoming';
+  if (listing.status === 'active') return 'active';
+  if (listing.status === 'sold' || listing.status === 'shipped' || listing.status === 'delivered') return 'sold';
+  if (listing.status === 'expired') return 'expired';
+  return 'other';
+};
+
 const buildTimelineLabel = (listing: Listing, nowMs: number): string => {
   const startMs = new Date(listing.start_time).getTime();
   const endMs = new Date(listing.end_time).getTime();
 
-  if (listing.status === 'active' && Number.isFinite(startMs) && startMs > nowMs) {
+  if (isUpcoming(listing, nowMs)) {
     return `Starts in ${formatDuration(startMs - nowMs)}`;
   }
 
@@ -47,11 +65,12 @@ const buildTimelineLabel = (listing: Listing, nowMs: number): string => {
   }
 
   if (listing.status === 'sold') return 'Auction closed with a winning bidder';
+  if (listing.status === 'shipped') return 'Item shipped — waiting for bidder confirmation';
+  if (listing.status === 'delivered') return 'Item delivered and donation flow completed';
   if (listing.status === 'expired') return 'Auction ended without a valid winner';
   if (listing.status === 'pending') return 'Waiting for administrator review';
   if (listing.status === 'changes_requested') return 'Changes requested — update and resubmit';
   if (listing.status === 'charity_review') return 'Forwarded to the charity for review';
-  if (listing.status === 'draft') return 'Draft not yet submitted';
   if (listing.status === 'rejected') {
     return listing.review_stage === 'charity' ? 'Rejected by the charity'
       : listing.review_stage === 'admin' ? 'Rejected by an administrator'
@@ -62,12 +81,19 @@ const buildTimelineLabel = (listing: Listing, nowMs: number): string => {
   return 'Status updated';
 };
 
-const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLabel' | 'statusMessage'> => {
+const statusCopy = (listing: Listing, nowMs: number): Pick<DonorListingTrackingItem, 'statusLabel' | 'statusMessage'> => {
+  if (isUpcoming(listing, nowMs)) {
+    return {
+      statusLabel: 'Upcoming',
+      statusMessage: 'This listing has passed admin and charity review. It will only appear on public auction pages once the auction start time arrives.',
+    };
+  }
+
   switch (listing.status) {
     case 'draft':
       return {
-        statusLabel: 'Draft',
-        statusMessage: 'This listing is still a draft. Complete the details before submitting it for review.',
+        statusLabel: 'Hidden Draft',
+        statusMessage: 'Draft listings are hidden from the FR10 tracking view. Submit the listing when it is ready for review.',
       };
     case 'pending':
       return {
@@ -95,6 +121,16 @@ const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLab
       return {
         statusLabel: 'Sold',
         statusMessage: 'The auction has ended with a winning bidder. Payment and fulfilment can now be tracked.',
+      };
+    case 'shipped':
+      return {
+        statusLabel: 'Shipped',
+        statusMessage: 'Shipping details have been provided. The bidder can confirm delivery after receiving the item.',
+      };
+    case 'delivered':
+      return {
+        statusLabel: 'Delivered',
+        statusMessage: 'The item was delivered and the donation receipt workflow has completed.',
       };
     case 'expired':
       return {
@@ -132,26 +168,36 @@ const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLab
 };
 
 const toTrackingItem = (listing: Listing, nowMs: number): DonorListingTrackingItem => {
-  const copy = statusCopy(listing);
+  const trackingFilterStatus = getTrackingFilterStatus(listing, nowMs);
+  const copy = statusCopy(listing, nowMs);
 
   return {
     ...listing,
     ...copy,
+    trackingFilterStatus,
     timelineLabel: buildTimelineLabel(listing, nowMs),
     canEdit: DONOR_EDITABLE_STATUSES.includes(listing.status),
     canDelete: DONOR_DELETABLE_STATUSES.includes(listing.status),
-    finalBidAmount: listing.status === 'sold' ? listing.current_bid : undefined,
+    finalBidAmount: ['sold', 'shipped', 'delivered'].includes(listing.status) ? listing.current_bid : undefined,
   };
 };
 
 const buildTrackingDashboard = (listings: Listing[]): DonorListingTrackingDashboard => {
   const now = new Date();
   const summary = emptyStatusSummary();
-  const trackingItems = listings.map(listing => toTrackingItem(listing, now.getTime()));
+
+  // FR10 change: draft records are no longer shown in the donor tracking dashboard.
+  // They are filtered here so both the cards and the counts stay consistent.
+  const visibleListings = listings.filter(listing => listing.status !== 'draft');
+  const trackingItems = visibleListings.map(listing => toTrackingItem(listing, now.getTime()));
 
   for (const item of trackingItems) {
     summary.total += 1;
     if (TRACKABLE_STATUSES.includes(item.status)) summary[item.status] += 1;
+    if (item.trackingFilterStatus === 'upcoming') {
+      summary.upcoming += 1;
+      summary.active -= 1;
+    }
   }
 
   return {

@@ -87,18 +87,23 @@ export interface Listing {
 
 export interface DonorListingStatusSummary {
   total: number
+  // Drafts are retained in the backend model for compatibility, but hidden from FR10 tracking.
   draft: number
   pending: number
   changes_requested: number
   charity_review: number
+  upcoming: number
   active: number
   sold: number
+  shipped: number
+  delivered: number
   expired: number
   cancelled: number
   rejected: number
 }
 
 export interface DonorListingTrackingItem extends Listing {
+  trackingFilterStatus: 'pending' | 'upcoming' | 'active' | 'sold' | 'expired' | 'other'
   statusLabel: string
   statusMessage: string
   timelineLabel: string
