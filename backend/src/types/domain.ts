@@ -157,7 +157,7 @@ export interface DonorListingTrackingItem extends Listing {
   // directly without reimplementing auction status rules in the browser.
   // For example, an approved listing whose start time is still in the future remains
   // status='active' in the database, but is grouped as 'upcoming' for donor tracking.
-  trackingFilterStatus: 'pending' | 'upcoming' | 'active' | 'sold' | 'expired' | 'other';
+  trackingFilterStatus: 'pending' | 'upcoming' | 'active' | 'sold' | 'expired' | 'rejected' | 'cancelled' | 'other';
   statusLabel: string;
   statusMessage: string;
   timelineLabel: string;

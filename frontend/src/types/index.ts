@@ -103,7 +103,7 @@ export interface DonorListingStatusSummary {
 }
 
 export interface DonorListingTrackingItem extends Listing {
-  trackingFilterStatus: 'pending' | 'upcoming' | 'active' | 'sold' | 'expired' | 'other'
+  trackingFilterStatus: 'pending' | 'upcoming' | 'active' | 'sold' | 'expired' | 'rejected' | 'cancelled' | 'other'
   statusLabel: string
   statusMessage: string
   timelineLabel: string

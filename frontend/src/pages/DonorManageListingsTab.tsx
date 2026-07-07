@@ -122,6 +122,8 @@ export default function DonorManageListingsTab() {
     active: listings.filter(listing => listing.trackingFilterStatus === 'active').length,
     sold: listings.filter(listing => listing.trackingFilterStatus === 'sold').length,
     expired: listings.filter(listing => listing.trackingFilterStatus === 'expired').length,
+    rejected: listings.filter(listing => listing.trackingFilterStatus === 'rejected').length,
+    cancelled: listings.filter(listing => listing.trackingFilterStatus === 'cancelled').length,
   }), [listings])
 
   const filteredListings = useMemo(() => {
@@ -141,6 +143,8 @@ export default function DonorManageListingsTab() {
     { value: 'active' as const, label: 'Active', count: filterCounts.active },
     { value: 'sold' as const, label: 'Sold', count: filterCounts.sold },
     { value: 'expired' as const, label: 'Expired', count: filterCounts.expired },
+    { value: 'rejected' as const, label: 'Rejected', count: filterCounts.rejected },
+    { value: 'cancelled' as const, label: 'Cancelled', count: filterCounts.cancelled },
   ]), [filterCounts])
 
   const summaryCards = useMemo(() => ([
@@ -150,6 +154,8 @@ export default function DonorManageListingsTab() {
     { label: 'Active', value: filterCounts.active, filter: 'active' as const },
     { label: 'Sold', value: filterCounts.sold, filter: 'sold' as const },
     { label: 'Expired', value: filterCounts.expired, filter: 'expired' as const },
+    { label: 'Rejected', value: filterCounts.rejected, filter: 'rejected' as const },
+    { label: 'Cancelled', value: filterCounts.cancelled, filter: 'cancelled' as const },
   ]), [filterCounts])
 
   const openEdit = (listing: DonorListingTrackingItem) => {

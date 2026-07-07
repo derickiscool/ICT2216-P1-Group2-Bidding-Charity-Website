@@ -49,6 +49,8 @@ const getTrackingFilterStatus = (listing: Listing, nowMs: number): TrackingFilte
   if (listing.status === 'active') return 'active';
   if (listing.status === 'sold' || listing.status === 'shipped' || listing.status === 'delivered') return 'sold';
   if (listing.status === 'expired') return 'expired';
+  if (listing.status === 'rejected') return 'rejected';
+  if (listing.status === 'cancelled') return 'cancelled';
   return 'other';
 };
 
