@@ -139,7 +139,7 @@ export default function DonorDashboard() {
   // ─── Actions ───────────────────────────────────────────────────────────
 
   const sanitize = (value: string): string =>
-    value.replace(/<[^>]*>/g, '').replace(/[<>"'&]/g, '').trim()
+    value.replace(/[^a-zA-Z0-9\s\-\.\_\#\/\:]/g, '').trim()
 
   const handleShipping = async (uuid: string) => {
     const cleanTracking = sanitize(trackingNumber)
