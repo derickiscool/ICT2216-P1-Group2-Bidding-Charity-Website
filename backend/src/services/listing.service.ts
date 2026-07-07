@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { Delivery, Listing, ListingStatus } from '../types/domain';
-import { addDelivery, addListing, getCampaignById, getCharityById, getDeliveryByListingId, getListingByUuid, getPaymentsForListing, listActiveListings, listListings, listListingsByDonor, listPendingListings, updateDelivery, updateListing } from '../repositories';
+import { addDelivery, addListing, getCampaignById, getCharityById, getDeliveryByListingId, getListingByUuid, getPaymentsForListing, listActiveListings, listListings, listListingsByDonor, listListingsByStatus, listPendingListings, updateDelivery, updateListing } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
 import { containsScriptLikeContent, isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
 import { audit } from './audit.service';
@@ -384,6 +384,10 @@ export const getPublicListing = async (uuid: string, isAdmin = false): Promise<L
 };
 
 export const getPendingListings = async (): Promise<Listing[]> => listPendingListings();
+
+export const getAdminListings = async (status?: string): Promise<Listing[]> => {
+  return listListingsByStatus(status);
+};
 
 export const getDonorListings = async (donorId: number): Promise<{ listings: Array<Listing & { can_ship?: boolean; payment_held?: boolean; has_shipped?: boolean; payment_released?: boolean }>; stats: DonorStats }> => {
   const listings = await listListingsByDonor(donorId);

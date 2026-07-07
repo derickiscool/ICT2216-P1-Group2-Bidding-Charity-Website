@@ -940,6 +940,15 @@ const listListings = async (): Promise<Listing[]> => {
   return rows.map(mapListing);
 };
 
+const listListingsByStatus = async (status?: string): Promise<Listing[]> => {
+  if (!status) return listListings();
+  const rows = await allRows<ListingRow>(
+    'SELECT * FROM listings WHERE status = $1 ORDER BY created_at DESC, id DESC',
+    [status],
+  );
+  return rows.map(mapListing);
+};
+
 const listActiveListings = async (): Promise<Listing[]> => {
   const rows = await allRows<ListingRow>("SELECT * FROM listings WHERE status = 'active' ORDER BY created_at DESC, id DESC");
   return rows.map(mapListing);
@@ -1375,6 +1384,7 @@ export const postgresRepository: BidForGoodRepository = {
   listListings,
   listActiveListings,
   listPendingListings,
+  listListingsByStatus,
   listListingsByDonor,
   listUsers,
 
