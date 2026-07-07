@@ -11,6 +11,11 @@ export default defineConfig({
     // Use threads pool for better ESM compatibility with jsdom
     pool: 'threads',
 
+    // Node >=22 exposes a built-in global `localStorage`/`sessionStorage` (Web
+    // Storage API) that shadows happy-dom's own implementation and lacks
+    // methods like .clear(). Disable it so happy-dom's storage is used instead.
+    execArgv: ['--no-experimental-webstorage'],
+
     // Make testing-library matchers (toBeInTheDocument, etc.) available globally
     globals: true,
 
