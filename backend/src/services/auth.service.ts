@@ -3,7 +3,8 @@ import argon2 from 'argon2';
 import type { Request, Response } from 'express';
 import {
   addUser, findUserByEmail, getPendingRegistration, removePendingRegistration, savePendingRegistration, toPublicUser, updateUser,
-  saveLoginOtp, getLoginOtp, removeLoginOtp
+  saveLoginOtp, getLoginOtp, removeLoginOtp,
+  savePasswordResetToken, getPasswordResetTokenByEmail, removePasswordResetToken, revokeAllSessionsByUserId,
 } from '../repositories';
 import type { UserRole } from '../types/domain';
 import { badRequest, tooManyRequests, unauthorised } from '../utils/errors';
@@ -11,7 +12,7 @@ import { isStrongPassword } from '../utils/breachedPasswords';
 import { normalizeEmail, randomToken, sha256, safeString, isValidEmail } from '../utils/security';
 import { audit } from './audit.service';
 import { createSession, setSessionCookie, clearSessionCookie, revokeBySid } from './session.service';
-import { sendRegistrationOtp, sendLoginOtp } from './otpDelivery.service';
+import { sendRegistrationOtp, sendPasswordResetOtp, sendLoginOtp } from './otpDelivery.service';
 
 const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 };
 const MAX_FAILED_LOGINS = 5;
@@ -250,3 +251,68 @@ export const verifyLoginOtp = async (emailInput: string, otpInput: string, req: 
   return { user: safeUser, csrfToken: session.csrfToken };
 };
 
+const RESET_OTP_TTL_MS = 3 * 60 * 1000;
+const MAX_RESET_OTP_ATTEMPTS = 5;
+const GENERIC_RESET_MESSAGE = 'If that email is registered, a one-time code has been sent.';
+
+export const requestPasswordReset = async (emailInput: string, req?: Request): Promise<{ message: string }> => {
+  const email = normalizeEmail(emailInput);
+  if (!isValidEmail(email)) return { message: GENERIC_RESET_MESSAGE };
+  const user = await findUserByEmail(email);
+  if (!user || !user.is_active || !user.is_verified || user.roles.includes('admin')) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.info(`[BidForGood DEV RESET] suppressed — no active/verified non-admin account for email=${email}`);
+    }
+    await audit(req, 'AUTH_PASSWORD_RESET_SUPPRESSED', { email }, 'user');
+    return { message: GENERIC_RESET_MESSAGE };
+  }
+  const otp = crypto.randomInt(100000, 1000000).toString();
+  await savePasswordResetToken({
+    email,
+    tokenHash: sha256(otp),
+    expiresAt: new Date(Date.now() + RESET_OTP_TTL_MS),
+    attempts: 0,
+    createdAt: new Date(),
+  });
+  await sendPasswordResetOtp(email, otp);
+  await audit(req, 'AUTH_PASSWORD_RESET_REQUESTED', { email }, 'user', user.uuid, user.id);
+  return { message: GENERIC_RESET_MESSAGE };
+};
+
+export const resetPassword = async (emailInput: string, otpInput: string, newPassword: string, req?: Request): Promise<{ message: string }> => {
+  const email = normalizeEmail(emailInput);
+  const invalid = badRequest('The code is invalid or has expired. Please request a new one.', 'RESET_OTP_INVALID');
+  if (!isStrongPassword(newPassword)) {
+    throw badRequest('Password must be 8-128 characters and must not match known breached or common passwords.', 'VALIDATION_ERROR', {
+      password: 'Password must be 8-128 characters and must not match known breached or common passwords.',
+    });
+  }
+  const record = await getPasswordResetTokenByEmail(email);
+  if (!record) throw invalid;
+  if (record.expiresAt.getTime() <= Date.now()) {
+    await removePasswordResetToken(email);
+    throw invalid;
+  }
+  if (record.tokenHash !== sha256(String(otpInput))) {
+    record.attempts += 1;
+    if (record.attempts >= MAX_RESET_OTP_ATTEMPTS) {
+      await removePasswordResetToken(email);
+    } else {
+      await savePasswordResetToken(record);
+    }
+    throw invalid;
+  }
+  const user = await findUserByEmail(email);
+  if (!user || !user.is_active) {
+    await removePasswordResetToken(email);
+    throw invalid;
+  }
+  user.passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
+  user.failedLoginAttempts = 0;
+  user.lockedUntil = undefined;
+  await updateUser(user);
+  await removePasswordResetToken(email);
+  await revokeAllSessionsByUserId(user.id);
+  await audit(req, 'AUTH_PASSWORD_RESET_COMPLETED', { email }, 'user', user.uuid, user.id);
+  return { message: 'Your password has been reset. You can now log in with your new password.' };
+};

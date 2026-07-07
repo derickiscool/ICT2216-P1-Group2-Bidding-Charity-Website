@@ -113,6 +113,34 @@ export interface Listing {
   created_at: string;
 }
 
+export interface DonorListingStatusSummary {
+  total: number;
+  draft: number;
+  pending: number;
+  active: number;
+  sold: number;
+  expired: number;
+  cancelled: number;
+  rejected: number;
+}
+
+export interface DonorListingTrackingItem extends Listing {
+  // Backend-owned user interface hints for FR10. The frontend can display these
+  // directly without reimplementing auction status rules in the browser.
+  statusLabel: string;
+  statusMessage: string;
+  timelineLabel: string;
+  canEdit: boolean;
+  canDelete: boolean;
+  finalBidAmount?: number;
+}
+
+export interface DonorListingTrackingDashboard {
+  generatedAt: string;
+  summary: DonorListingStatusSummary;
+  listings: DonorListingTrackingItem[];
+}
+
 export interface Bid {
   id: number;
   uuid: string;
@@ -122,6 +150,32 @@ export interface Bid {
   amount: number;
   is_auto_bid: boolean;
   created_at: string;
+}
+
+
+export interface AutoBidSetting {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  bidder_username: string;
+  max_amount: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutoBidWithListing extends AutoBidSetting {
+  listingTitle?: string;
+  listingUuid?: string;
+  listingStatus?: ListingStatus;
+  currentBid?: number;
+  endTime?: string;
+}
+
+export interface BidWithListing extends Bid {
+  listingTitle?: string;
+  listingUuid?: string;
 }
 
 export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired';
@@ -151,12 +205,21 @@ export interface PaymentWithListing extends Payment {
   charity_name: string;
 }
 
+export interface PasswordResetToken {
+  email: string;
+  tokenHash: string;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
 export interface SessionRecord {
   sid: string;
   userId: number;
   jtiHash: string;
   csrfTokenHash: string;
   expiresAt: Date;
+  absoluteExpiresAt: Date;
   revokedAt?: Date;
   createdAt: Date;
   lastSeenAt: Date;

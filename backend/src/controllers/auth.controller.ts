@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import * as authService from '../services/auth.service';
 
+
 export const register = async (req: Request, res: Response): Promise<void> => {
   const result = await authService.beginRegistration(req.body, req);
   res.status(202).json(result);
@@ -40,3 +41,17 @@ export const verifyLoginOtp = async (req: Request, res: Response): Promise<void>
   res.json(result);
 };
 
+export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
+  const result = await authService.requestPasswordReset(String(req.body.email ?? ''), req);
+  res.json(result);
+};
+
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+  const result = await authService.resetPassword(
+    String(req.body.email ?? ''),
+    String(req.body.token ?? ''),
+    String(req.body.password ?? ''),
+    req,
+  );
+  res.json(result);
+};

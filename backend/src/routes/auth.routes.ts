@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../utils/asyncHandler';
-import { login, logout, me, register, verifyRegistration, requestLoginOtp, verifyLoginOtp } from '../controllers/auth.controller';
+import { login, logout, me, register, verifyRegistration, forgotPassword, resetPassword, requestLoginOtp, verifyLoginOtp } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireCsrf } from '../middleware/csrf.middleware';
 
@@ -12,4 +12,6 @@ router.post('/login/passwordless/request', asyncHandler(requestLoginOtp));
 router.post('/login/passwordless/verify', asyncHandler(verifyLoginOtp));
 router.get('/me', asyncHandler(authenticate), asyncHandler(me));
 router.post('/logout', asyncHandler(authenticate), requireCsrf, asyncHandler(logout));
+router.post('/forgot-password', asyncHandler(forgotPassword));
+router.post('/reset-password', asyncHandler(resetPassword));
 export default router;

@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { Listing, ListingStatus } from '../types/domain';
-import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listListings, listPendingListings, updateListing } from '../repositories';
+import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listListings, listListingsByDonor, listPendingListings, updateListing } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
 import { isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
 import { audit } from './audit.service';
@@ -15,8 +15,8 @@ const LOCKED_FIELDS = new Set([
   'charityName', 'charity_name'
 ]);
 
-const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected'];
-const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected', 'expired', 'cancelled'];
+export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected'];
+export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected', 'expired', 'cancelled'];
 const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
 
 type UploadedListingImage = Express.Multer.File;
@@ -226,6 +226,7 @@ export const deleteListing = async (uuid: string, req: Request): Promise<Listing
 
 export const listMyListings = async (req: Request): Promise<Listing[]> => {
   if (!req.user) throw forbidden();
+
   const all = await listListings();
   if (req.user.roles.includes('admin')) return all;
   return all.filter(listing => listing.donor_id === req.user?.id);
@@ -239,6 +240,16 @@ export const approveListing = async (uuid: string, req: Request): Promise<Listin
   listing.start_time = new Date().toISOString();
   await updateListing(listing);
   await audit(req, 'LISTING_APPROVED', { uuid }, 'listing', listing.uuid, req.user?.id);
+  return listing;
+};
+
+export const rejectListing = async (uuid: string, reason: string | undefined, req: Request): Promise<Listing> => {
+  const listing = await getListingByUuid(uuid);
+  if (!listing) throw notFound('Listing not found');
+  if (listing.status !== 'pending') throw badRequest('Only pending listings can be rejected.');
+  listing.status = 'rejected';
+  await updateListing(listing);
+  await audit(req, 'LISTING_REJECTED', { uuid, reason: sanitizeText(reason ?? '', 300) }, 'listing', listing.uuid, req.user?.id);
   return listing;
 };
 
@@ -286,10 +297,33 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   return results;
 };
 
-export const getPublicListing = async (uuid: string): Promise<Listing> => {
+export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing> => {
   const listing = await getListingByUuid(uuid);
-  if (!listing || listing.status !== 'active') throw notFound('Listing not found');
+  if (!listing) throw notFound('Listing not found');
+  if (!isAdmin && listing.status !== 'active') throw notFound('Listing not found');
   return listing;
 };
 
 export const getPendingListings = async (): Promise<Listing[]> => listPendingListings();
+
+export const getDonorListings = async (donorId: number): Promise<{ listings: Listing[]; stats: DonorStats }> => {
+  const listings = await listListingsByDonor(donorId);
+  const stats: DonorStats = {
+    total: listings.length,
+    active: listings.filter(l => l.status === 'active').length,
+    sold: listings.filter(l => l.status === 'sold').length,
+    pending: listings.filter(l => l.status === 'pending').length,
+    draft: listings.filter(l => l.status === 'draft').length,
+    totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
+  };
+  return { listings, stats };
+};
+
+export interface DonorStats {
+  total: number;
+  active: number;
+  sold: number;
+  pending: number;
+  draft: number;
+  totalRaised: number;
+}
