@@ -15,6 +15,11 @@ const devPasswordChangeOtpOutbox = new Map<string, string>();
  */
 const shouldSendRealEmail = (): boolean => process.env.NODE_ENV === 'production';
 
+const deliverOtpMail = async (message: Parameters<typeof sendMail>[0]): Promise<void> => {
+  if (process.env.MAIL_DELIVERY_DISABLED === 'true') return;
+  await sendMail(message);
+};
+
 export const sendRegistrationOtp = async (email: string, otp: string): Promise<void> => {
   if (!shouldSendRealEmail()) {
     devOtpOutbox.set(email, otp);
