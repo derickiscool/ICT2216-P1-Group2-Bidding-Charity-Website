@@ -105,7 +105,7 @@ export const changePassword = async (userId: number, input: ChangePasswordInput,
 // 3. confirmEmailChange     — confirm the new-address code; apply the change and revoke all sessions.
 // Deferring contact with the (possibly attacker-chosen) new address until current control is
 // proven is the anti-abuse property this ordering buys over sending both codes up front.
-const EMAIL_CHANGE_TTL_MS = 15 * 60 * 1000;
+const EMAIL_CHANGE_TTL_MS = 3 * 60 * 1000;
 const MAX_EMAIL_CHANGE_ATTEMPTS = 5;
 
 const genOtp = (): string => crypto.randomInt(100000, 1000000).toString();
