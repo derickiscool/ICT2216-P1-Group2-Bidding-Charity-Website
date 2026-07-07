@@ -1003,7 +1003,13 @@ const listListings = async (): Promise<Listing[]> => {
 };
 
 const listActiveListings = async (): Promise<Listing[]> => {
-  const rows = await allRows<ListingRow>("SELECT * FROM listings WHERE status = 'active' ORDER BY created_at DESC, id DESC");
+  const rows = await allRows<ListingRow>(`
+    SELECT l.* FROM listings l
+    JOIN campaigns c ON l.campaign_id = c.id
+    JOIN charities ch ON c.charity_id = ch.id
+    WHERE l.status = 'active' AND ch.status = 'approved'
+    ORDER BY l.created_at DESC, l.id DESC
+  `);
   return rows.map(mapListing);
 };
 
@@ -1033,9 +1039,17 @@ const addBid = async (input: NewBidInput): Promise<Bid> => {
   return mapBid(row);
 };
 
+// maskUsername: masks bidder username at the backend before it leaves the API.
+// This is the authoritative masking point — frontend masking is defence-in-depth only.
+const maskUsername = (u: string): string => {
+  if (!u || u.length === 0) return '***';
+  if (u.length <= 2) return u[0] + '***';
+  return u[0] + '***' + u[u.length - 1];
+};
+
 const getBidsForListing = async (listingId: number): Promise<Bid[]> => {
   const rows = await allRows<BidRow>('SELECT * FROM bids WHERE listing_id = $1 ORDER BY amount DESC, created_at ASC', [listingId]);
-  return rows.map(mapBid);
+  return rows.map(row => ({ ...mapBid(row), bidder_username: maskUsername(row.bidder_username) }));
 };
 
 interface BidWithListingRow extends BidRow {
