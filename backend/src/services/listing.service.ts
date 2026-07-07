@@ -412,11 +412,18 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   return results;
 };
 
-export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing> => {
+export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
   if (!isAdmin && listing.status !== 'active') throw notFound('Listing not found');
-  return listing;
+
+  // Attach campaign details (includes total_raised, description) for the auction detail page.
+  let campaign: import('../types/domain').Campaign | undefined;
+  if (listing.campaign_id) {
+    campaign = await getCampaignById(listing.campaign_id) ?? undefined;
+  }
+
+  return { ...listing, campaign };
 };
 
 export const getPendingListings = async (): Promise<Listing[]> => listPendingListings();

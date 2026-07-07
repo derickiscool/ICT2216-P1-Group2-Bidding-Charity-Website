@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { io } from 'socket.io-client'
-import { Clock, Heart, ArrowLeft, Flame, Shield, CheckCircle } from 'lucide-react'
+import { Clock, ArrowLeft, ArrowRight, Flame, Shield, CheckCircle, X, BookOpen } from 'lucide-react'
 import api from '../services/api'
 import type { AutoBid, AutoBidResponse, Bid, BidPlacementResponse, Listing } from '../types'
 import { useAuthStore } from '../store/authStore'
@@ -123,7 +123,7 @@ export default function AuctionDetailPage() {
   const [maxAutoBid, setMaxAutoBid] = useState('')
   const [savedAutoBidActive, setSavedAutoBidActive] = useState(false)
   const [autoBidSaving, setAutoBidSaving] = useState(false)
-  const [saved, setSaved]           = useState(false)
+  const [campaignModalOpen, setCampaignModalOpen] = useState(false)
   const processedBids = useRef<Set<number>>(new Set())
   const listingRef = useRef<Listing | null>(null)
 
@@ -349,14 +349,12 @@ export default function AuctionDetailPage() {
   // ── Derived values ────────────────────────────────────────────────────────
   const charityName  = listing.charityName ?? listing.campaign?.charity?.name ?? 'Verified Charity'
   const campaignName = listing.campaign?.name ?? charityName
-  const raised       = listing.campaign?.total_raised ?? 45_230
-  const goal         = 80_000
-  const pct          = Math.min(100, Math.round((raised / goal) * 100))
   // Real images if they exist; otherwise a single placeholder (no fake 4-image array)
   const images       = listing.images?.length ? listing.images : ['https://via.placeholder.com/800x500?text=No+Image']
   const auctionEnded = new Date(listing.end_time).getTime() <= now
   const minNextBid   = Math.max(listing.starting_price, listing.current_bid) + (listing.min_increment ?? 1)
   const urgent       = !auctionEnded && new Date(listing.end_time).getTime() - now < 3 * 3_600_000
+  const campaign     = listing.campaign
 
   return (
     <div className="min-h-screen pb-20" style={{ background: 'var(--bfg-linen)' }}>
@@ -369,84 +367,98 @@ export default function AuctionDetailPage() {
         <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full blur-3xl"
              style={{ background: 'rgba(4,120,87,0.2)' }} />
 
-        <div className="relative max-w-[1440px] mx-auto">
-          <div className="flex items-center gap-4 mb-5">
-            <Link to={user && user.roles.includes('admin') ? '/admin' : '/dashboard'}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest transition-opacity hover:opacity-70"
-                  style={{ color: 'var(--bfg-beige)' }}>
-              Dashboard
-            </Link>
-            <span style={{ color: 'rgba(187,176,155,0.4)' }}>/</span>
-            <Link to="/auctions"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest transition-opacity hover:opacity-70"
-                  style={{ color: 'var(--bfg-beige)' }}>
-              <ArrowLeft className="w-3.5 h-3.5" /> Back to Auctions
-            </Link>
-          </div>
-
-          {/* ── Admin preview banner ───────────────────────────── */}
-          {user?.roles?.includes('admin') && listing.status !== 'active' && (
-            <div className="mb-5 px-5 py-3 rounded-xl flex items-center gap-3"
-              style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', color: '#92400E' }}>
-              <Shield className="w-4 h-4 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold">Preview — {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)} Review</p>
-                <p className="text-xs mt-0.5 opacity-80">Only admins can see this listing. It is not yet visible to the public.</p>
+        <div className="relative max-w-[1440px] mx-auto pb-10">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+            <div className="flex-1">
+              <div className="flex items-center gap-4 mb-5">
+                <Link to={user && user.roles.includes('admin') ? '/admin' : '/dashboard'}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest transition-opacity hover:opacity-70"
+                      style={{ color: 'var(--bfg-beige)' }}>
+                  Dashboard
+                </Link>
+                <span style={{ color: 'rgba(187,176,155,0.4)' }}>/</span>
+                <Link to="/auctions"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest transition-opacity hover:opacity-70"
+                      style={{ color: 'var(--bfg-beige)' }}>
+                  <ArrowLeft className="w-3.5 h-3.5" /> Back to Auctions
+                </Link>
               </div>
-            </div>
-          )}
 
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest"
-                  style={{ background: 'rgba(187,176,155,0.12)', color: 'var(--bfg-beige)', border: '1px solid rgba(187,176,155,0.2)' }}>
-              <Shield className="w-3 h-3" /> {charityName}
-            </span>
-            {urgent && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest"
-                    style={{ background: 'var(--bfg-danger)', color: '#fff' }}>
-                <Flame className="w-3 h-3" /> Ending Soon
-              </span>
-            )}
-          </div>
-
-          <h1 className="text-3xl md:text-4xl font-black text-white mb-10 max-w-3xl leading-tight">
-            {listing.title}
-          </h1>
-        </div>
-
-      </div>
-
-      {/* ── Campaign metrics band — sits between hero and body ─── */}
-      <div className="px-6 py-5 border-b" style={{ background: '#FFFFFF', borderColor: 'var(--bfg-beige)' }}>
-        <div className="max-w-[1440px] mx-auto flex flex-wrap items-center gap-x-8 gap-y-3">
-
-          {[
-            { label: 'Raised',      value: `$${raised.toLocaleString()}`,                    color: 'var(--bfg-emerald)' },
-            { label: 'Goal',        value: `$${goal.toLocaleString()}`,                       color: 'var(--bfg-slate)'   },
-            { label: 'Total Bids',  value: String(listing.bid_count),                         color: 'var(--bfg-slate)'   },
-            { label: 'Starting at', value: `$${listing.starting_price.toLocaleString()}`,     color: 'var(--bfg-slate)'   },
-          ].map(({ label, value, color }, i, arr) => (
-            <div key={label} className="flex items-center gap-8">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest mb-0.5" style={{ color: 'var(--bfg-text-muted)' }}>{label}</p>
-                <p className="text-xl font-black leading-none" style={{ color }}>{value}</p>
-              </div>
-              {/* Dot separator between stats only, not after last one */}
-              {i < arr.length - 1 && (
-                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--bfg-beige)' }} />
+              {/* ── Admin preview banner ───────────────────────────── */}
+              {user?.roles?.includes('admin') && listing.status !== 'active' && (
+                <div className="mb-5 px-5 py-3 rounded-xl flex items-center gap-3"
+                  style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', color: '#92400E' }}>
+                  <Shield className="w-4 h-4 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold">Preview — {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)} Review</p>
+                    <p className="text-xs mt-0.5 opacity-80">Only admins can see this listing. It is not yet visible to the public.</p>
+                  </div>
+                </div>
               )}
-            </div>
-          ))}
 
-          {/* Progress bar — takes remaining horizontal space */}
-          <div className="flex-1 min-w-[200px] ml-4">
-            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: 'var(--bfg-text-muted)' }}>
-              <span>Campaign Progress</span>
-              <span style={{ color: 'var(--bfg-emerald)' }}>{pct}% funded</span>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <button
+                  onClick={() => setCampaignModalOpen(true)}
+                  title="Click to view campaign details"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest transition-opacity hover:opacity-80 cursor-pointer"
+                  style={{ background: 'rgba(187,176,155,0.12)', color: 'var(--bfg-beige)', border: '1px solid rgba(187,176,155,0.2)' }}
+                >
+                  <Shield className="w-3 h-3" /> {charityName}
+                  <BookOpen className="w-3 h-3 ml-0.5 opacity-70" />
+                </button>
+                {urgent && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest"
+                        style={{ background: 'var(--bfg-danger)', color: '#fff' }}>
+                    <Flame className="w-3 h-3" /> Ending Soon
+                  </span>
+                )}
+              </div>
+
+              <h1 className="text-3xl md:text-4xl font-black text-white max-w-3xl leading-tight">
+                {listing.title}
+              </h1>
             </div>
-            <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: '#E5E0D8' }}>
-              <div className="h-2 rounded-full transition-all duration-700"
-                   style={{ width: `${pct}%`, background: 'var(--bfg-emerald)' }} />
+
+            {/* Campaign metrics pill integrated into hero right side */}
+            <div className="flex-shrink-0 lg:pb-1">
+              <div className="inline-flex flex-col sm:flex-row items-center gap-6 px-6 py-4 rounded-3xl backdrop-blur-md" 
+                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                {/* Stats Section */}
+                <div className="flex items-center gap-6">
+                  <div className="text-center sm:text-left">
+                    <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-white/50">Total Bids</p>
+                    <p className="text-2xl font-black leading-none text-white">{listing.bid_count}</p>
+                  </div>
+                  <div className="w-[1px] h-10 bg-white/10" />
+                  <div className="text-center sm:text-left">
+                    <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-white/50">Starting At</p>
+                    <p className="text-2xl font-black leading-none text-white">${listing.starting_price.toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <div className="hidden sm:block w-[1px] h-10 bg-white/10" />
+
+                {/* Campaign Button */}
+                <button
+                  onClick={() => setCampaignModalOpen(true)}
+                  className="group relative flex items-center gap-4 px-5 py-2.5 rounded-2xl overflow-hidden transition-all hover:scale-[1.02] active:scale-[0.98] w-full sm:w-auto"
+                  style={{ 
+                    background: 'var(--bfg-emerald)',
+                    boxShadow: '0 4px 12px rgba(4,120,87,0.3)'
+                  }}
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white/20">
+                    <Shield className="w-4 h-4 text-white" />
+                  </div>
+                  
+                  <div className="text-left flex-1 pr-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-emerald-100">Supporting</p>
+                    <p className="text-sm font-black leading-tight text-white">{campaignName}</p>
+                  </div>
+                  
+                  <ArrowRight className="w-4 h-4 text-emerald-100 transition-transform group-hover:translate-x-1" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -494,7 +506,6 @@ export default function AuctionDetailPage() {
                 {[
                   listing.category,
                   listing.condition.replace('_', ' '),
-                  `Auction #${listing.id}`,
                   `Listed ${new Date(listing.start_time).toLocaleDateString()}`,
                 ].map(tag => (
                   <span key={tag}
@@ -698,16 +709,6 @@ export default function AuctionDetailPage() {
                         Buy Now — ${listing.buy_now_price.toLocaleString()}
                       </button>
                     )}
-
-                    <button
-                      onClick={() => setSaved(v => !v)}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors"
-                      style={{ border: '1px solid var(--bfg-beige)', color: saved ? 'var(--bfg-danger)' : 'var(--bfg-text-muted)', background: 'transparent' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bfg-linen)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
-                      {saved ? 'Saved to Watchlist' : 'Save to Watchlist'}
-                    </button>
                   </>
                 ) : !isAuthenticated ? (
                   <div className="rounded-xl px-4 py-5 text-center" style={{ background: 'var(--bfg-linen)', border: '1px solid var(--bfg-beige)' }}>
@@ -754,6 +755,62 @@ export default function AuctionDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Campaign Detail Modal ─────────────────────────────────────────── */}
+      {campaignModalOpen && campaign && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={() => setCampaignModalOpen(false)}
+        >
+          <div
+            className="relative rounded-2xl p-8 max-w-lg w-full"
+            style={{ background: '#FFFFFF', border: '1px solid var(--bfg-beige)', boxShadow: '0 24px 48px rgba(0,0,0,0.18)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setCampaignModalOpen(false)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+              style={{ background: 'var(--bfg-linen)', color: 'var(--bfg-text-muted)' }}
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Campaign badge */}
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest mb-4"
+                  style={{ background: 'var(--bfg-emerald-light)', color: 'var(--bfg-emerald)', border: '1px solid rgba(4,120,87,0.2)' }}>
+              <CheckCircle className="w-3 h-3" /> Campaign
+            </span>
+
+            <h2 className="text-2xl font-black mb-2" style={{ color: 'var(--bfg-slate)' }}>
+              {campaign.name}
+            </h2>
+
+            <p className="text-xs font-bold mb-5" style={{ color: 'var(--bfg-text-muted)' }}>
+              Beneficiary: <span style={{ color: 'var(--bfg-slate)' }}>{charityName}</span>
+              {campaign.end_date && (
+                <> · Ends {new Date(campaign.end_date).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}</>
+              )}
+            </p>
+
+            <p className="text-sm leading-relaxed mb-6" style={{ color: 'var(--bfg-text-muted)' }}>
+              {campaign.description}
+            </p>
+
+            {/* Stats row */}
+            <div className="flex flex-wrap gap-4 mb-6">
+              <div className="rounded-xl px-4 py-3 flex-1 min-w-[100px]" style={{ background: 'var(--bfg-linen)', border: '1px solid var(--bfg-beige)' }}>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: 'var(--bfg-text-muted)' }}>Raised</p>
+                <p className="text-xl font-black" style={{ color: 'var(--bfg-emerald)' }}>${campaign.total_raised.toLocaleString()}</p>
+              </div>
+              <div className="rounded-xl px-4 py-3 flex-1 min-w-[100px]" style={{ background: 'var(--bfg-linen)', border: '1px solid var(--bfg-beige)' }}>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: 'var(--bfg-text-muted)' }}>Active Auctions</p>
+                <p className="text-xl font-black" style={{ color: 'var(--bfg-slate)' }}>{campaign.active_auctions}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

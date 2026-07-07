@@ -9,10 +9,20 @@ import {
   setAutoBid,
 } from '../services/bid.service';
 
-const emitBidUpdates = (req: Request, bids: Array<{ listing_id: number }>): void => {
+const maskUsername = (u: string): string => {
+  if (!u || u.length === 0) return '***';
+  if (u.length <= 2) return u[0] + '***';
+  return u[0] + '***' + u[u.length - 1];
+};
+
+const emitBidUpdates = (req: Request, bids: Array<{ listing_id: number; bidder_username?: string }>): void => {
   const io = req.app.get('io');
   for (const bid of bids) {
-    io?.to(`listing:${bid.listing_id}`).emit('bid:placed', bid);
+    // Mask the username before broadcasting — bidder identity must not leak over WebSocket.
+    const safePayload = bid.bidder_username !== undefined
+      ? { ...bid, bidder_username: maskUsername(bid.bidder_username) }
+      : bid;
+    io?.to(`listing:${bid.listing_id}`).emit('bid:placed', safePayload);
   }
 };
 
