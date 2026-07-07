@@ -100,7 +100,7 @@ export interface CharityOrganisation {
   created_at: string;
 }
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
+export type ListingStatus = 'draft' | 'pending' | 'changes_requested' | 'charity_review' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
 export interface Listing {
   id: number;
   uuid: string;
@@ -122,6 +122,8 @@ export interface Listing {
   winner_id?: number;
   charityName: string;
   min_increment: number;
+  // SFR09: reviewer note (admin reject / request-changes reason) surfaced to the donor.
+  review_note?: string;
   created_at: string;
 }
 
@@ -129,6 +131,8 @@ export interface DonorListingStatusSummary {
   total: number;
   draft: number;
   pending: number;
+  changes_requested: number;
+  charity_review: number;
   active: number;
   sold: number;
   shipped: number;

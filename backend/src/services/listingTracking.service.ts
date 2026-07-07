@@ -5,12 +5,14 @@ import { audit } from './audit.service';
 import { DONOR_DELETABLE_STATUSES, DONOR_EDITABLE_STATUSES, listMyListings } from './listing.service';
 import { processAuctionDeadlines } from './payment.service';
 
-const TRACKABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'];
+const TRACKABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'charity_review', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'];
 
 const emptyStatusSummary = (): DonorListingTrackingDashboard['summary'] => ({
   total: 0,
   draft: 0,
   pending: 0,
+  changes_requested: 0,
+  charity_review: 0,
   active: 0,
   sold: 0,
   shipped: 0,
@@ -46,7 +48,9 @@ const buildTimelineLabel = (listing: Listing, nowMs: number): string => {
 
   if (listing.status === 'sold') return 'Auction closed with a winning bidder';
   if (listing.status === 'expired') return 'Auction ended without a valid winner';
-  if (listing.status === 'pending') return 'Waiting for listing review';
+  if (listing.status === 'pending') return 'Waiting for administrator review';
+  if (listing.status === 'changes_requested') return 'Changes requested — update and resubmit';
+  if (listing.status === 'charity_review') return 'Forwarded to the charity for review';
   if (listing.status === 'draft') return 'Draft not yet submitted';
   if (listing.status === 'rejected') return 'Rejected during review';
   if (listing.status === 'cancelled') return 'Cancelled by donor or admin';
@@ -63,8 +67,20 @@ const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLab
       };
     case 'pending':
       return {
-        statusLabel: 'Pending Review',
-        statusMessage: 'This listing is waiting for approval before it can appear on the campaign page.',
+        statusLabel: 'Pending Admin Review',
+        statusMessage: 'This listing is waiting for administrator review before it is forwarded to the charity.',
+      };
+    case 'changes_requested':
+      return {
+        statusLabel: 'Changes Requested',
+        statusMessage: listing.review_note
+          ? `The administrator asked for changes: "${listing.review_note}". Edit the listing to resubmit it for review.`
+          : 'The administrator asked for changes before this listing can proceed. Edit the listing to resubmit it for review.',
+      };
+    case 'charity_review':
+      return {
+        statusLabel: 'Charity Review',
+        statusMessage: 'The administrator approved this listing and forwarded it to the charity for final review.',
       };
     case 'active':
       return {
@@ -84,7 +100,9 @@ const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLab
     case 'rejected':
       return {
         statusLabel: 'Rejected',
-        statusMessage: 'The listing was rejected during review. You may edit it and resubmit if needed.',
+        statusMessage: listing.review_note
+          ? `The listing was rejected during review: "${listing.review_note}". You may edit it and resubmit if needed.`
+          : 'The listing was rejected during review. You may edit it and resubmit if needed.',
       };
     case 'cancelled':
       return {

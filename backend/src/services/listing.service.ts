@@ -16,8 +16,9 @@ const LOCKED_FIELDS = new Set([
   'charityName', 'charity_name'
 ]);
 
-export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected'];
-export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'rejected', 'expired', 'cancelled'];
+// `charity_review` is intentionally NOT editable — the listing is locked while the charity reviews it.
+export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'rejected'];
+export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'rejected', 'expired', 'cancelled'];
 const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
 
 // SFR07: reject (not just escape) title/description text containing script-like content,
@@ -218,11 +219,14 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
   if (body.condition && ['new', 'like_new', 'good', 'fair'].includes(String(body.condition))) listing.condition = String(body.condition) as Listing['condition'];
   listing.images = buildUpdatedImages(listing, body, req);
 
-  // A donor editing a rejected listing is resubmitting it: move it back into the review
-  // queue, otherwise the admin pending list never surfaces it again and the edit is moot.
-  if (!isAdmin && listing.status === 'rejected') {
+  // A donor editing a rejected or changes-requested listing is resubmitting it: move it back
+  // into the admin review queue and clear the stale reviewer note, otherwise the admin pending
+  // list never surfaces it again and the edit is moot.
+  if (!isAdmin && (listing.status === 'rejected' || listing.status === 'changes_requested')) {
+    const previousStatus = listing.status;
     listing.status = 'pending';
-    await audit(req, 'LISTING_RESUBMITTED_FOR_REVIEW', { uuid, previousStatus: 'rejected' }, 'listing', listing.uuid, req.user?.id);
+    listing.review_note = undefined;
+    await audit(req, 'LISTING_RESUBMITTED_FOR_REVIEW', { uuid, previousStatus }, 'listing', listing.uuid, req.user?.id);
   }
 
   await updateListing(listing);
@@ -257,20 +261,34 @@ export const listMyListings = async (req: Request): Promise<Listing[]> => {
   return all.filter(listing => listing.donor_id === req.user?.id);
 };
 
+// SFR09 stage 1 (admin gate): approving does NOT publish — it forwards the listing to the
+// selected charity for a second review. The charity's approval is what makes it active.
 export const approveListing = async (uuid: string, req: Request): Promise<Listing> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
   if (listing.status !== 'pending') throw badRequest('Only pending listings can be approved.');
-  // Approval resets start_time to now, so the end_time must still be in the future —
-  // otherwise the listing would go active with an already-elapsed window and be swept
-  // straight to 'expired' on the next deadline pass, never becoming biddable.
-  if (new Date(listing.end_time).getTime() <= Date.now()) {
-    throw badRequest('This listing\'s auction end time has already passed. Ask the donor to update the auction window before approval.', 'LISTING_WINDOW_EXPIRED');
-  }
-  listing.status = 'active';
-  listing.start_time = new Date().toISOString();
+  listing.status = 'charity_review';
+  listing.review_note = undefined;
   await updateListing(listing);
-  await audit(req, 'LISTING_APPROVED', { uuid }, 'listing', listing.uuid, req.user?.id);
+  await audit(req, 'LISTING_FORWARDED_TO_CHARITY', { uuid }, 'listing', listing.uuid, req.user?.id);
+  return listing;
+};
+
+// SFR09: admin asks the donor to revise before the listing can proceed to the charity.
+export const requestListingChanges = async (uuid: string, reasonInput: string | undefined, req: Request): Promise<Listing> => {
+  const listing = await getListingByUuid(uuid);
+  if (!listing) throw notFound('Listing not found');
+  if (listing.status !== 'pending') throw badRequest('Only pending listings can have changes requested.');
+  const reason = sanitizeText(reasonInput ?? '', 300);
+  if (reason.length < 5) {
+    throw badRequest('A change request note of at least 5 characters is required.', 'VALIDATION_ERROR', {
+      reason: 'Please explain what the donor needs to change.',
+    });
+  }
+  listing.status = 'changes_requested';
+  listing.review_note = reason;
+  await updateListing(listing);
+  await audit(req, 'LISTING_CHANGES_REQUESTED', { uuid, reason }, 'listing', listing.uuid, req.user?.id);
   return listing;
 };
 
@@ -278,9 +296,11 @@ export const rejectListing = async (uuid: string, reason: string | undefined, re
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
   if (listing.status !== 'pending') throw badRequest('Only pending listings can be rejected.');
+  const note = sanitizeText(reason ?? '', 300);
   listing.status = 'rejected';
+  listing.review_note = note || undefined;
   await updateListing(listing);
-  await audit(req, 'LISTING_REJECTED', { uuid, reason: sanitizeText(reason ?? '', 300) }, 'listing', listing.uuid, req.user?.id);
+  await audit(req, 'LISTING_REJECTED', { uuid, reason: note }, 'listing', listing.uuid, req.user?.id);
   return listing;
 };
 

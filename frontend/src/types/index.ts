@@ -50,7 +50,7 @@ export interface Campaign {
 
 // ─── Listings & Auctions ─────────────────────────────────────────────────────
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected'
+export type ListingStatus = 'draft' | 'pending' | 'changes_requested' | 'charity_review' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected'
 export type ItemCondition = 'new' | 'like_new' | 'good' | 'fair'
 
 export interface Listing {
@@ -72,6 +72,7 @@ export interface Listing {
   min_increment?: number
   bid_count: number
   status: ListingStatus
+  review_note?: string
   can_ship?: boolean
   payment_held?: boolean
   has_shipped?: boolean
@@ -85,6 +86,8 @@ export interface DonorListingStatusSummary {
   total: number
   draft: number
   pending: number
+  changes_requested: number
+  charity_review: number
   active: number
   sold: number
   expired: number

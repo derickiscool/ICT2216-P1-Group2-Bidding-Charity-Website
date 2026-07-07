@@ -69,3 +69,114 @@ describe('SFR08 — Active Listing Field Locking', () => {
     assert.match(locked.body.message, /locked/i);
   });
 });
+
+describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
+  // Test-mode donor listings attach to the seeded campaign, which is owned by
+  // charity@bidforgood.test — so the full admin→charity pipeline is exercisable here.
+  const createDonorListing = async (donor: { cookie: string; csrf: string }, title: string) => {
+    const res = await postJson(
+      '/api/listings',
+      {
+        title,
+        description: 'A donated item awaiting the two-stage review pipeline.',
+        category: 'Collectibles',
+        charityName: 'Test Charity',
+        starting_price: 100,
+        min_increment: 10,
+        durationHours: 24,
+      },
+      { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
+    );
+    assert.equal(res.response.status, 201);
+    assert.equal(res.body.status, 'pending');
+    return res.body as { uuid: string; id: number; status: string };
+  };
+
+  test('admin approval forwards to the charity (not published); charity approval publishes', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const admin = await loginAs('admin@bidforgood.test');
+    const charity = await loginAs('charity@bidforgood.test');
+
+    const listing = await createDonorListing(donor, 'SFR09 Pipeline Item');
+
+    // A pending listing must NOT yet be visible to the charity review queue.
+    const earlyQueue = await request('/api/listings/charity/review', { headers: { cookie: charity.cookie } });
+    assert.equal(earlyQueue.response.status, 200);
+    assert.equal((earlyQueue.body.listings as { uuid: string }[]).some(l => l.uuid === listing.uuid), false);
+
+    // Admin approves → forwarded to charity, NOT active.
+    const approve = await postJson(`/api/listings/${listing.uuid}/approve`, {}, { cookie: admin.cookie, 'x-csrf-token': admin.csrf });
+    assert.equal(approve.response.status, 200);
+    assert.equal(approve.body.status, 'charity_review');
+
+    // Still hidden from public listings.
+    const publicList = await request('/api/listings');
+    assert.equal((publicList.body.data as { uuid: string }[]).some(l => l.uuid === listing.uuid), false);
+
+    // Now it appears in the charity queue.
+    const queue = await request('/api/listings/charity/review', { headers: { cookie: charity.cookie } });
+    assert.equal((queue.body.listings as { uuid: string }[]).some(l => l.uuid === listing.uuid), true);
+
+    // Charity approves → active (published).
+    const charityApprove = await postJson(
+      `/api/listings/${listing.uuid}/charity-review`,
+      { decision: 'approved' },
+      { cookie: charity.cookie, 'x-csrf-token': charity.csrf },
+    );
+    assert.equal(charityApprove.response.status, 200);
+    assert.equal(charityApprove.body.status, 'active');
+  });
+
+  test('admin can request changes; donor edit resubmits it to the admin queue', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const admin = await loginAs('admin@bidforgood.test');
+
+    const listing = await createDonorListing(donor, 'SFR09 Changes Item');
+
+    // Reason is required and must be substantive.
+    const tooShort = await postJson(`/api/listings/${listing.uuid}/request-changes`, { reason: 'no' }, { cookie: admin.cookie, 'x-csrf-token': admin.csrf });
+    assert.equal(tooShort.response.status, 400);
+
+    const changes = await postJson(
+      `/api/listings/${listing.uuid}/request-changes`,
+      { reason: 'Please add clearer photos and a full description.' },
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(changes.response.status, 200);
+    assert.equal(changes.body.status, 'changes_requested');
+    assert.match(changes.body.review_note as string, /clearer photos/i);
+
+    // Donor edits (resubmits) → back to pending, note cleared.
+    const edit = await request(`/api/listings/${listing.uuid}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: donor.cookie, 'x-csrf-token': donor.csrf },
+      body: JSON.stringify({ title: 'SFR09 Changes Item (revised)' }),
+    });
+    assert.equal(edit.response.status, 200);
+    assert.equal(edit.body.status, 'pending');
+  });
+
+  test('enforces RBAC and stage ordering on the review endpoints', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const admin = await loginAs('admin@bidforgood.test');
+    const bidder = await loginAs('bidder@bidforgood.test');
+    const charity = await loginAs('charity@bidforgood.test');
+
+    const listing = await createDonorListing(donor, 'SFR09 RBAC Item');
+
+    // Non-admins cannot run the admin stage.
+    const bidderApprove = await postJson(`/api/listings/${listing.uuid}/approve`, {}, { cookie: bidder.cookie, 'x-csrf-token': bidder.csrf });
+    assert.equal(bidderApprove.response.status, 403);
+    const donorRequest = await postJson(`/api/listings/${listing.uuid}/request-changes`, { reason: 'donor should not do this' }, { cookie: donor.cookie, 'x-csrf-token': donor.csrf });
+    assert.equal(donorRequest.response.status, 403);
+
+    // A bidder cannot use the charity review endpoint at all.
+    const bidderCharity = await postJson(`/api/listings/${listing.uuid}/charity-review`, { decision: 'approved' }, { cookie: bidder.cookie, 'x-csrf-token': bidder.csrf });
+    assert.equal(bidderCharity.response.status, 403);
+
+    // The charity cannot approve a listing the admin has not forwarded yet.
+    const prematureCharity = await postJson(`/api/listings/${listing.uuid}/charity-review`, { decision: 'approved' }, { cookie: charity.cookie, 'x-csrf-token': charity.csrf });
+    assert.equal(prematureCharity.response.status, 400);
+    assert.equal(prematureCharity.body.code, 'LISTING_NOT_PENDING_REVIEW');
+  });
+});

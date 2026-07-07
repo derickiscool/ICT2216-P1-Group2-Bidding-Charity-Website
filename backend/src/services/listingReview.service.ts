@@ -6,7 +6,7 @@ import {
   getCharityByOwnerUserId,
   getListingByUuid,
   listCampaignsByCharity,
-  listPendingListings,
+  listCharityReviewQueue,
   updateListing,
 } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
@@ -53,11 +53,13 @@ export const listListingsForCharityReview = async (req: Request): Promise<Charit
   const charity = await resolveReviewingCharity(req);
   const campaigns = await listCampaignsByCharity(charity.id);
   const campaignIds = new Set(campaigns.map((campaign) => campaign.id));
-  const pendingListings = await listPendingListings();
+  // SFR09 stage 2: the charity only sees listings the admin has approved and forwarded
+  // (status 'charity_review'), never raw 'pending' submissions still awaiting admin review.
+  const forwardedListings = await listCharityReviewQueue();
 
   // Only return listings assigned to campaigns owned by this charity.
   // This prevents forceful browsing or accidental cross-charity review access.
-  const listings = pendingListings.filter((listing) => campaignIds.has(listing.campaign_id));
+  const listings = forwardedListings.filter((listing) => campaignIds.has(listing.campaign_id));
 
   await audit(
     req,
@@ -99,8 +101,8 @@ export const reviewAssignedListing = async (
     throw forbidden('This listing is not assigned to your charity campaign.', 'LISTING_NOT_ASSIGNED_TO_CHARITY');
   }
 
-  if (listing.status !== 'pending') {
-    throw badRequest('Only pending listings can be reviewed by the assigned charity.', 'LISTING_NOT_PENDING_REVIEW');
+  if (listing.status !== 'charity_review') {
+    throw badRequest('Only listings forwarded by an administrator can be reviewed by the assigned charity.', 'LISTING_NOT_PENDING_REVIEW');
   }
 
   const reason = sanitizeText(reasonInput, 300);
@@ -110,10 +112,17 @@ export const reviewAssignedListing = async (
     });
   }
 
-  // Approval publishes the listing by moving it to active.
-  // The start time is reset to now so bidders never see an already-counting auction that was hidden during review.
+  // Charity approval publishes the listing by moving it to active. The start time is reset to
+  // now so bidders never see an already-counting auction that was hidden during review — which
+  // means the end_time must still be in the future, or the auction would go active with an
+  // already-elapsed window and be swept straight to 'expired' on the next deadline pass.
+  if (decision === 'approved' && new Date(listing.end_time).getTime() <= Date.now()) {
+    throw badRequest('This listing\'s auction end time has already passed. Ask the donor to update the auction window before approval.', 'LISTING_WINDOW_EXPIRED');
+  }
+
   listing.status = decision === 'approved' ? 'active' : 'rejected';
   if (decision === 'approved') listing.start_time = new Date().toISOString();
+  else listing.review_note = reason;
 
   await updateListing(listing);
   await audit(

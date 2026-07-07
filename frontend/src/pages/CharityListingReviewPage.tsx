@@ -230,7 +230,7 @@ export default function CharityListingReviewPage() {
                                     <div className="p-5 space-y-4">
                                         <div>
                                             <div className="flex flex-wrap gap-2 mb-2">
-                                                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full" style={{ background: C.warningLight, color: C.warning }}>Pending Review</span>
+                                                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full" style={{ background: C.warningLight, color: C.warning }}>Awaiting Your Review</span>
                                                 <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full" style={{ background: C.linen, color: C.muted }}>{listing.category}</span>
                                                 <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full" style={{ background: C.linen, color: C.muted }}>{listing.condition.replace('_', ' ')}</span>
                                             </div>
