@@ -77,10 +77,22 @@ import RegisterCharityPage from './pages/RegisterCharityPage'
 import AuctionsPage from './pages/AuctionsPage'
 import AuctionDetailPage from './pages/AuctionDetailPage'
 import CharitiesPage from './pages/CharitiesPage'
+import CharityStaffManagementPage from './pages/CharityStaffManagementPage'
+import CampaignManagementPage from './pages/CampaignManagementPage'
 import DashboardPage from './pages/DashboardPage'
 import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
 import NotFoundPage from './pages/NotFoundPage'
+import CreateListingPage from './pages/CreateListingPage'
+import AdminCharitiesPage from './pages/AdminCharitiesPage'
+import AdminListingsPage from './pages/AdminListingsPage'
+import AdminAuditPage from './pages/AdminAuditPage'
+import AdminUsersPage from './pages/AdminUsersPage'
+import DonorListingsPage from './pages/DonorListingsPage'
+import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
+import CharityListingReviewPage from './pages/CharityListingReviewPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -102,6 +114,8 @@ export default function App() {
           <Route path="/auctions/:id" element={<AuctionDetailPage />} />
           <Route path="/charities" element={<CharitiesPage />} />
           <Route path="/register/charity" element={<RegisterCharityPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* ── Auth required ── */}
           <Route element={<ProtectedRoute />}>
@@ -109,9 +123,37 @@ export default function App() {
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
 
+          {/* ── Charity Org / Staff / Admin ── */}
+          <Route element={<RoleProtectedRoute allowedRoles={['charity', 'admin']} />}>
+            <Route path="/charity/staff" element={<CharityStaffManagementPage />} />
+          </Route>
+
+          <Route element={<RoleProtectedRoute allowedRoles={['charity', 'charity_staff', 'admin']} />}>
+            <Route path="/charity/campaigns" element={<CampaignManagementPage />} />
+          </Route>
+
+          <Route element={<RoleProtectedRoute allowedRoles={['charity', 'charity_staff']} />}>
+            <Route path="/charity/listing-reviews" element={<CharityListingReviewPage />} />
+          </Route>
+
+          {/* ── Bidder only ── */}
+          <Route element={<RoleProtectedRoute allowedRoles={['bidder']} />}>
+            <Route path="/payments" element={<PaymentDeadlinesPage />} />
+          </Route>
+
+          {/* ── Donor only ── */}
+          <Route element={<RoleProtectedRoute allowedRoles={['donor', 'admin']} />}>
+            <Route path="/listings/create" element={<CreateListingPage />} />
+            <Route path="/listings/manage" element={<DonorListingsPage />} />
+          </Route>
+
           {/* ── Admin only ── */}
           <Route element={<RoleProtectedRoute allowedRoles={['admin']} />}>
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/charities" element={<AdminCharitiesPage />} />
+            <Route path="/admin/listings" element={<AdminListingsPage />} />
+            <Route path="/admin/audit" element={<AdminAuditPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
           </Route>
 
           {/* ── 404 ── */}

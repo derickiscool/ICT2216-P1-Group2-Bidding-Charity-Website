@@ -34,7 +34,12 @@ export default function LoginPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError(null)
     if (!email.trim() || !password) { setError('Please fill in all fields.'); return }
-    try { await login(email.trim(), password); navigate(from, { replace: true }) }
+    try {
+      await login(email.trim(), password)
+      const { user } = useAuthStore.getState()
+      if (user?.roles.includes('admin')) navigate('/admin', { replace: true })
+      else navigate(from, { replace: true })
+    }
     catch (err) { const ae = err as ApiError; setAttempts(n => n + 1); setError(ae.message || 'Invalid email or password.') }
   }
 

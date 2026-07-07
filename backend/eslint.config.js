@@ -11,13 +11,16 @@ module.exports = tseslint.config(
   {
     languageOptions: {
       globals: globals.node,
+      parserOptions: {
+        tsconfigRootDir: __dirname,
+      },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
   {
-    files: ['eslint.config.js'],
+    files: ['eslint.config.js', 'scripts/**/*.js'],
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
     },

@@ -3,6 +3,7 @@ import path from 'path';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { createApp } from './app';
+import { processAuctionDeadlines } from './services/payment.service';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -19,6 +20,26 @@ io.on('connection', (socket) => {
   });
   socket.on('disconnect', () => undefined);
 });
+
+
+const startPaymentDeadlineWorker = () => {
+  const run = async () => {
+    try {
+      const result = await processAuctionDeadlines();
+      if (result.processed > 0) console.log(`FR14 payment deadline worker processed ${result.processed} auction/payment record(s).`);
+    } catch (error) {
+      console.error('FR14 payment deadline worker failed:', error);
+    }
+  };
+
+  // Run once on startup, then repeat. The interval keeps FR14 automatic without
+  // requiring users/admins to click a button just to close overdue auctions.
+  void run();
+  const interval = setInterval(() => { void run(); }, 60_000);
+  interval.unref();
+};
+
+if (process.env.NODE_ENV !== 'test') startPaymentDeadlineWorker();
 
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {

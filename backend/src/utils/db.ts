@@ -29,6 +29,8 @@ export const getClient = async () => {
   return client;
 };
 
+export const closePool = () => pool.end();
+
 export const withTransaction = async <T>(fn: () => Promise<T>): Promise<T> => {
   const existingClient = transactionClient.getStore();
   if (existingClient) return fn();

@@ -1,6 +1,6 @@
 import type { Request } from 'express';
-import type { CharityOrganisation } from '../types/domain';
-import { addCharity, getCharityByUuid, listCharities, updateCharity } from '../repositories';
+import type { CharityOrganisation, Listing } from '../types/domain';
+import { addCharity, getCharityByUuid, listCharities, listListings, updateCharity } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';
@@ -55,3 +55,30 @@ export const reviewCharity = async (uuid: string, decision: 'approved' | 'reject
 };
 
 export const getCharities = async (): Promise<CharityOrganisation[]> => listCharities();
+
+// Public-facing: only expose approved organisations so donors can select them when creating listings.
+export const getApprovedCharities = async (): Promise<CharityOrganisation[]> => {
+  const all = await listCharities();
+  return all.filter(c => c.status === 'approved');
+};
+
+export const getCharityDashboard = async (ownerUserId: number): Promise<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }> => {
+  const allCharities = await listCharities();
+  const charity = allCharities.find(c => c.ownerUserId === ownerUserId) ?? null;
+
+  const allListings = await listListings();
+  const organisationName = charity?.organisationName ?? '';
+  const listings = allListings.filter(l => l.charityName.toLowerCase() === organisationName.toLowerCase());
+  const stats: CharityStats = {
+    totalItems: listings.length,
+    activeItems: listings.filter(l => l.status === 'active').length,
+    totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
+  };
+  return { charity, listings, stats };
+};
+
+export interface CharityStats {
+  totalItems: number;
+  activeItems: number;
+  totalRaised: number;
+}

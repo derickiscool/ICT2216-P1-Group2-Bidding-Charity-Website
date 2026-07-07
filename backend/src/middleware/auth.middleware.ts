@@ -24,3 +24,19 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
     next(err);
   }
 };
+
+export const authenticateOptional = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const token = getTokenFromRequest(req);
+    if (!token) { next(); return; }
+    const verified = await verifySessionToken(token);
+    const user = await findUserById(verified.userId);
+    if (!user || !user.is_active) { next(); return; }
+    req.user = toPublicUser(user);
+    req.csrfToken = verified.csrfTokenHash;
+    req.sessionId = verified.sid;
+    next();
+  } catch {
+    next();
+  }
+};
