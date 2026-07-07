@@ -6,7 +6,23 @@ import {
   RefreshCw, ScrollText, ShieldCheck, Activity, TrendingUp,
 } from 'lucide-react'
 import api from '../services/api'
-import type { AdminStats, ApiError, AuditEvent } from '../types'
+import type { AdminStats, ApiError, AuditEvent, User, UserRole, CharityOrganisation } from '../types'
+
+const roleBadge = (role: string) => {
+  const colors = new Map<string, { bg: string; text: string }>([
+    ['admin', { bg: '#FEE2E2', text: '#991B1B' }],
+    ['donor', { bg: '#DBEAFE', text: '#1E40AF' }],
+    ['bidder', { bg: '#ECFDF5', text: '#047857' }],
+    ['charity', { bg: '#FEF3C7', text: '#92400E' }],
+    ['charity_staff', { bg: '#F3E8FF', text: '#6B21A8' }],
+  ])
+  const s = colors.get(role) ?? { bg: '#F3F4F6', text: '#6B7280' }
+  return (
+    <span key={role} className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.text }}>
+      {role.replace('_', ' ')}
+    </span>
+  )
+}
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -83,19 +99,33 @@ export default function AdminPage() {
   // Data
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [events, setEvents] = useState<AuditEvent[]>([])
+  const [users, setUsers] = useState<User[]>([])
+  const [charities, setCharities] = useState<CharityOrganisation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [toggling, setToggling] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [roleFilter, setRoleFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [charityFilter, setCharityFilter] = useState<string>('all')
+  const [rejectUuid, setRejectUuid] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const loadData = async () => {
     setLoading(true)
     setError(null)
     try {
-      const [statsRes, auditRes] = await Promise.all([
+      const [statsRes, auditRes, usersRes, charitiesRes] = await Promise.all([
         api.get<AdminStats>('/admin/stats'),
         api.get<AuditEvent[]>('/admin/audit-events').catch(() => [] as AuditEvent[]),
+        api.get<User[]>('/admin/users').catch(() => [] as User[]),
+        api.get<CharityOrganisation[]>('/charities').catch(() => [] as CharityOrganisation[]),
       ])
       setStats(statsRes.data)
       setEvents(Array.isArray(auditRes) ? auditRes : auditRes.data ?? [])
+      setUsers(Array.isArray(usersRes) ? usersRes : usersRes.data ?? [])
+      setCharities(Array.isArray(charitiesRes) ? charitiesRes : charitiesRes.data ?? [])
     } catch (err) {
       setError((err as ApiError).message || 'Failed to load admin data.')
     } finally {
@@ -114,6 +144,53 @@ export default function AdminPage() {
     [...events].reverse().slice(0, 10),
     [events],
   )
+
+  const filteredUsers = useMemo(() => {
+    let result = users
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(u =>
+        u.full_name.toLowerCase().includes(q) ||
+        u.username.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q),
+      )
+    }
+    if (roleFilter !== 'all') result = result.filter(u => u.roles.includes(roleFilter as UserRole))
+    if (statusFilter === 'active') result = result.filter(u => u.is_active)
+    else if (statusFilter === 'inactive') result = result.filter(u => !u.is_active)
+    return result
+  }, [users, searchQuery, roleFilter, statusFilter])
+
+  const filteredCharities = useMemo(() => {
+    if (charityFilter === 'all') return charities
+    return charities.filter(c => c.status === charityFilter)
+  }, [charities, charityFilter])
+
+  const handleReviewCharity = async (uuid: string, decision: 'approved' | 'rejected') => {
+    setActionLoading(uuid)
+    try {
+      await api.post(`/charities/${uuid}/review`, { decision, reason: decision === 'rejected' ? rejectReason : undefined })
+      setCharities(prev => prev.filter(c => c.uuid !== uuid))
+      setRejectUuid(null)
+      setRejectReason('')
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to review charity.')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleToggleUser = async (uuid: string, currentlyActive: boolean) => {
+    setToggling(uuid)
+    try {
+      await api.patch(`/admin/users/${uuid}/status`, { is_active: !currentlyActive })
+      setUsers(prev => prev.map(u => u.uuid === uuid ? { ...u, is_active: !currentlyActive } : u))
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to update user status.')
+    } finally {
+      setToggling(null)
+    }
+  }
 
   // ─── Loading / Error ──────────────────────────────────────────────────
 
@@ -269,12 +346,104 @@ export default function AdminPage() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>Users</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>BidForGood Platform Administration</p>
                 </div>
+                <button onClick={loadData}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                  style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                  <RefreshCw className="w-4 h-4" /> Refresh
+                </button>
               </div>
-              <p className="text-sm" style={{ color: C.muted }}>
-                <Link to="/admin/users" className="font-bold underline underline-offset-2" style={{ color: C.emerald }}>
-                  Go to full User Management →
-                </Link>
-              </p>
+
+              {/* Filters */}
+              <div className="flex flex-wrap gap-3 mb-6">
+                <input type="text" value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search users..."
+                  className="flex-1 min-w-[200px] px-3 py-2 rounded-xl text-sm outline-none"
+                  style={{ border: `1px solid ${C.beige}`, background: '#fff', color: C.slate }}
+                />
+                <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-sm outline-none"
+                  style={{ border: `1px solid ${C.beige}`, background: '#fff', color: C.slate }}>
+                  <option value="all">All Roles</option>
+                  <option value="bidder">Bidder</option>
+                  <option value="donor">Donor</option>
+                  <option value="charity">Charity</option>
+                  <option value="charity_staff">Charity Staff</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-sm outline-none"
+                  style={{ border: `1px solid ${C.beige}`, background: '#fff', color: C.slate }}>
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+
+              {filteredUsers.length === 0 ? (
+                <div className="rounded-2xl bg-white p-12 text-center" style={{ border: `1px solid ${C.beige}` }}>
+                  <Users className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
+                  <p className="font-bold" style={{ color: C.slate }}>No users found</p>
+                  <p className="text-sm mt-1" style={{ color: C.muted }}>Try adjusting your search or filters.</p>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr style={{ background: C.linen }}>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Username</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest hidden md:table-cell" style={{ color: C.muted }}>Email</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Roles</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Status</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest hidden lg:table-cell" style={{ color: C.muted }}>Registered</th>
+                          <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredUsers.map(u => (
+                          <tr key={u.uuid} className="border-t" style={{ borderColor: C.beige }}>
+                            <td className="px-6 py-4">
+                              <p className="font-medium" style={{ color: C.slate }}>{u.full_name}</p>
+                              <p className="text-xs mt-0.5" style={{ color: C.muted }}>@{u.username}</p>
+                            </td>
+                            <td className="px-6 py-4 hidden md:table-cell text-xs" style={{ color: C.muted }}>{u.email}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-wrap gap-1">{u.roles.map(roleBadge)}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              {u.is_active ? (
+                                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full" style={{ background: C.emeraldLight, color: C.emerald }}>Active</span>
+                              ) : (
+                                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full" style={{ background: C.dangerLight, color: C.danger }}>Inactive</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 hidden lg:table-cell text-xs" style={{ color: C.muted }}>
+                              {new Date(u.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button
+                                onClick={() => handleToggleUser(u.uuid!, u.is_active)}
+                                disabled={toggling === u.uuid}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                                style={{ background: u.is_active ? C.danger : C.emerald }}
+                              >
+                                {toggling === u.uuid ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : u.is_active ? (
+                                  'Deactivate'
+                                ) : (
+                                  'Activate'
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -286,12 +455,118 @@ export default function AdminPage() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>Charity Orgs</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>BidForGood Platform Administration</p>
                 </div>
+                <button onClick={loadData}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                  style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                  <RefreshCw className="w-4 h-4" /> Refresh
+                </button>
               </div>
-              <p className="text-sm" style={{ color: C.muted }}>
-                <Link to="/admin/charities" className="font-bold underline underline-offset-2" style={{ color: C.emerald }}>
-                  Go to Charity Approvals →
-                </Link>
-              </p>
+
+              {/* Filter tabs */}
+              <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+                {[
+                  { value: 'all', label: 'All', count: charities.length },
+                  { value: 'pending', label: 'Pending', count: charities.filter(c => c.status === 'pending').length },
+                  { value: 'approved', label: 'Approved', count: charities.filter(c => c.status === 'approved').length },
+                  { value: 'rejected', label: 'Rejected', count: charities.filter(c => c.status === 'rejected').length },
+                ].map(opt => (
+                  <button key={opt.value} onClick={() => { setCharityFilter(opt.value); setRejectUuid(null) }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap"
+                    style={{
+                      background: charityFilter === opt.value ? C.emerald : C.linen,
+                      color: charityFilter === opt.value ? '#fff' : C.muted,
+                    }}>
+                    {opt.label}
+                    <span className="text-[10px] opacity-70">({opt.count})</span>
+                  </button>
+                ))}
+              </div>
+
+              {filteredCharities.length === 0 ? (
+                <div className="rounded-2xl bg-white p-12 text-center" style={{ border: `1px solid ${C.beige}` }}>
+                  <Building2 className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
+                  <p className="font-bold" style={{ color: C.slate }}>No charity registrations found</p>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr style={{ background: C.linen }}>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Organisation</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Email</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest hidden md:table-cell" style={{ color: C.muted }}>Submitted</th>
+                          <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredCharities.map(c => (
+                          <tr key={c.uuid} className="border-t" style={{ borderColor: C.beige }}>
+                            <td className="px-6 py-4">
+                              <p className="font-medium" style={{ color: C.slate }}>{c.organisationName}</p>
+                            </td>
+                            <td className="px-6 py-4 text-xs" style={{ color: C.muted }}>
+                              {c.ownerEmail || '—'}
+                            </td>
+                            <td className="px-6 py-4 hidden md:table-cell text-xs" style={{ color: C.muted }}>
+                              {new Date(c.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              {c.status === 'pending' ? (
+                                <div className="flex items-center justify-end gap-2">
+                                  {rejectUuid === c.uuid ? (
+                                    <div className="flex items-center gap-2">
+                                      <input type="text" value={rejectReason} autoFocus
+                                        onChange={e => setRejectReason(e.target.value)}
+                                        placeholder="Rejection reason..."
+                                        className="w-40 px-2 py-1 text-xs rounded-lg outline-none"
+                                        style={{ border: `1px solid ${C.beige}` }}
+                                      />
+                                      <button onClick={() => handleReviewCharity(c.uuid, 'rejected')}
+                                        disabled={actionLoading === c.uuid || !rejectReason.trim()}
+                                        className="px-2 py-1 rounded-lg text-[10px] font-bold text-white disabled:opacity-50"
+                                        style={{ background: C.danger }}>
+                                        {actionLoading === c.uuid ? '…' : 'Confirm'}
+                                      </button>
+                                      <button onClick={() => { setRejectUuid(null); setRejectReason('') }}
+                                        className="px-2 py-1 rounded-lg text-[10px] font-bold" style={{ color: C.muted }}>
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button onClick={() => handleReviewCharity(c.uuid, 'approved')}
+                                        disabled={actionLoading === c.uuid}
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                                        style={{ background: C.emerald }}>
+                                        {actionLoading === c.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                        Approve
+                                      </button>
+                                      <button onClick={() => setRejectUuid(c.uuid)}
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-opacity hover:opacity-90"
+                                        style={{ color: C.danger, border: `1px solid ${C.dangerBorder}`, background: C.dangerLight }}>
+                                        Reject
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full"
+                                  style={{
+                                    background: c.status === 'approved' ? C.emeraldLight : C.dangerLight,
+                                    color: c.status === 'approved' ? C.emerald : C.danger,
+                                  }}>
+                                  {c.status.charAt(0).toUpperCase() + c.status.slice(1)}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

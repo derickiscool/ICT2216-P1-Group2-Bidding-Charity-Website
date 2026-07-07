@@ -86,6 +86,7 @@ export interface CharityOrganisation {
   reviewedAt?: string;
   rejectionReason?: string;
   created_at: string;
+  ownerEmail?: string;
 }
 
 export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';

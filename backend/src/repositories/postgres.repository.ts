@@ -112,6 +112,7 @@ interface CharityRow {
   reviewed_at: DbDate | null;
   rejection_reason: string | null;
   created_at: DbDate;
+  owner_email?: string;
 }
 
 interface ListingRow {
@@ -334,6 +335,7 @@ const mapCharity = (row: CharityRow): CharityOrganisation => ({
   reviewedAt: optionalIso(row.reviewed_at),
   rejectionReason: row.rejection_reason ?? undefined,
   created_at: toIso(row.created_at),
+  ownerEmail: row.owner_email ?? undefined,
 });
 
 const mapListing = (row: ListingRow): Listing => ({
@@ -673,7 +675,12 @@ const getCharityByOwnerUserId = async (ownerUserId: number): Promise<CharityOrga
 };
 
 const listCharities = async (): Promise<CharityOrganisation[]> => {
-  const rows = await allRows<CharityRow>('SELECT * FROM charities ORDER BY created_at DESC, id DESC');
+  const rows = await allRows<CharityRow>(
+    `SELECT c.*, u.email AS owner_email
+     FROM charities c
+     LEFT JOIN users u ON c.owner_user_id = u.id
+     ORDER BY c.created_at DESC, c.id DESC`
+  );
   return rows.map(mapCharity);
 };
 

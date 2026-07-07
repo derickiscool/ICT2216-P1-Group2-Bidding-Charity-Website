@@ -279,6 +279,7 @@ export interface CharityOrganisation {
   reviewedAt?: string
   rejectionReason?: string
   created_at: string
+  ownerEmail?: string
 }
 
 export interface Receipt {
