@@ -266,19 +266,20 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
     assert.ok(new Date(approve.body.end_time as string).getTime() > Date.now());
   });
 
-  test('reject is terminal — the donor cannot edit or resubmit a rejected listing', async () => {
+  test('rejected listings show the reason and donor edit resubmits them for review', async () => {
     const donor = await loginAs('donor@bidforgood.test');
     const admin = await loginAs('admin@bidforgood.test');
 
-    const listing = await createDonorListing(donor, 'SFR09 Terminal Reject Item');
+    const listing = await createDonorListing(donor, 'SFR09 Rejected Resubmit Item');
 
     // A rejection reason is mandatory and must be substantive (≥5 chars).
     const tooShort = await postJson(`/api/listings/${listing.uuid}/reject`, { reason: 'no' }, { cookie: admin.cookie, 'x-csrf-token': admin.csrf });
     assert.equal(tooShort.response.status, 400);
 
+    const reason = 'Prohibited item — cannot be listed on this platform.';
     const reject = await postJson(
       `/api/listings/${listing.uuid}/reject`,
-      { reason: 'Prohibited item — cannot be listed on this platform.' },
+      { reason },
       { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
     );
     assert.equal(reject.response.status, 200);
@@ -286,18 +287,34 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
     // Attribution: the reject was made at the admin stage.
     assert.equal(reject.body.review_stage, 'admin');
 
-    // Donor edit must be refused (403) — reject is final, not a resubmit path.
+    // FR10: rejected listings remain visible in My Listings with the rejection note,
+    // so the donor knows what to fix before resubmitting.
+    const trackingBeforeEdit = await request('/api/listings/mine/tracking', { headers: { cookie: donor.cookie } });
+    const rejectedItem = (trackingBeforeEdit.body.listings as { uuid: string; status: string; review_note?: string; canEdit: boolean }[])
+      .find(l => l.uuid === listing.uuid);
+    assert.equal(rejectedItem?.status, 'rejected');
+    assert.equal(rejectedItem?.review_note, reason);
+    assert.equal(rejectedItem?.canEdit, true);
+
+    // Donor editing a rejected listing is the resubmission path. The backend moves it
+    // back to pending so it re-enters the admin → charity review workflow.
     const edit = await request(`/api/listings/${listing.uuid}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json', cookie: donor.cookie, 'x-csrf-token': donor.csrf },
-      body: JSON.stringify({ title: 'SFR09 Terminal Reject Item (sneaky resubmit)' }),
+      body: JSON.stringify({
+        title: 'SFR09 Rejected Resubmit Item (fixed)',
+        description: 'Updated donated item description after reviewing the rejection reason.',
+      }),
     });
-    assert.equal(edit.response.status, 403);
+    assert.equal(edit.response.status, 200);
+    assert.equal(edit.body.status, 'pending');
+    assert.equal(edit.body.review_note, undefined);
+    assert.equal(edit.body.review_stage, undefined);
 
-    // Status is unchanged — it did NOT bounce back into the admin queue.
     const mine = await request('/api/listings/mine', { headers: { cookie: donor.cookie } });
-    const found = (mine.body.data as { uuid: string; status: string }[]).find(l => l.uuid === listing.uuid);
-    assert.equal(found?.status, 'rejected');
+    const found = (mine.body.data as { uuid: string; status: string; title: string }[]).find(l => l.uuid === listing.uuid);
+    assert.equal(found?.status, 'pending');
+    assert.equal(found?.title, 'SFR09 Rejected Resubmit Item (fixed)');
   });
 
   test('enforces RBAC and stage ordering on the review endpoints', async () => {
