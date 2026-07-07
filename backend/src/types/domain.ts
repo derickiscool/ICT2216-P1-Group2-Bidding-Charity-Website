@@ -124,6 +124,9 @@ export interface Listing {
   min_increment: number;
   // SFR09: reviewer note (admin reject / request-changes reason) surfaced to the donor.
   review_note?: string;
+  // SFR09: which review stage produced the latest note — 'admin' (stage 1) or 'charity' (stage 2).
+  // Lets the donor-facing copy attribute a rejection to the right party.
+  review_stage?: 'admin' | 'charity';
   created_at: string;
 }
 

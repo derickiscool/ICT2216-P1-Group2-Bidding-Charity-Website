@@ -73,6 +73,7 @@ export interface Listing {
   bid_count: number
   status: ListingStatus
   review_note?: string
+  review_stage?: 'admin' | 'charity'
   can_ship?: boolean
   payment_held?: boolean
   has_shipped?: boolean

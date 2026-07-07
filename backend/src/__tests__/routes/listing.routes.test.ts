@@ -162,6 +162,10 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
 
     const listing = await createDonorListing(donor, 'SFR09 Terminal Reject Item');
 
+    // A rejection reason is mandatory and must be substantive (≥5 chars).
+    const tooShort = await postJson(`/api/listings/${listing.uuid}/reject`, { reason: 'no' }, { cookie: admin.cookie, 'x-csrf-token': admin.csrf });
+    assert.equal(tooShort.response.status, 400);
+
     const reject = await postJson(
       `/api/listings/${listing.uuid}/reject`,
       { reason: 'Prohibited item — cannot be listed on this platform.' },
@@ -169,6 +173,8 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
     );
     assert.equal(reject.response.status, 200);
     assert.equal(reject.body.status, 'rejected');
+    // Attribution: the reject was made at the admin stage.
+    assert.equal(reject.body.review_stage, 'admin');
 
     // Donor edit must be refused (403) — reject is final, not a resubmit path.
     const edit = await request(`/api/listings/${listing.uuid}`, {

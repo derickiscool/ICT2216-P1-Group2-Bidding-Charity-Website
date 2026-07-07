@@ -97,13 +97,23 @@ const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLab
         statusLabel: 'Expired',
         statusMessage: 'The listing ended without a valid winning bidder or payment offer.',
       };
-    case 'rejected':
+    case 'rejected': {
+      // SFR09: attribute the rejection to the stage that made it, so the donor knows whether the
+      // administrator (stage 1) or the charity (stage 2) turned the listing down.
+      const rejectedBy =
+        listing.review_stage === 'charity' ? 'the charity'
+        : listing.review_stage === 'admin' ? 'an administrator'
+        : 'a reviewer';
       return {
-        statusLabel: 'Rejected',
+        statusLabel:
+          listing.review_stage === 'charity' ? 'Rejected by Charity'
+          : listing.review_stage === 'admin' ? 'Rejected by Admin'
+          : 'Rejected',
         statusMessage: listing.review_note
-          ? `The listing was rejected during review: "${listing.review_note}". This decision is final; to try again, submit a new listing.`
-          : 'The listing was rejected during review. This decision is final; to try again, submit a new listing.',
+          ? `This listing was rejected by ${rejectedBy}: "${listing.review_note}". This decision is final; to try again, submit a new listing.`
+          : `This listing was rejected by ${rejectedBy}. This decision is final; to try again, submit a new listing.`,
       };
+    }
     case 'cancelled':
       return {
         statusLabel: 'Cancelled',

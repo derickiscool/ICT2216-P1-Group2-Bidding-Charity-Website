@@ -228,6 +228,7 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
     const previousStatus = listing.status;
     listing.status = 'pending';
     listing.review_note = undefined;
+    listing.review_stage = undefined;
     await audit(req, 'LISTING_RESUBMITTED_FOR_REVIEW', { uuid, previousStatus }, 'listing', listing.uuid, req.user?.id);
   }
 
@@ -271,6 +272,7 @@ export const approveListing = async (uuid: string, req: Request): Promise<Listin
   if (listing.status !== 'pending') throw badRequest('Only pending listings can be approved.');
   listing.status = 'charity_review';
   listing.review_note = undefined;
+  listing.review_stage = undefined;
   await updateListing(listing);
   await audit(req, 'LISTING_FORWARDED_TO_CHARITY', { uuid }, 'listing', listing.uuid, req.user?.id);
   return listing;
@@ -289,6 +291,7 @@ export const requestListingChanges = async (uuid: string, reasonInput: string | 
   }
   listing.status = 'changes_requested';
   listing.review_note = reason;
+  listing.review_stage = 'admin';
   await updateListing(listing);
   await audit(req, 'LISTING_CHANGES_REQUESTED', { uuid, reason }, 'listing', listing.uuid, req.user?.id);
   return listing;
@@ -299,8 +302,16 @@ export const rejectListing = async (uuid: string, reason: string | undefined, re
   if (!listing) throw notFound('Listing not found');
   if (listing.status !== 'pending') throw badRequest('Only pending listings can be rejected.');
   const note = sanitizeText(reason ?? '', 300);
+  // A rejection is terminal and shown to the donor — require a substantive reason, consistent
+  // with request-changes and the charity's own reject step (≥5 chars).
+  if (note.length < 5) {
+    throw badRequest('A rejection reason of at least 5 characters is required.', 'VALIDATION_ERROR', {
+      reason: 'Please explain why this listing was rejected.',
+    });
+  }
   listing.status = 'rejected';
-  listing.review_note = note || undefined;
+  listing.review_note = note;
+  listing.review_stage = 'admin';
   await updateListing(listing);
   await audit(req, 'LISTING_REJECTED', { uuid, reason: note }, 'listing', listing.uuid, req.user?.id);
   return listing;

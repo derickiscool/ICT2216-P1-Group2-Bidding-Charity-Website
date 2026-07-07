@@ -255,16 +255,21 @@ export default function CharityListingReviewPage() {
 
                                         {isRejecting && (
                                             <div className="rounded-xl p-3" style={{ background: C.dangerLight, border: `1px solid ${C.dangerBorder}` }}>
-                                                <label className="block text-xs font-black uppercase tracking-widest mb-2" style={{ color: C.danger }}>Rejection reason</label>
+                                                <label className="block text-xs font-black uppercase tracking-widest mb-2" style={{ color: C.danger }}>Rejection reason <span className="font-semibold normal-case tracking-normal">(min 5 characters, shown to the donor)</span></label>
                                                 <textarea
                                                     value={rejectionReason}
                                                     onChange={(e) => setRejectionReason(e.target.value)}
                                                     rows={3}
                                                     maxLength={300}
-                                                    placeholder="Explain what the donor needs to fix..."
+                                                    placeholder="Explain why this listing is being rejected (min 5 characters)..."
                                                     className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none"
                                                     style={{ border: `1px solid ${C.dangerBorder}`, color: C.slate }}
                                                 />
+                                                <p className="text-[11px] mt-1" style={{ color: rejectionReason.trim().length < 5 ? C.danger : C.muted }}>
+                                                    {rejectionReason.trim().length < 5
+                                                        ? `${5 - rejectionReason.trim().length} more character(s) required`
+                                                        : 'This rejection is final — the donor cannot resubmit.'}
+                                                </p>
                                             </div>
                                         )}
 

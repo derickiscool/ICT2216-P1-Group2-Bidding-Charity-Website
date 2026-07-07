@@ -121,8 +121,12 @@ export const reviewAssignedListing = async (
   }
 
   listing.status = decision === 'approved' ? 'active' : 'rejected';
-  if (decision === 'approved') listing.start_time = new Date().toISOString();
-  else listing.review_note = reason;
+  if (decision === 'approved') {
+    listing.start_time = new Date().toISOString();
+  } else {
+    listing.review_note = reason;
+    listing.review_stage = 'charity';
+  }
 
   await updateListing(listing);
   await audit(

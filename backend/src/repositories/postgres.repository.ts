@@ -149,6 +149,7 @@ interface ListingRow {
   charity_name: string;
   min_increment: number | string;
   review_note: string | null;
+  review_stage: 'admin' | 'charity' | null;
   created_at: DbDate;
 }
 
@@ -383,6 +384,7 @@ const mapListing = (row: ListingRow): Listing => ({
   charityName: row.charity_name,
   min_increment: Number(row.min_increment),
   review_note: row.review_note ?? undefined,
+  review_stage: row.review_stage ?? undefined,
   created_at: toIso(row.created_at),
 });
 
@@ -921,8 +923,8 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
     `INSERT INTO listings
        (donor_id, campaign_id, title, description, condition, category, images, starting_price,
         reserve_price, buy_now_price, current_bid, bid_count, status, start_time, end_time,
-        charity_name, min_increment, review_note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, 0, $11, $12, $13, $14, $15, $16)
+        charity_name, min_increment, review_note, review_stage)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, 0, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
       input.donor_id,
@@ -941,6 +943,7 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
       input.charityName,
       input.min_increment,
       input.review_note ?? null,
+      input.review_stage ?? null,
     ],
   );
   if (!row) throw new Error('Failed to create listing.');
@@ -964,7 +967,7 @@ const updateListing = async (listing: Listing): Promise<void> => {
          category = $7, images = $8, starting_price = $9, reserve_price = $10,
          buy_now_price = $11, current_bid = $12, bid_count = $13, status = $14,
          start_time = $15, end_time = $16, winner_id = $17, charity_name = $18,
-         min_increment = $19, review_note = $20
+         min_increment = $19, review_note = $20, review_stage = $21
      WHERE id = $1`,
     [
       listing.id,
@@ -987,6 +990,7 @@ const updateListing = async (listing: Listing): Promise<void> => {
       listing.charityName,
       listing.min_increment,
       listing.review_note ?? null,
+      listing.review_stage ?? null,
     ],
   );
 };

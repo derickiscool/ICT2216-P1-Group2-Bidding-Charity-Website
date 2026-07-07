@@ -148,6 +148,8 @@ CREATE TABLE IF NOT EXISTS listings (
   min_increment NUMERIC(12, 2) NOT NULL CHECK (min_increment > 0),
   -- SFR09: latest reviewer note (admin reject / request-changes reason) shown to the donor.
   review_note TEXT,
+  -- SFR09: which stage produced the note — 'admin' (stage 1) or 'charity' (stage 2).
+  review_stage TEXT CHECK (review_stage IN ('admin', 'charity')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT listings_time_order_chk CHECK (end_time > start_time)
 );
@@ -257,6 +259,10 @@ CREATE INDEX IF NOT EXISTS audit_events_timestamp_idx ON audit_events (timestamp
 
 -- Post-sale fulfillment statuses (SFR15) + SFR09 two-stage review statuses.
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_note TEXT;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_stage TEXT;
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_review_stage_check;
+ALTER TABLE listings ADD CONSTRAINT listings_review_stage_check
+  CHECK (review_stage IS NULL OR review_stage IN ('admin', 'charity'));
 ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_status_check;
 ALTER TABLE listings ADD CONSTRAINT listings_status_check
   CHECK (status IN ('draft', 'pending', 'changes_requested', 'charity_review', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'));

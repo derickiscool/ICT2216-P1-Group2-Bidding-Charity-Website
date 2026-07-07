@@ -150,16 +150,23 @@ export default function AdminListingsPage() {
                           </Link>
                           {rejectUuid === l.uuid ? (
                             <form onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleReject(l.uuid!) }}
-                              className="flex items-center gap-2">
-                              <input
-                                type="text" value={rejectReason} autoFocus
-                                onChange={(e) => setRejectReason(e.target.value)}
-                                placeholder="Rejection reason..."
-                                className="w-36 px-2 py-1 text-xs rounded-lg outline-none"
-                                style={{ border: '1px solid', borderColor: C.danger, background: C.dangerLight }}
-                              />
-                              <button type="submit" disabled={!rejectReason.trim() || rejecting === l.uuid}
-                                className="px-2 py-1 text-xs font-bold rounded-lg text-white"
+                              className="flex items-start gap-2">
+                              <div className="flex flex-col">
+                                <input
+                                  type="text" value={rejectReason} autoFocus
+                                  onChange={(e) => setRejectReason(e.target.value)}
+                                  placeholder="Reason shown to the donor (min 5 characters)"
+                                  className="w-56 px-2 py-1 text-xs rounded-lg outline-none"
+                                  style={{ border: '1px solid', borderColor: C.danger, background: C.dangerLight }}
+                                />
+                                <span className="text-[10px] mt-0.5" style={{ color: rejectReason.trim().length < 5 ? C.danger : C.muted }}>
+                                  {rejectReason.trim().length < 5
+                                    ? `${5 - rejectReason.trim().length} more character(s) required`
+                                    : 'This rejection is final — the donor cannot resubmit.'}
+                                </span>
+                              </div>
+                              <button type="submit" disabled={rejectReason.trim().length < 5 || rejecting === l.uuid}
+                                className="px-2 py-1 text-xs font-bold rounded-lg text-white disabled:opacity-50"
                                 style={{ background: rejecting === l.uuid ? C.muted : C.danger }}>
                                 {rejecting === l.uuid ? '...' : 'Confirm'}
                               </button>
@@ -170,16 +177,23 @@ export default function AdminListingsPage() {
                             </form>
                           ) : changesUuid === l.uuid ? (
                             <form onSubmit={(e: React.FormEvent) => { e.preventDefault(); handleRequestChanges(l.uuid!) }}
-                              className="flex items-center gap-2">
-                              <input
-                                type="text" value={changesReason} autoFocus
-                                onChange={(e) => setChangesReason(e.target.value)}
-                                placeholder="What should the donor change?"
-                                className="w-44 px-2 py-1 text-xs rounded-lg outline-none"
-                                style={{ border: '1px solid', borderColor: C.warning, background: C.warningLight }}
-                              />
+                              className="flex items-start gap-2">
+                              <div className="flex flex-col">
+                                <input
+                                  type="text" value={changesReason} autoFocus
+                                  onChange={(e) => setChangesReason(e.target.value)}
+                                  placeholder="What should the donor change? (min 5 characters)"
+                                  className="w-56 px-2 py-1 text-xs rounded-lg outline-none"
+                                  style={{ border: '1px solid', borderColor: C.warning, background: C.warningLight }}
+                                />
+                                <span className="text-[10px] mt-0.5" style={{ color: changesReason.trim().length < 5 ? C.warning : C.muted }}>
+                                  {changesReason.trim().length < 5
+                                    ? `${5 - changesReason.trim().length} more character(s) required`
+                                    : 'The donor can edit and resubmit for review.'}
+                                </span>
+                              </div>
                               <button type="submit" disabled={changesReason.trim().length < 5 || requestingChanges === l.uuid}
-                                className="px-2 py-1 text-xs font-bold rounded-lg text-white"
+                                className="px-2 py-1 text-xs font-bold rounded-lg text-white disabled:opacity-50"
                                 style={{ background: requestingChanges === l.uuid ? C.muted : C.warning }}>
                                 {requestingChanges === l.uuid ? '...' : 'Send'}
                               </button>
