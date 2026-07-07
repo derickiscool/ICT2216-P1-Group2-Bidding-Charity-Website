@@ -112,17 +112,17 @@ export const reviewAssignedListing = async (
     });
   }
 
-  // Charity approval publishes the listing by moving it to active. The start time is reset to
-  // now so bidders never see an already-counting auction that was hidden during review — which
-  // means the end_time must still be in the future, or the auction would go active with an
-  // already-elapsed window and be swept straight to 'expired' on the next deadline pass.
-  if (decision === 'approved' && new Date(listing.end_time).getTime() <= Date.now()) {
-    throw badRequest('This listing\'s auction end time has already passed. Ask the donor to update the auction window before approval.', 'LISTING_WINDOW_EXPIRED');
-  }
-
   listing.status = decision === 'approved' ? 'active' : 'rejected';
   if (decision === 'approved') {
-    listing.start_time = new Date().toISOString();
+    // Charity approval publishes the listing. Re-anchor the auction window to now so bidders never
+    // see an already-counting auction that was hidden during review, but preserve the donor's
+    // intended duration. This keeps the window valid no matter how long admin+charity review took —
+    // otherwise a listing whose original end_time lapsed during review could neither be published
+    // (window already expired) nor edited by the donor (locked during charity_review): a deadlock.
+    const originalDurationMs = new Date(listing.end_time).getTime() - new Date(listing.start_time).getTime();
+    const now = Date.now();
+    listing.start_time = new Date(now).toISOString();
+    listing.end_time = new Date(now + originalDurationMs).toISOString();
   } else {
     listing.review_note = reason;
     listing.review_stage = 'charity';

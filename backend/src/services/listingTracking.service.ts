@@ -52,7 +52,11 @@ const buildTimelineLabel = (listing: Listing, nowMs: number): string => {
   if (listing.status === 'changes_requested') return 'Changes requested — update and resubmit';
   if (listing.status === 'charity_review') return 'Forwarded to the charity for review';
   if (listing.status === 'draft') return 'Draft not yet submitted';
-  if (listing.status === 'rejected') return 'Rejected during review';
+  if (listing.status === 'rejected') {
+    return listing.review_stage === 'charity' ? 'Rejected by the charity'
+      : listing.review_stage === 'admin' ? 'Rejected by an administrator'
+      : 'Rejected during review';
+  }
   if (listing.status === 'cancelled') return 'Cancelled by donor or admin';
 
   return 'Status updated';

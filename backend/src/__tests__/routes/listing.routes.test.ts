@@ -6,7 +6,9 @@ import {
   request,
   postJson,
   loginAs,
+  createActiveListing,
 } from '../helpers/setup';
+import { query } from '../../utils/db';
 
 beforeAll(startServer);
 afterAll(stopServer);
@@ -35,22 +37,15 @@ describe('SFR12/SFR13 — Search & Filter Security', () => {
 
 describe('SFR08 — Active Listing Field Locking', () => {
   test('rejects modifications to locked fields on active auction listings', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
     const admin = await loginAs('admin@bidforgood.test');
 
-    const created = await postJson(
-      '/api/listings',
-      {
-        title: 'Active Config Test',
-        description: 'Listing used to test locked active fields.',
-        category: 'Art',
-        charityName: 'Valid Charity',
-        starting_price: 100,
-        min_increment: 10,
-        durationHours: 24,
-      },
-      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
-    );
-    assert.equal(created.response.status, 201);
+    const created = { body: await createActiveListing(donor, {
+      title: 'Active Config Test',
+      description: 'Listing used to test locked active fields.',
+      starting_price: 100,
+      min_increment: 10,
+    }) };
     assert.equal(created.body.status, 'active');
 
     const locked = await request(`/api/listings/${created.body.uuid}`, {
@@ -91,6 +86,24 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
     assert.equal(res.body.status, 'pending');
     return res.body as { uuid: string; id: number; status: string };
   };
+
+  test('admins cannot author listings — separation of duties (403)', async () => {
+    const admin = await loginAs('admin@bidforgood.test');
+    const res = await postJson(
+      '/api/listings',
+      {
+        title: 'Admin Should Not Create This',
+        description: 'An admin must not be able to author a listing they could also moderate.',
+        category: 'Collectibles',
+        charityName: 'Test Charity',
+        starting_price: 100,
+        min_increment: 10,
+        durationHours: 24,
+      },
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(res.response.status, 403);
+  });
 
   test('admin approval forwards to the charity (not published); charity approval publishes', async () => {
     const donor = await loginAs('donor@bidforgood.test');
@@ -154,6 +167,31 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
     });
     assert.equal(edit.response.status, 200);
     assert.equal(edit.body.status, 'pending');
+  });
+
+  test('charity approval re-anchors an expired auction window instead of deadlocking', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const admin = await loginAs('admin@bidforgood.test');
+    const charity = await loginAs('charity@bidforgood.test');
+
+    const listing = await createDonorListing(donor, 'SFR09 Expired Window Item');
+    await postJson(`/api/listings/${listing.uuid}/approve`, {}, { cookie: admin.cookie, 'x-csrf-token': admin.csrf });
+
+    // Simulate a long admin+charity review: the donor's original auction window has already elapsed.
+    await query(
+      `UPDATE listings SET start_time = NOW() - INTERVAL '5 days', end_time = NOW() - INTERVAL '4 days' WHERE uuid = $1`,
+      [listing.uuid],
+    );
+
+    // Charity approval must still publish (no deadlock) and re-anchor the window into the future.
+    const approve = await postJson(
+      `/api/listings/${listing.uuid}/charity-review`,
+      { decision: 'approved' },
+      { cookie: charity.cookie, 'x-csrf-token': charity.csrf },
+    );
+    assert.equal(approve.response.status, 200);
+    assert.equal(approve.body.status, 'active');
+    assert.ok(new Date(approve.body.end_time as string).getTime() > Date.now());
   });
 
   test('reject is terminal — the donor cannot edit or resubmit a rejected listing', async () => {

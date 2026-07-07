@@ -150,7 +150,10 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
     throw badRequest('A valid campaign must be selected.');
   }
 
-  const status: ListingStatus = req.user.roles.includes('admin') ? 'active' : 'pending';
+  // Every donor submission enters the two-stage review pipeline (SFR09). There is no admin
+  // shortcut to 'active' — admins cannot create listings (enforced at the route), preserving
+  // separation of duties between authoring and moderating.
+  const status: ListingStatus = 'pending';
 
   // Use explicit start/end times from the request if provided and valid; fall back to durationHours.
   const now = new Date();

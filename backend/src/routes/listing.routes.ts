@@ -34,7 +34,9 @@ router.get('/mine', asyncHandler(authenticate), requireRole('donor', 'admin'), a
 router.get('/admin/pending', asyncHandler(authenticate), requireRole('admin'), asyncHandler(pending));
 router.get('/charity/review', asyncHandler(authenticate), requireRole('charity', 'charity_staff'), asyncHandler(listCharityReviewListings));
 
-router.post('/', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), uploadListingImages, asyncHandler(create));
+// Separation of duties: only donors may create listings. Admins review them (approve/reject/
+// request-changes) but must not author listings they can also moderate.
+router.post('/', asyncHandler(authenticate), requireCsrf, requireRole('donor'), uploadListingImages, asyncHandler(create));
 router.patch('/:uuid', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), uploadListingImages, asyncHandler(update));
 router.delete('/:uuid', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), asyncHandler(remove));
 
