@@ -118,12 +118,32 @@ export interface Bid {
   listingUuid?: string
 }
 
+export interface BidPlacementResponse {
+  bids: Bid[]
+  currentBid: number
+  winnerId?: number
+}
+
 export interface AutoBid {
   id: number
+  uuid: string
   listing_id: number
   bidder_id: number
+  bidder_username: string
   max_amount: number
   is_active: boolean
+  created_at: string
+  updated_at: string
+  listingTitle?: string
+  listingUuid?: string
+  listingStatus?: ListingStatus
+  currentBid?: number
+  endTime?: string
+}
+
+export interface AutoBidResponse {
+  autoBid: AutoBid
+  result: BidPlacementResponse
 }
 
 // ─── Payments & Receipts ─────────────────────────────────────────────────────

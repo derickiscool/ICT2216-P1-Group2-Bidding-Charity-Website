@@ -143,6 +143,27 @@ export interface Bid {
   created_at: string;
 }
 
+
+export interface AutoBidSetting {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  bidder_username: string;
+  max_amount: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutoBidWithListing extends AutoBidSetting {
+  listingTitle?: string;
+  listingUuid?: string;
+  listingStatus?: ListingStatus;
+  currentBid?: number;
+  endTime?: string;
+}
+
 export interface BidWithListing extends Bid {
   listingTitle?: string;
   listingUuid?: string;
