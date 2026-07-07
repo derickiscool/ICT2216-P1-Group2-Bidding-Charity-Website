@@ -146,7 +146,8 @@ export default function PaymentDeadlinesPage() {
     setLoading(true)
     try {
       const res = await api.get<{ data: PaymentWithListing[]; total: number }>('/payments/mine')
-      setPayments(res.data.data)
+      // Only show pending payments — exclude successful/expired ones
+      setPayments(res.data.data.filter(p => p.status === 'pending'))
       setError(null)
     } catch (err) {
       setError((err as { message?: string }).message || 'Failed to load payment deadlines')
