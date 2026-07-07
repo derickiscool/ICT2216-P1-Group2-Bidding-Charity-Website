@@ -180,6 +180,7 @@ interface PaymentWithListingRow extends PaymentRow {
   listing_uuid: string;
   listing_title: string;
   charity_name: string;
+  listing_status: string;
 }
 
 interface ReceiptRow {
@@ -392,6 +393,7 @@ const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing =
   listing_uuid: row.listing_uuid,
   listing_title: row.listing_title,
   charity_name: row.charity_name,
+  listing_status: row.listing_status as PaymentWithListing['listing_status'],
 });
 
 const mapReceipt = (row: ReceiptRow): Receipt => ({
@@ -1077,7 +1079,8 @@ const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListin
        p.*,
        l.uuid AS listing_uuid,
        l.title AS listing_title,
-       l.charity_name AS charity_name
+       l.charity_name AS charity_name,
+       l.status AS listing_status
      FROM payments p
      INNER JOIN listings l ON l.id = p.listing_id
      WHERE p.bidder_id = $1

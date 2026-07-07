@@ -196,6 +196,7 @@ export interface PaymentWithListing extends Payment {
   listing_uuid: string;
   listing_title: string;
   charity_name: string;
+  listing_status: ListingStatus;
 }
 
 export interface PasswordResetToken {

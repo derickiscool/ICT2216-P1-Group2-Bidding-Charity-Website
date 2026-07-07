@@ -50,7 +50,7 @@ export interface Campaign {
 
 // ─── Listings & Auctions ─────────────────────────────────────────────────────
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected'
+export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected'
 export type ItemCondition = 'new' | 'like_new' | 'good' | 'fair'
 
 export interface Listing {
@@ -171,17 +171,20 @@ export interface PaymentWithListing extends Payment {
   listing_uuid: string
   listing_title: string
   charity_name: string
+  listing_status: ListingStatus
 }
 
 export interface Receipt {
   id: number
-  payment_id: number
-  listing_title: string
-  amount_paid: number
-  charity_name: string
-  charity_registration: string
-  receipt_number: string
-  created_at: string
+  uuid: string
+  paymentId: number
+  listingId: number
+  bidderId: number
+  amount: number
+  itemTitle: string
+  itemDescription: string
+  beneficiaryName: string
+  generatedAt: string
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────

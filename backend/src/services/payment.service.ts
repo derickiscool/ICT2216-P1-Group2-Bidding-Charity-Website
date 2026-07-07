@@ -9,6 +9,7 @@ import {
   getPaymentByUuid,
   getPaymentsForListing,
   getPendingPaymentForListing,
+  getReceiptByPaymentId,
   getReceiptByUuid,
   listActiveListings,
   listListings,
@@ -245,7 +246,8 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
     }
 
     const listing = await getListingById(payment.listing_id);
-    if (!listing || listing.status !== 'sold' || listing.winner_id !== payment.bidder_id) {
+    const postAuctionStatuses = ['sold', 'shipped', 'delivered'] as const;
+    if (!listing || !postAuctionStatuses.includes(listing.status as typeof postAuctionStatuses[number]) || listing.winner_id !== payment.bidder_id) {
       throw badRequest('Payment offer is not linked to the current winning bidder.', 'PAYMENT_OFFER_NOT_CURRENT');
     }
 
@@ -293,5 +295,14 @@ export const getReceipt = async (receiptUuid: string, req: Request): Promise<Rec
     await audit(req, 'RECEIPT_ACCESS_DENIED', { receiptUuid }, 'receipt', receiptUuid, req.user.id);
     throw forbidden('This receipt does not belong to your account.');
   }
+  return receipt;
+};
+
+export const getReceiptByPayment = async (paymentUuid: string, req: Request): Promise<Receipt> => {
+  if (!req.user) throw forbidden();
+  const payment = await getPaymentByUuid(paymentUuid);
+  if (!payment || payment.bidder_id !== req.user.id) throw notFound('Payment not found.');
+  const receipt = await getReceiptByPaymentId(payment.id);
+  if (!receipt) throw notFound('Receipt not found. Payment may not be completed yet.');
   return receipt;
 };
