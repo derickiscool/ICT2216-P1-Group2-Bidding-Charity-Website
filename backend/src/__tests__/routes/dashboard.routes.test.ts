@@ -80,12 +80,16 @@ describe('FR18 — Donor Dashboard', () => {
     assert.ok(summary.total >= 3, 'summary.total should account for all seeded listings');
     assert.ok(typeof summary.active === 'number', 'summary.active should be a number');
     assert.ok(typeof summary.pending === 'number', 'summary.pending should be a number');
+    assert.ok(typeof summary.upcoming === 'number', 'summary.upcoming should be a number');
+    assert.equal(summary.draft, 0, 'draft listings are hidden from FR10 tracking');
 
     assert.ok(Array.isArray(listings));
+    assert.equal(listings.some(listing => listing.status === 'draft'), false, 'draft listings should not appear in tracking');
     const first = listings[0];
     assert.ok('canEdit' in first, 'each listing should expose canEdit');
     assert.ok('canDelete' in first, 'each listing should expose canDelete');
     assert.ok('statusLabel' in first, 'each listing should expose statusLabel');
+    assert.ok('trackingFilterStatus' in first, 'each listing should expose trackingFilterStatus');
     const finAmt = (first as Record<string, unknown>).finalBidAmount;
     assert.ok(finAmt === undefined || typeof finAmt === 'number', 'finalBidAmount should be a number when present');
   });

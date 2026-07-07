@@ -68,7 +68,11 @@ describe('SFR08 — Active Listing Field Locking', () => {
 describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
   // Test-mode donor listings attach to the seeded campaign, which is owned by
   // charity@bidforgood.test — so the full admin→charity pipeline is exercisable here.
-  const createDonorListing = async (donor: { cookie: string; csrf: string }, title: string) => {
+  const createDonorListing = async (
+    donor: { cookie: string; csrf: string },
+    title: string,
+    overrides: Record<string, unknown> = {},
+  ) => {
     const res = await postJson(
       '/api/listings',
       {
@@ -79,6 +83,7 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
         starting_price: 100,
         min_increment: 10,
         durationHours: 24,
+        ...overrides,
       },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
@@ -138,6 +143,73 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
     );
     assert.equal(charityApprove.response.status, 200);
     assert.equal(charityApprove.body.status, 'active');
+  });
+
+  test('charity approval keeps future auction windows as upcoming until start time', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const admin = await loginAs('admin@bidforgood.test');
+    const charity = await loginAs('charity@bidforgood.test');
+    const bidder = await loginAs('bidder@bidforgood.test');
+
+    const futureStart = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const futureEnd = new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString();
+    const listing = await createDonorListing(donor, 'SFR09 Future Window Item', {
+      start_time: futureStart,
+      end_time: futureEnd,
+    });
+
+    await postJson(`/api/listings/${listing.uuid}/approve`, {}, { cookie: admin.cookie, 'x-csrf-token': admin.csrf });
+    const charityApprove = await postJson(
+      `/api/listings/${listing.uuid}/charity-review`,
+      { decision: 'approved' },
+      { cookie: charity.cookie, 'x-csrf-token': charity.csrf },
+    );
+    assert.equal(charityApprove.response.status, 200);
+    assert.equal(charityApprove.body.status, 'active');
+
+    // FR10: after both approvals, a future-dated listing is approved but shown as UPCOMING,
+    // not publicly listed or biddable until the auction start time arrives.
+    assert.ok(Math.abs(new Date(charityApprove.body.start_time as string).getTime() - new Date(futureStart).getTime()) < 1000);
+    assert.ok(Math.abs(new Date(charityApprove.body.end_time as string).getTime() - new Date(futureEnd).getTime()) < 1000);
+
+    const publicList = await request('/api/listings');
+    assert.equal((publicList.body.data as { uuid: string }[]).some(l => l.uuid === listing.uuid), false);
+
+    const publicDetail = await request(`/api/listings/${listing.uuid}`);
+    assert.equal(publicDetail.response.status, 404);
+
+    const tracking = await request('/api/listings/mine/tracking', { headers: { cookie: donor.cookie } });
+    assert.equal(tracking.response.status, 200);
+    const tracked = (tracking.body.listings as Array<{ uuid: string; statusLabel: string; trackingFilterStatus: string }>).find(l => l.uuid === listing.uuid);
+    const trackingSummary = tracking.body.summary as { upcoming: number };
+    assert.equal(tracked?.statusLabel, 'Upcoming');
+    assert.equal(tracked?.trackingFilterStatus, 'upcoming');
+    assert.ok(Number(trackingSummary.upcoming) >= 1);
+
+    const bid = await postJson(
+      '/api/bids',
+      { listing_id: listing.id, amount: 110 },
+      { cookie: bidder.cookie, 'x-csrf-token': bidder.csrf },
+    );
+    assert.equal(bid.response.status, 400);
+    assert.equal(bid.body.code, 'AUCTION_NOT_STARTED');
+  });
+
+  test('FR10 hides legacy draft records from donor tracking and donor manage APIs', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const listing = await createDonorListing(donor, 'FR10 Legacy Draft Hidden Item');
+
+    // This simulates an older/local row that was created before the FR10 change removed
+    // draft from the donor-facing workflow.
+    await query(`UPDATE listings SET status = 'draft' WHERE uuid = $1`, [listing.uuid]);
+
+    const tracking = await request('/api/listings/mine/tracking', { headers: { cookie: donor.cookie } });
+    assert.equal(tracking.response.status, 200);
+    assert.equal((tracking.body.listings as Array<{ uuid: string }>).some(l => l.uuid === listing.uuid), false);
+
+    const mine = await request('/api/listings/mine', { headers: { cookie: donor.cookie } });
+    assert.equal(mine.response.status, 200);
+    assert.equal((mine.body.data as Array<{ uuid: string }>).some(l => l.uuid === listing.uuid), false);
   });
 
   test('admin can request changes; donor edit resubmits it to the admin queue', async () => {
