@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Upload, AlertCircle, CheckCircle2, Loader2, Info } from 'lucide-react'
 import api from '../services/api'
 import type { ApiError } from '../types'
@@ -242,6 +242,11 @@ export default function CreateListingPage() {
   return (
     <div className="min-h-[calc(100vh-64px)] py-12 px-6" style={{ background: C.linen }}>
       <div className="max-w-[1100px] mx-auto">
+        <nav className="flex items-center gap-2 text-xs font-medium mb-4" style={{ color: C.muted }}>
+          <Link to="/dashboard" className="hover:underline" style={{ color: C.emerald }}>Dashboard</Link>
+          <span>/</span>
+          <span>Create Listing</span>
+        </nav>
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" style={{ color: C.slate }}>Create New Listing</h1>

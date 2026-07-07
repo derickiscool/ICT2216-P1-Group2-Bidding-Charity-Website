@@ -385,24 +385,27 @@ export const getPublicListing = async (uuid: string, isAdmin = false): Promise<L
 
 export const getPendingListings = async (): Promise<Listing[]> => listPendingListings();
 
-export const getDonorListings = async (donorId: number): Promise<{ listings: Array<Listing & { can_ship?: boolean; payment_held?: boolean; has_shipped?: boolean }>; stats: DonorStats }> => {
+export const getDonorListings = async (donorId: number): Promise<{ listings: Array<Listing & { can_ship?: boolean; payment_held?: boolean; has_shipped?: boolean; payment_released?: boolean }>; stats: DonorStats }> => {
   const listings = await listListingsByDonor(donorId);
 
-  // For sold listings, check if payment is held (buyer paid) and if already shipped
+  // For sold listings, check escrow state (held/released) and shipping status
   const paymentPromises = listings
     .filter(l => l.status === 'sold')
     .map(async (listing) => {
       const payments = await getPaymentsForListing(listing.id);
       const heldPayment = payments.find(p => p.escrow_state === 'held');
+      const releasedPayment = payments.find(p => p.escrow_state === 'released');
       const delivery = await getDeliveryByListingId(listing.id);
       return {
         listingId: listing.id,
         isHeld: !!heldPayment,
+        isReleased: !!releasedPayment,
         isShipped: !!(delivery?.shipped_at),
       };
     });
   const paymentResults = await Promise.all(paymentPromises);
   const heldMap = new Map(paymentResults.map(r => [r.listingId, r.isHeld]));
+  const releasedMap = new Map(paymentResults.map(r => [r.listingId, r.isReleased]));
   const shippedMap = new Map(paymentResults.map(r => [r.listingId, r.isShipped]));
 
   const listingsWithPayment = listings.map(l => ({
@@ -410,6 +413,7 @@ export const getDonorListings = async (donorId: number): Promise<{ listings: Arr
     can_ship: l.status === 'sold' && heldMap.get(l.id) === true && !shippedMap.get(l.id),
     payment_held: l.status === 'sold' && heldMap.get(l.id) === true,
     has_shipped: l.status === 'sold' && shippedMap.get(l.id) === true,
+    payment_released: l.status === 'sold' && releasedMap.get(l.id) === true,
   }));
 
   const stats: DonorStats = {
