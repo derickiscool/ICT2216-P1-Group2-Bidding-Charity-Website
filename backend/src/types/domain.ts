@@ -7,6 +7,8 @@ export interface User {
   username: string;
   full_name: string;
   roles: UserRole[];
+  // Staff accounts created with a temporary password must change it on first login.
+  mustChangePassword: boolean;
   passwordHash: string;
   is_verified: boolean;
   is_active: boolean;

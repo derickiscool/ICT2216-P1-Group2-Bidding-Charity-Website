@@ -46,6 +46,7 @@ interface UserRow {
   username: string;
   full_name: string;
   roles: UserRole[];
+  must_change_password: boolean | null;
   password_hash: string;
   is_verified: boolean;
   is_active: boolean;
@@ -284,6 +285,7 @@ const mapUser = (row: UserRow): User => ({
   username: row.username,
   full_name: row.full_name,
   roles: mapRoles(row.roles),
+  mustChangePassword: row.must_change_password ?? false,
   passwordHash: row.password_hash,
   is_verified: row.is_verified,
   is_active: row.is_active,
@@ -524,10 +526,10 @@ const findUserByUuid = async (uuid: string): Promise<User | undefined> => {
 
 const addUser = async (input: NewUserInput): Promise<User> => {
   const row = await firstRow<UserRow>(
-    `INSERT INTO users (email, username, full_name, roles, password_hash, is_verified, is_active, failed_login_attempts, charity_id)
-     VALUES ($1, $2, $3, $4, $5, $6, true, 0, $7)
+    `INSERT INTO users (email, username, full_name, roles, must_change_password, password_hash, is_verified, is_active, failed_login_attempts, charity_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, 0, $8)
      RETURNING *`,
-    [input.email, input.username, input.full_name, input.roles, input.passwordHash, input.is_verified, input.charityId ?? null],
+    [input.email, input.username, input.full_name, input.roles, input.mustChangePassword ?? false, input.passwordHash, input.is_verified, input.charityId ?? null],
   );
   if (!row) throw new Error('Failed to create user.');
   return mapUser(row);
@@ -537,8 +539,8 @@ const updateUser = async (user: User): Promise<void> => {
   await query(
     `UPDATE users
      SET email = $2, username = $3, full_name = $4, contact_number = $5, roles = $6,
-         password_hash = $7, is_verified = $8, is_active = $9, failed_login_attempts = $10,
-         locked_until = $11, charity_id = $12, last_login_at = $13
+         must_change_password = $7, password_hash = $8, is_verified = $9, is_active = $10, failed_login_attempts = $11,
+         locked_until = $12, charity_id = $13, last_login_at = $14
      WHERE id = $1`,
     [
       user.id,
@@ -547,6 +549,7 @@ const updateUser = async (user: User): Promise<void> => {
       user.full_name,
       user.contactNumber ?? null,
       user.roles,
+      user.mustChangePassword,
       user.passwordHash,
       user.is_verified,
       user.is_active,
