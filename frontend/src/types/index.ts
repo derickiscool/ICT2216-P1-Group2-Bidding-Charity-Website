@@ -241,6 +241,10 @@ export interface CharityStats {
   totalItems: number
   activeItems: number
   totalRaised: number
+  paymentsReceived: number
+  paymentsPending: number
+  paymentsReleasedCount: number
+  paymentsHeldCount: number
 }
 
 export interface AdminStats {

@@ -1,6 +1,6 @@
 import type { Request } from 'express';
-import type { CharityOrganisation, Listing } from '../types/domain';
-import { addCharity, getCharityByUuid, listCharities, listListings, updateCharity } from '../repositories';
+import type { CharityOrganisation, Listing, Payment } from '../types/domain';
+import { addCharity, getCharityByUuid, getPaymentsForListing, listCharities, listListings, updateCharity } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';
@@ -69,10 +69,23 @@ export const getCharityDashboard = async (ownerUserId: number): Promise<{ charit
   const allListings = await listListings();
   const organisationName = charity?.organisationName ?? '';
   const listings = allListings.filter(l => l.charityName.toLowerCase() === organisationName.toLowerCase());
+
+  // Fetch payments for this charity's listings to compute fund statistics
+  const allPayments: Payment[] = (
+    await Promise.all(listings.map(l => getPaymentsForListing(l.id)))
+  ).flat();
+
+  const paymentsReleased = allPayments.filter(p => p.escrow_state === 'released');
+  const paymentsHeld = allPayments.filter(p => p.escrow_state === 'held');
+
   const stats: CharityStats = {
     totalItems: listings.length,
     activeItems: listings.filter(l => l.status === 'active').length,
     totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
+    paymentsReceived: paymentsReleased.reduce((sum, p) => sum + p.amount, 0),
+    paymentsPending: paymentsHeld.reduce((sum, p) => sum + p.amount, 0),
+    paymentsReleasedCount: paymentsReleased.length,
+    paymentsHeldCount: paymentsHeld.length,
   };
   return { charity, listings, stats };
 };
@@ -81,4 +94,8 @@ export interface CharityStats {
   totalItems: number;
   activeItems: number;
   totalRaised: number;
+  paymentsReceived: number;
+  paymentsPending: number;
+  paymentsReleasedCount: number;
+  paymentsHeldCount: number;
 }

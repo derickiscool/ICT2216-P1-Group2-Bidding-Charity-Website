@@ -274,23 +274,41 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
 };
 
 export const releaseEscrowForListing = async (listingId: number, req: Request): Promise<void> => {
-  const { getPaymentsForListing: getPayments, updatePayment: updPayment } = await import('../repositories');
+  const { getPaymentsForListing: getPayments, updatePayment: updPayment, getListingById: getListing } = await import('../repositories');
   const payments = await getPayments(listingId);
   const heldPayment = payments.find(p => p.escrow_state === 'held');
   if (!heldPayment) return;
+
+  // Generate receipt BEFORE releasing escrow — no receipt, no payout
+  const { generateReceipt: genReceipt } = await import('./receipt.service');
+  const listing = await getListing(listingId);
+  if (listing) {
+    await genReceipt(heldPayment, listing, req.user?.username ?? 'bidder');
+  }
 
   heldPayment.escrow_state = 'released';
   await updPayment(heldPayment);
 
   await audit(req, 'ESCROW_RELEASED', { listingId, amount: heldPayment.amount }, 'payment', heldPayment.uuid, req.user?.id);
+};
 
-  // Generate receipt on escrow release
-  const { generateReceipt: genReceipt } = await import('./receipt.service');
-  const { getListingById: getListing } = await import('../repositories');
-  const listing = await getListing(listingId);
-  if (listing) {
-    await genReceipt(heldPayment, listing, req.user?.username ?? 'bidder').catch(() => {});
+export const regenerateReceipt = async (paymentUuid: string, req: Request): Promise<{ message: string }> => {
+  const { getPaymentByUuid: getPay } = await import('../repositories');
+  const payment = await getPay(paymentUuid);
+  if (!payment) throw notFound('Payment not found');
+  if (payment.escrow_state !== 'released' && payment.escrow_state !== 'held') {
+    throw badRequest('Only payments in held or released state can regenerate a receipt.', 'RECEIPT_REGENERATE_INVALID');
   }
+
+  const { getListingById: getList } = await import('../repositories');
+  const listing = await getList(payment.listing_id);
+  if (!listing) throw notFound('Linked listing not found.');
+
+  const { generateReceipt: genReceipt } = await import('./receipt.service');
+  await genReceipt(payment, listing, req.user?.username ?? 'admin');
+
+  await audit(req, 'RECEIPT_REGENERATED', { paymentUuid, listingId: payment.listing_id }, 'payment', payment.uuid, req.user?.id);
+  return { message: 'Receipt regenerated successfully.' };
 };
 
 export const closeExpiredAuctions = async (forceUuid?: string): Promise<number> => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Building2, TrendingUp, Package, Loader2, AlertCircle, Info } from 'lucide-react'
+import { Building2, TrendingUp, Package, Loader2, AlertCircle, Info, CheckCircle, Clock } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { Listing, CharityStats, ApiError } from '../types'
@@ -109,7 +109,7 @@ export default function CharityDashboard() {
         </div>
 
         {/* Stats cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <div className="rounded-2xl p-5 bg-white" style={{ border: '1px solid', borderColor: C.beige }}>
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#EEF2FF' }}>
@@ -136,6 +136,24 @@ export default function CharityDashboard() {
             </div>
             <p className="text-2xl font-bold" style={{ color: C.slate }}>{money(stats?.totalRaised ?? 0)}</p>
             <p className="text-xs" style={{ color: C.muted }}>Total Raised</p>
+          </div>
+          <div className="rounded-2xl p-5 bg-white" style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.emeraldLight }}>
+                <CheckCircle className="w-5 h-5" style={{ color: C.emerald }} />
+              </div>
+            </div>
+            <p className="text-2xl font-bold" style={{ color: C.slate }}>{money(stats?.paymentsReceived ?? 0)}</p>
+            <p className="text-xs" style={{ color: C.muted }}>Funds Received ({stats?.paymentsReleasedCount ?? 0} payments)</p>
+          </div>
+          <div className="rounded-2xl p-5 bg-white" style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#FEF3C7' }}>
+                <Clock className="w-5 h-5" style={{ color: '#92400E' }} />
+              </div>
+            </div>
+            <p className="text-2xl font-bold" style={{ color: C.slate }}>{money(stats?.paymentsPending ?? 0)}</p>
+            <p className="text-xs" style={{ color: C.muted }}>Pending Payout ({stats?.paymentsHeldCount ?? 0} payments)</p>
           </div>
         </div>
 
