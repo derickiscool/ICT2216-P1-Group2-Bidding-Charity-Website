@@ -29,6 +29,8 @@ const EMPTY_SUMMARY: DonorListingStatusSummary = {
     total: 0,
     draft: 0,
     pending: 0,
+    changes_requested: 0,
+    charity_review: 0,
     active: 0,
     sold: 0,
     expired: 0,
@@ -64,7 +66,9 @@ function formatDateTime(value?: string): string {
 function statusStyle(status: ListingStatus) {
     switch (status) {
         case 'active': return { bg: C.emeraldLight, fg: C.emeraldDark, label: 'Active' }
-        case 'pending': return { bg: C.amberLight, fg: C.amber, label: 'Pending Review' }
+        case 'pending': return { bg: C.amberLight, fg: C.amber, label: 'Pending Admin Review' }
+        case 'changes_requested': return { bg: C.amberLight, fg: C.amber, label: 'Changes Requested' }
+        case 'charity_review': return { bg: C.mauveLight, fg: C.mauve, label: 'Charity Review' }
         case 'sold': return { bg: C.mauveLight, fg: C.mauve, label: 'Sold' }
         case 'expired': return { bg: '#F3F4F6', fg: '#4B5563', label: 'Expired' }
         case 'cancelled': return { bg: C.dangerLight, fg: C.danger, label: 'Cancelled' }
@@ -157,6 +161,8 @@ export default function DonorListingsPage() {
         { value: 'all' as const, label: 'All', count: summary.total },
         { value: 'draft' as const, label: 'Draft', count: summary.draft },
         { value: 'pending' as const, label: 'Pending', count: summary.pending },
+        { value: 'changes_requested' as const, label: 'Changes Requested', count: summary.changes_requested },
+        { value: 'charity_review' as const, label: 'Charity Review', count: summary.charity_review },
         { value: 'active' as const, label: 'Active', count: summary.active },
         { value: 'sold' as const, label: 'Sold', count: summary.sold },
         { value: 'expired' as const, label: 'Expired', count: summary.expired },
@@ -432,7 +438,7 @@ export default function DonorListingsPage() {
                                                 onClick={() => openEdit(listing)}
                                                 className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                                                 style={{ borderColor: C.beige, color: C.slate, background: C.white }}
-                                                title={listing.canEdit ? 'Edit listing' : 'Only draft, pending, and rejected listings can be edited'}>
+                                                title={listing.canEdit ? 'Edit listing' : 'Only draft, pending, and changes-requested listings can be edited'}>
                                                 <Pencil className="w-4 h-4" /> Edit
                                             </button>
                                             <button
@@ -459,7 +465,7 @@ export default function DonorListingsPage() {
                         <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: C.beige }}>
                             <div>
                                 <h2 className="text-xl font-bold" style={{ color: C.slate }}>Edit Listing</h2>
-                                <p className="text-xs mt-1" style={{ color: C.muted }}>Only draft, pending, and rejected listings can be edited.</p>
+                                <p className="text-xs mt-1" style={{ color: C.muted }}>Only draft, pending, and changes-requested listings can be edited.</p>
                             </div>
                             <button type="button" onClick={() => setEditing(null)} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5" /></button>
                         </div>

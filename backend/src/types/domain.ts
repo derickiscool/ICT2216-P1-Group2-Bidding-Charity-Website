@@ -40,6 +40,18 @@ export interface LoginOtp {
   createdAt: Date;
 }
 
+export interface EmailChangeRequest {
+  user_id: number;
+  newEmail: string;
+  oldEmail: string;
+  oldEmailOtpHash: string;
+  newEmailOtpHash: string | null;
+  oldEmailConfirmed: boolean;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
 export interface Campaign {
   id: number;
   uuid: string;
@@ -81,6 +93,7 @@ export interface CharityOrganisation {
   documentName: string;
   documentMime: 'application/pdf' | 'image/png' | 'image/jpeg';
   documentSha256: string;
+  documentData?: Buffer | null;
   status: CharityStatus;
   reviewedBy?: number;
   reviewedAt?: string;
@@ -89,7 +102,7 @@ export interface CharityOrganisation {
   ownerEmail?: string;
 }
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
+export type ListingStatus = 'draft' | 'pending' | 'changes_requested' | 'charity_review' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
 export interface Listing {
   id: number;
   uuid: string;
@@ -111,6 +124,11 @@ export interface Listing {
   winner_id?: number;
   charityName: string;
   min_increment: number;
+  // SFR09: reviewer note (admin reject / request-changes reason) surfaced to the donor.
+  review_note?: string;
+  // SFR09: which review stage produced the latest note — 'admin' (stage 1) or 'charity' (stage 2).
+  // Lets the donor-facing copy attribute a rejection to the right party.
+  review_stage?: 'admin' | 'charity';
   created_at: string;
 }
 
@@ -118,6 +136,8 @@ export interface DonorListingStatusSummary {
   total: number;
   draft: number;
   pending: number;
+  changes_requested: number;
+  charity_review: number;
   active: number;
   sold: number;
   shipped: number;

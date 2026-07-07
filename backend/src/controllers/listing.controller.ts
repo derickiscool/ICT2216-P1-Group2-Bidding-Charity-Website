@@ -11,6 +11,7 @@ import {
   listMyListings,
   provideTracking,
   rejectListing,
+  requestListingChanges,
   searchPublicListings,
   updateListingDetails,
 } from '../services/listing.service';
@@ -63,6 +64,10 @@ export const approve = async (req: Request, res: Response): Promise<void> => {
 
 export const reject = async (req: Request, res: Response): Promise<void> => {
   res.json(await rejectListing(req.params.uuid, req.body.reason, req));
+};
+
+export const requestChanges = async (req: Request, res: Response): Promise<void> => {
+  res.json(await requestListingChanges(req.params.uuid, req.body.reason, req));
 };
 
 export const donorListings = async (req: Request, res: Response): Promise<void> => {

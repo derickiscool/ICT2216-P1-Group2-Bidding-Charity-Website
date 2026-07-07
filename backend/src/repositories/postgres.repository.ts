@@ -17,6 +17,7 @@ import type {
   PasswordResetToken,
   PendingRegistration,
   LoginOtp,
+  EmailChangeRequest,
   SessionRecord,
   UpdateCampaignInput,
   User,
@@ -86,6 +87,18 @@ interface PasswordResetTokenRow {
   created_at: DbDate;
 }
 
+interface EmailChangeRequestRow {
+  user_id: number | string;
+  new_email: string;
+  old_email: string;
+  old_email_otp_hash: string;
+  new_email_otp_hash: string | null;
+  old_email_confirmed: boolean;
+  expires_at: DbDate;
+  attempts: number;
+  created_at: DbDate;
+}
+
 interface SessionRow {
   sid: string;
   user_id: number;
@@ -107,6 +120,7 @@ interface CharityRow {
   document_name: string;
   document_mime: 'application/pdf' | 'image/png' | 'image/jpeg';
   document_sha256: string;
+  document_data?: Buffer | null;
   status: 'pending' | 'approved' | 'rejected';
   reviewed_by: number | null;
   reviewed_at: DbDate | null;
@@ -130,12 +144,14 @@ interface ListingRow {
   buy_now_price: number | string | null;
   current_bid: number | string;
   bid_count: number;
-  status: 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+  status: ListingStatus;
   start_time: DbDate;
   end_time: DbDate;
   winner_id: number | null;
   charity_name: string;
   min_increment: number | string;
+  review_note: string | null;
+  review_stage: 'admin' | 'charity' | null;
   created_at: DbDate;
 }
 
@@ -176,7 +192,7 @@ interface AutoBidRow {
 interface AutoBidWithListingRow extends AutoBidRow {
   listing_title?: string;
   listing_uuid?: string;
-  listing_status?: 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+  listing_status?: ListingStatus;
   current_bid?: number | string;
   end_time?: DbDate;
 }
@@ -301,6 +317,18 @@ const mapLoginOtp = (row: LoginOtpRow): LoginOtp => ({
   createdAt: toDate(row.created_at),
 });
 
+const mapEmailChangeRequest = (row: EmailChangeRequestRow): EmailChangeRequest => ({
+  user_id: Number(row.user_id),
+  newEmail: row.new_email,
+  oldEmail: row.old_email,
+  oldEmailOtpHash: row.old_email_otp_hash,
+  newEmailOtpHash: row.new_email_otp_hash,
+  oldEmailConfirmed: row.old_email_confirmed,
+  expiresAt: toDate(row.expires_at),
+  attempts: Number(row.attempts),
+  createdAt: toDate(row.created_at),
+});
+
 const mapSession = (row: SessionRow): SessionRecord => ({
   sid: row.sid,
   userId: Number(row.user_id),
@@ -330,6 +358,7 @@ const mapCharity = (row: CharityRow): CharityOrganisation => ({
   documentName: row.document_name,
   documentMime: row.document_mime,
   documentSha256: row.document_sha256,
+  documentData: row.document_data,
   status: row.status,
   reviewedBy: optionalNumber(row.reviewed_by),
   reviewedAt: optionalIso(row.reviewed_at),
@@ -359,6 +388,8 @@ const mapListing = (row: ListingRow): Listing => ({
   winner_id: optionalNumber(row.winner_id),
   charityName: row.charity_name,
   min_increment: Number(row.min_increment),
+  review_note: row.review_note ?? undefined,
+  review_stage: row.review_stage ?? undefined,
   created_at: toIso(row.created_at),
 });
 
@@ -604,6 +635,42 @@ const removeLoginOtp = async (userId: number): Promise<void> => {
   await query('DELETE FROM login_otps WHERE user_id = $1', [userId]);
 };
 
+const saveEmailChangeRequest = async (request: EmailChangeRequest): Promise<void> => {
+  await query(
+    `INSERT INTO email_change_requests (user_id, new_email, old_email, old_email_otp_hash, new_email_otp_hash, old_email_confirmed, expires_at, attempts, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (user_id) DO UPDATE SET
+       new_email = EXCLUDED.new_email,
+       old_email = EXCLUDED.old_email,
+       old_email_otp_hash = EXCLUDED.old_email_otp_hash,
+       new_email_otp_hash = EXCLUDED.new_email_otp_hash,
+       old_email_confirmed = EXCLUDED.old_email_confirmed,
+       expires_at = EXCLUDED.expires_at,
+       attempts = EXCLUDED.attempts,
+       created_at = EXCLUDED.created_at`,
+    [
+      request.user_id,
+      request.newEmail,
+      request.oldEmail,
+      request.oldEmailOtpHash,
+      request.newEmailOtpHash,
+      request.oldEmailConfirmed,
+      request.expiresAt,
+      request.attempts,
+      request.createdAt,
+    ],
+  );
+};
+
+const getEmailChangeRequest = async (userId: number): Promise<EmailChangeRequest | undefined> => {
+  const row = await firstRow<EmailChangeRequestRow>('SELECT * FROM email_change_requests WHERE user_id = $1 LIMIT 1', [userId]);
+  return row ? mapEmailChangeRequest(row) : undefined;
+};
+
+const removeEmailChangeRequest = async (userId: number): Promise<void> => {
+  await query('DELETE FROM email_change_requests WHERE user_id = $1', [userId]);
+};
+
 const addSession = async (record: SessionRecord): Promise<void> => {
   await query(
     `INSERT INTO sessions (sid, user_id, jti_hash, csrf_token_hash, expires_at, absolute_expires_at, revoked_at, created_at, last_seen_at)
@@ -655,10 +722,18 @@ const removePasswordResetToken = async (email: string): Promise<void> => {
 const addCharity = async (input: NewCharityInput): Promise<CharityOrganisation> => {
   const row = await firstRow<CharityRow>(
     `INSERT INTO charities
-       (owner_user_id, organisation_name, description, document_name, document_mime, document_sha256, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+       (owner_user_id, organisation_name, description, document_name, document_mime, document_sha256, document_data, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
      RETURNING *`,
-    [input.ownerUserId, input.organisationName, input.description, input.documentName, input.documentMime, input.documentSha256],
+    [
+      input.ownerUserId,
+      input.organisationName,
+      input.description,
+      input.documentName,
+      input.documentMime,
+      input.documentSha256,
+      input.documentData ?? null,
+    ],
   );
   if (!row) throw new Error('Failed to create charity registration.');
   return mapCharity(row);
@@ -688,8 +763,8 @@ const updateCharity = async (record: CharityOrganisation): Promise<void> => {
   await query(
     `UPDATE charities
      SET owner_user_id = $2, organisation_name = $3, description = $4, document_name = $5,
-         document_mime = $6, document_sha256 = $7, status = $8, reviewed_by = $9,
-         reviewed_at = $10, rejection_reason = $11
+         document_mime = $6, document_sha256 = $7, document_data = $8, status = $9, reviewed_by = $10,
+         reviewed_at = $11, rejection_reason = $12
      WHERE uuid = $1`,
     [
       record.uuid,
@@ -699,6 +774,7 @@ const updateCharity = async (record: CharityOrganisation): Promise<void> => {
       record.documentName,
       record.documentMime,
       record.documentSha256,
+      record.documentData ?? null,
       record.status,
       record.reviewedBy ?? null,
       record.reviewedAt ?? null,
@@ -867,8 +943,8 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
     `INSERT INTO listings
        (donor_id, campaign_id, title, description, condition, category, images, starting_price,
         reserve_price, buy_now_price, current_bid, bid_count, status, start_time, end_time,
-        charity_name, min_increment)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, 0, $11, $12, $13, $14, $15)
+        charity_name, min_increment, review_note, review_stage)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, 0, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
       input.donor_id,
@@ -886,6 +962,8 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
       input.end_time,
       input.charityName,
       input.min_increment,
+      input.review_note ?? null,
+      input.review_stage ?? null,
     ],
   );
   if (!row) throw new Error('Failed to create listing.');
@@ -909,7 +987,7 @@ const updateListing = async (listing: Listing): Promise<void> => {
          category = $7, images = $8, starting_price = $9, reserve_price = $10,
          buy_now_price = $11, current_bid = $12, bid_count = $13, status = $14,
          start_time = $15, end_time = $16, winner_id = $17, charity_name = $18,
-         min_increment = $19
+         min_increment = $19, review_note = $20, review_stage = $21
      WHERE id = $1`,
     [
       listing.id,
@@ -931,6 +1009,8 @@ const updateListing = async (listing: Listing): Promise<void> => {
       listing.winner_id ?? null,
       listing.charityName,
       listing.min_increment,
+      listing.review_note ?? null,
+      listing.review_stage ?? null,
     ],
   );
 };
@@ -956,6 +1036,12 @@ const listActiveListings = async (): Promise<Listing[]> => {
 
 const listPendingListings = async (): Promise<Listing[]> => {
   const rows = await allRows<ListingRow>("SELECT * FROM listings WHERE status = 'pending' ORDER BY created_at DESC, id DESC");
+  return rows.map(mapListing);
+};
+
+// SFR09 stage 2: listings the admin has approved and forwarded to the charity for review.
+const listCharityReviewQueue = async (): Promise<Listing[]> => {
+  const rows = await allRows<ListingRow>("SELECT * FROM listings WHERE status = 'charity_review' ORDER BY created_at DESC, id DESC");
   return rows.map(mapListing);
 };
 
@@ -1329,7 +1415,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, auto_bids, payments, bids, listings, campaigns, charities, sessions, pending_registrations, login_otps, password_reset_tokens, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, auto_bids, payments, bids, listings, campaigns, charities, sessions, pending_registrations, login_otps, password_reset_tokens, email_change_requests, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -1350,6 +1436,10 @@ export const postgresRepository: BidForGoodRepository = {
   saveLoginOtp,
   getLoginOtp,
   removeLoginOtp,
+
+  saveEmailChangeRequest,
+  getEmailChangeRequest,
+  removeEmailChangeRequest,
 
   addSession,
   getSession,
@@ -1385,6 +1475,7 @@ export const postgresRepository: BidForGoodRepository = {
   listActiveListings,
   listPendingListings,
   listListingsByStatus,
+  listCharityReviewQueue,
   listListingsByDonor,
   listUsers,
 

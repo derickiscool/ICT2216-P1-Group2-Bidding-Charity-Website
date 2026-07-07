@@ -231,7 +231,7 @@ export default function DonorDashboard() {
     try {
       const [listingsRes, trackingRes] = await Promise.all([
         api.get<{ listings: Listing[]; stats: DonorStats }>('/listings/donor').catch(() => ({ data: { listings: [] as Listing[], stats: { total: 0, active: 0, sold: 0, pending: 0, draft: 0, totalRaised: 0 } } })),
-        api.get<DonorListingTrackingResponse>('/listings/mine/tracking').catch(() => ({ data: { generatedAt: '', summary: { total: 0, draft: 0, pending: 0, active: 0, sold: 0, shipped: 0, delivered: 0, expired: 0, cancelled: 0, rejected: 0 }, listings: [] } })),
+        api.get<DonorListingTrackingResponse>('/listings/mine/tracking').catch(() => ({ data: { generatedAt: '', summary: { total: 0, draft: 0, pending: 0, changes_requested: 0, charity_review: 0, active: 0, sold: 0, shipped: 0, delivered: 0, expired: 0, cancelled: 0, rejected: 0 }, listings: [] } })),
       ])
       setListings(listingsRes.data.listings)
       setStats(listingsRes.data.stats)

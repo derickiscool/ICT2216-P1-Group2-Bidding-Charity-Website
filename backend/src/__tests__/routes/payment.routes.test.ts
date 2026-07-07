@@ -34,13 +34,17 @@ const setupPaidAuction = async () => {
   assert.equal(listingRes.response.status, 201);
   const listing = listingRes.body as Rec;
 
-  // Admin approves so it becomes active
+  // Admin approves, forwarding the listing to the charity review stage (SFR09).
   const approveRes = await postJson(
     `/api/listings/${listing.uuid as string}/approve`,
     {},
     { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
   );
   assert.equal(approveRes.response.status, 200);
+
+  // These payment tests aren't exercising the two-stage review, so short-circuit the
+  // charity approval by activating the listing directly (charity approve → 'active').
+  await query(`UPDATE listings SET status = 'active' WHERE id = $1`, [listing.id]);
 
   // Bidder places a bid
   const bidRes = await postJson(

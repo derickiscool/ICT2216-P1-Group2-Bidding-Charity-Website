@@ -1,0 +1,15 @@
+name: 'Setup Secret Key'
+description: 'Decodes and sets up the key file for tools'
+inputs:
+  key-base64:
+    description: 'The Base64 encoded secret string'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Recreate key file
+      shell: bash
+      run: |
+        mkdir -p backend/certs/
+        echo "${{ inputs.key-base64 }}" | base64 --decode > backend/certs/dkim_private.pem
+        chmod 600 backend/certs/dkim_private.pem

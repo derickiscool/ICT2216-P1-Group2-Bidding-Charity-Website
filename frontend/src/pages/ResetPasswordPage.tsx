@@ -127,7 +127,7 @@ export default function ResetPasswordPage() {
             <>
               <h1 className="text-2xl font-bold mb-1" style={{ color: C.slate }}>Set new password</h1>
               <p className="text-sm mb-8" style={{ color: C.muted }}>
-                Enter the code from the backend console and your new password.
+                Enter the code from your email and your new password.
               </p>
 
               {error && (

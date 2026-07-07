@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import argon2 from 'argon2';
 import type { Request, Response } from 'express';
 import {
-  addUser, findUserByEmail, getPendingRegistration, removePendingRegistration, savePendingRegistration, toPublicUser, updateUser,
+  addUser, findUserByEmail, findUserByUsername, getPendingRegistration, removePendingRegistration, savePendingRegistration, toPublicUser, updateUser,
   saveLoginOtp, getLoginOtp, removeLoginOtp,
   savePasswordResetToken, getPasswordResetTokenByEmail, removePasswordResetToken, revokeAllSessionsByUserId,
 } from '../repositories';
@@ -47,6 +47,10 @@ export const beginRegistration = async (input: RegisterInput, req?: Request): Pr
   if (!/^[A-Za-z0-9_]{3,40}$/.test(username)) errors.username = 'Username must be 3-40 characters using letters, numbers, or underscores.';
   if (!isStrongPassword(password)) errors.password = PASSWORD_POLICY_MESSAGE;
   if (roles.length === 0) errors.roles = 'At least one valid role is required.';
+
+  const existingUsername = await findUserByUsername(username);
+  if (existingUsername) errors.username = 'Username is already taken.';
+
   if (Object.keys(errors).length > 0) throw badRequest('Registration input failed validation.', 'VALIDATION_ERROR', errors);
 
   const existing = await findUserByEmail(email);

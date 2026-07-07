@@ -17,6 +17,7 @@ import {
   listMineTracking,
   pending,
   reject,
+  requestChanges,
   remove,
   shipping,
   update,
@@ -35,13 +36,16 @@ router.get('/admin/pending', asyncHandler(authenticate), requireRole('admin'), a
 router.get('/admin/all', asyncHandler(authenticate), requireRole('admin'), asyncHandler(adminListings));
 router.get('/charity/review', asyncHandler(authenticate), requireRole('charity', 'charity_staff'), asyncHandler(listCharityReviewListings));
 
-router.post('/', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), uploadListingImages, asyncHandler(create));
+// Separation of duties: only donors may create listings. Admins review them (approve/reject/
+// request-changes) but must not author listings they can also moderate.
+router.post('/', asyncHandler(authenticate), requireCsrf, requireRole('donor'), uploadListingImages, asyncHandler(create));
 router.patch('/:uuid', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), uploadListingImages, asyncHandler(update));
 router.delete('/:uuid', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), asyncHandler(remove));
 
 router.post('/:uuid/approve', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(approve));
 router.post('/:uuid/charity-review', asyncHandler(authenticate), requireCsrf, requireRole('charity', 'charity_staff'), asyncHandler(reviewCharityListing));
 router.post('/:uuid/reject', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(reject));
+router.post('/:uuid/request-changes', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(requestChanges));
 router.post('/:uuid/force-close', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(forceClose));
 router.post('/:uuid/shipping', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), asyncHandler(shipping));
 router.post('/:uuid/confirm-delivery', asyncHandler(authenticate), requireCsrf, requireRole('bidder', 'admin'), asyncHandler(confirmDeliveryHandler));

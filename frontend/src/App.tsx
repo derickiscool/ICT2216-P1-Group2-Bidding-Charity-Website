@@ -141,9 +141,13 @@ export default function App() {
             <Route path="/payments" element={<DashboardPage />} />
           </Route>
 
-          {/* ── Donor only ── */}
-          <Route element={<RoleProtectedRoute allowedRoles={['donor', 'admin']} />}>
+          {/* ── Donor only: authoring a listing (separation of duties — admins moderate, they don't create) ── */}
+          <Route element={<RoleProtectedRoute allowedRoles={['donor']} />}>
             <Route path="/listings/create" element={<CreateListingPage />} />
+          </Route>
+
+          {/* ── Donor + admin: manage/track listings ── */}
+          <Route element={<RoleProtectedRoute allowedRoles={['donor', 'admin']} />}>
             <Route path="/listings/manage" element={<DonorListingsPage />} />
           </Route>
 

@@ -5,12 +5,14 @@ import { audit } from './audit.service';
 import { DONOR_DELETABLE_STATUSES, DONOR_EDITABLE_STATUSES, listMyListings } from './listing.service';
 import { processAuctionDeadlines } from './payment.service';
 
-const TRACKABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'];
+const TRACKABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'charity_review', 'active', 'sold', 'shipped', 'delivered', 'expired', 'cancelled', 'rejected'];
 
 const emptyStatusSummary = (): DonorListingTrackingDashboard['summary'] => ({
   total: 0,
   draft: 0,
   pending: 0,
+  changes_requested: 0,
+  charity_review: 0,
   active: 0,
   sold: 0,
   shipped: 0,
@@ -46,9 +48,15 @@ const buildTimelineLabel = (listing: Listing, nowMs: number): string => {
 
   if (listing.status === 'sold') return 'Auction closed with a winning bidder';
   if (listing.status === 'expired') return 'Auction ended without a valid winner';
-  if (listing.status === 'pending') return 'Waiting for listing review';
+  if (listing.status === 'pending') return 'Waiting for administrator review';
+  if (listing.status === 'changes_requested') return 'Changes requested — update and resubmit';
+  if (listing.status === 'charity_review') return 'Forwarded to the charity for review';
   if (listing.status === 'draft') return 'Draft not yet submitted';
-  if (listing.status === 'rejected') return 'Rejected during review';
+  if (listing.status === 'rejected') {
+    return listing.review_stage === 'charity' ? 'Rejected by the charity'
+      : listing.review_stage === 'admin' ? 'Rejected by an administrator'
+      : 'Rejected during review';
+  }
   if (listing.status === 'cancelled') return 'Cancelled by donor or admin';
 
   return 'Status updated';
@@ -63,8 +71,20 @@ const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLab
       };
     case 'pending':
       return {
-        statusLabel: 'Pending Review',
-        statusMessage: 'This listing is waiting for approval before it can appear on the campaign page.',
+        statusLabel: 'Pending Admin Review',
+        statusMessage: 'This listing is waiting for administrator review before it is forwarded to the charity.',
+      };
+    case 'changes_requested':
+      return {
+        statusLabel: 'Changes Requested',
+        statusMessage: listing.review_note
+          ? `The administrator asked for changes: "${listing.review_note}". Edit the listing to resubmit it for review.`
+          : 'The administrator asked for changes before this listing can proceed. Edit the listing to resubmit it for review.',
+      };
+    case 'charity_review':
+      return {
+        statusLabel: 'Charity Review',
+        statusMessage: 'The administrator approved this listing and forwarded it to the charity for final review.',
       };
     case 'active':
       return {
@@ -81,11 +101,23 @@ const statusCopy = (listing: Listing): Pick<DonorListingTrackingItem, 'statusLab
         statusLabel: 'Expired',
         statusMessage: 'The listing ended without a valid winning bidder or payment offer.',
       };
-    case 'rejected':
+    case 'rejected': {
+      // SFR09: attribute the rejection to the stage that made it, so the donor knows whether the
+      // administrator (stage 1) or the charity (stage 2) turned the listing down.
+      const rejectedBy =
+        listing.review_stage === 'charity' ? 'the charity'
+        : listing.review_stage === 'admin' ? 'an administrator'
+        : 'a reviewer';
       return {
-        statusLabel: 'Rejected',
-        statusMessage: 'The listing was rejected during review. You may edit it and resubmit if needed.',
+        statusLabel:
+          listing.review_stage === 'charity' ? 'Rejected by Charity'
+          : listing.review_stage === 'admin' ? 'Rejected by Admin'
+          : 'Rejected',
+        statusMessage: listing.review_note
+          ? `This listing was rejected by ${rejectedBy}: "${listing.review_note}". This decision is final; to try again, submit a new listing.`
+          : `This listing was rejected by ${rejectedBy}. This decision is final; to try again, submit a new listing.`,
       };
+    }
     case 'cancelled':
       return {
         statusLabel: 'Cancelled',

@@ -1,12 +1,29 @@
 import { afterAll, beforeAll, describe, test } from '@jest/globals';
 import assert from 'node:assert/strict';
+import jwt from 'jsonwebtoken';
 import { startServer, stopServer, loginAs, request } from '../helpers/setup';
 import { query } from '../../utils/db';
+import {
+  getJwtSecret,
+  getSessionCookieName,
+  SESSION_JWT_ALGORITHM,
+  SESSION_JWT_AUDIENCE,
+  SESSION_JWT_ISSUER,
+} from '../../services/session.service';
 
 function decodeJwtPayload(token: string): Record<string, unknown> {
   const seg = token.split('.')[1];
   const padded = seg + '='.repeat((4 - (seg.length % 4)) % 4);
   return JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as Record<string, unknown>;
+}
+
+function extractSessionToken(cookie: string): string {
+  const [, ...tokenParts] = cookie.split('=');
+  return tokenParts.join('=');
+}
+
+function cookieForToken(token: string): string {
+  return `${getSessionCookieName()}=${token}`;
 }
 
 beforeAll(startServer);
@@ -29,6 +46,56 @@ describe('SFR16 — Admin Session Enforcement', () => {
     assert.equal(res.response.status, 401);
   });
 
+  test('rejects requests using a signed token with a non-HS256 algorithm', async () => {
+    const { cookie } = await loginAs('admin@bidforgood.test');
+    const token = extractSessionToken(cookie);
+    const decoded = decodeJwtPayload(token);
+    const wrongAlgorithmToken = jwt.sign(
+      {
+        sub: String(decoded.sub),
+        sid: String(decoded.sid),
+        role: decoded.role,
+        roles: decoded.roles,
+        jti: String(decoded.jti),
+      },
+      getJwtSecret(),
+      {
+        algorithm: 'HS384',
+        issuer: SESSION_JWT_ISSUER,
+        audience: SESSION_JWT_AUDIENCE,
+        expiresIn: '15m',
+      },
+    );
+
+    const res = await request('/api/admin/audit-events', { headers: { cookie: cookieForToken(wrongAlgorithmToken) } });
+    assert.equal(res.response.status, 401);
+  });
+
+  test('rejects signed JWTs with more than 15 minutes of lifetime', async () => {
+    const { cookie } = await loginAs('admin@bidforgood.test');
+    const token = extractSessionToken(cookie);
+    const decoded = decodeJwtPayload(token);
+    const longLivedToken = jwt.sign(
+      {
+        sub: String(decoded.sub),
+        sid: String(decoded.sid),
+        role: decoded.role,
+        roles: decoded.roles,
+        jti: String(decoded.jti),
+      },
+      getJwtSecret(),
+      {
+        algorithm: SESSION_JWT_ALGORITHM,
+        issuer: SESSION_JWT_ISSUER,
+        audience: SESSION_JWT_AUDIENCE,
+        expiresIn: '30m',
+      },
+    );
+
+    const res = await request('/api/admin/audit-events', { headers: { cookie: cookieForToken(longLivedToken) } });
+    assert.equal(res.response.status, 401);
+  });
+
   test('rejects requests from a valid bidder session (role mismatch)', async () => {
     const { cookie } = await loginAs('bidder@bidforgood.test');
     const res = await request('/api/admin/audit-events', { headers: { cookie } });
@@ -43,8 +110,7 @@ describe('SFR16 — Admin Session Enforcement', () => {
 
   test('rejects requests after the absolute session lifetime is exceeded', async () => {
     const { cookie } = await loginAs('admin@bidforgood.test');
-    const [, ...tokenParts] = cookie.split('=');
-    const { sid } = decodeJwtPayload(tokenParts.join('='));
+    const { sid } = decodeJwtPayload(extractSessionToken(cookie));
     assert.equal(typeof sid, 'string', 'JWT payload should contain sid');
     // updateSession intentionally omits absolute_expires_at from its UPDATE list,
     // so we write directly to backdate it for this test.

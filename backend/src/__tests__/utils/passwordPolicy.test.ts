@@ -14,4 +14,9 @@ describe('NFSR06 password policy', () => {
     assert.equal(isStrongPassword('Password123!'), false);
     assert.equal(isStrongPassword('CorrectHorseBatteryStaple2026!'), true);
   });
+
+  test('loads the expanded common-password denylist from data files', () => {
+    assert.equal(isBreachedPassword('Superman'), true);
+    assert.equal(isStrongPassword('superman'), false);
+  });
 });
