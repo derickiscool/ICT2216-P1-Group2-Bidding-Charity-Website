@@ -4,6 +4,7 @@ import { addBid, deactivateAutoBid, getAutoBidForBidder, getBidsByBidder, getBid
 import { badRequest, forbidden, notFound, tooManyRequests } from '../utils/errors';
 import { roundMoney } from '../utils/security';
 import { audit } from './audit.service';
+import { closeExpiredAuctions } from './payment.service';
 
 const bidderVelocity = new Map<string, number[]>();
 
@@ -30,7 +31,10 @@ const assertActiveBiddableListing = async (listingId: number, bidderId: number):
 
   const listing = await getListingById(listingId);
   if (!listing || listing.status !== 'active') throw notFound('Active listing not found');
-  if (new Date(listing.end_time).getTime() <= Date.now()) throw badRequest('Auction has ended.');
+  if (new Date(listing.end_time).getTime() <= Date.now()) {
+    await closeExpiredAuctions();
+    throw badRequest('Auction has ended.');
+  }
   if (listing.donor_id === bidderId) throw forbidden('Donors cannot bid on their own listings.');
 
   return listing;
@@ -134,7 +138,6 @@ export const placeBid = async (listingIdInput: number, amountInput: number, req:
   return withListingLock(listingId, async () => {
     const listing = await assertActiveBiddableListing(listingId, user.id);
     const minimum = nextMinimumBid(listing);
-
     if (amount < minimum) {
       await audit(req, 'BID_REJECTED_MIN_INCREMENT', { listingId, amount, minimum }, 'listing', listing.uuid, user.id);
       throw badRequest(`Bid must be at least ${minimum.toFixed(2)}.`, 'BID_TOO_LOW');

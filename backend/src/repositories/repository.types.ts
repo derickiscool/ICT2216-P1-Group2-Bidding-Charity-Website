@@ -6,9 +6,11 @@ import type {
   BidWithListing,
   Campaign,
   CharityOrganisation,
+  Delivery,
   Listing,
   Payment,
   PaymentWithListing,
+  Receipt,
   NewCampaignInput,
   PasswordResetToken,
   PendingRegistration,
@@ -27,6 +29,7 @@ export type NewListingInput = Omit<Listing, 'id' | 'uuid' | 'created_at' | 'curr
 export type NewBidInput = Omit<Bid, 'id' | 'uuid' | 'created_at'>;
 export type NewAutoBidInput = Omit<AutoBidSetting, 'id' | 'uuid' | 'created_at' | 'updated_at'>;
 export type NewPaymentInput = Omit<Payment, 'id' | 'uuid' | 'created_at' | 'updated_at' | 'paid_at'> & { paid_at?: string };
+
 export type NewAuditEventInput = Omit<AuditEvent, 'id' | 'timestamp' | 'previousHash' | 'currentHash' | 'payload'> & {
   payload?: Record<string, unknown>;
 };
@@ -95,6 +98,23 @@ export interface BidForGoodRepository {
   listAutoBidsByBidder(bidderId: number): Promise<AutoBidWithListing[]>;
   deactivateAutoBid(listingId: number, bidderId: number): Promise<AutoBidSetting | undefined>;
   withListingLock<T>(listingId: number, fn: () => Promise<T>): Promise<T>;
+
+  addDelivery(listingId: number): Promise<Delivery>;
+  getDeliveryByListingId(listingId: number): Promise<Delivery | undefined>;
+  updateDelivery(delivery: Delivery): Promise<void>;
+
+  addReceipt(input: {
+    payment_id: number;
+    listing_id: number;
+    bidder_id: number;
+    item_title: string;
+    amount: number;
+    charity_name: string;
+    receipt_ref: string;
+    integrity_hash: string;
+  }): Promise<Receipt>;
+  getReceiptByUuid(uuid: string): Promise<Receipt | undefined>;
+  getReceiptsByBidder(bidderId: number): Promise<Receipt[]>;
 
   addPayment(input: NewPaymentInput): Promise<Payment>;
   updatePayment(payment: Payment): Promise<void>;

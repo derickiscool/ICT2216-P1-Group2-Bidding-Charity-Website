@@ -9,6 +9,7 @@ import bidRoutes from './routes/bid.routes';
 import paymentRoutes from './routes/payment.routes';
 import adminRoutes from './routes/admin.routes';
 import charityRoutes from './routes/charity.routes';
+import receiptRoutes from './routes/receipt.routes';
 import profileRoutes from './routes/profile.routes';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { securityHeaders } from './middleware/securityHeaders.middleware';
@@ -20,7 +21,9 @@ export const createApp = () => {
   app.use(cors({ origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173', credentials: true }));
   app.use(express.json({ limit: '100kb' }));
   app.use(morgan('dev'));
-  app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
+  if (process.env.NODE_ENV !== 'test') {
+    app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
+  }
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', message: 'BidForGood API is running' }));
   app.get('/api/db-test', async (_req, res, next) => {
@@ -33,6 +36,7 @@ export const createApp = () => {
   app.use('/api/payments', paymentRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/charities', charityRoutes);
+  app.use('/api/receipts', receiptRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

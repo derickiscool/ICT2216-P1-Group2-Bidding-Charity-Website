@@ -6,8 +6,10 @@ import { requireRole } from '../middleware/rbac.middleware';
 import { uploadListingImages } from '../middleware/upload.middleware';
 import {
   approve,
+  confirmDeliveryHandler,
   create,
   donorListings,
+  forceClose,
   getListing,
   listActive,
   listMine,
@@ -15,6 +17,7 @@ import {
   pending,
   reject,
   remove,
+  shipping,
   update,
 } from '../controllers/listing.controller';
 import { listCharityReviewListings, reviewCharityListing } from '../controllers/listingReview.controller';
@@ -37,6 +40,9 @@ router.delete('/:uuid', asyncHandler(authenticate), requireCsrf, requireRole('do
 router.post('/:uuid/approve', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(approve));
 router.post('/:uuid/charity-review', asyncHandler(authenticate), requireCsrf, requireRole('charity', 'charity_staff'), asyncHandler(reviewCharityListing));
 router.post('/:uuid/reject', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(reject));
+router.post('/:uuid/force-close', asyncHandler(authenticate), requireCsrf, requireRole('admin'), asyncHandler(forceClose));
+router.post('/:uuid/shipping', asyncHandler(authenticate), requireCsrf, requireRole('donor', 'admin'), asyncHandler(shipping));
+router.post('/:uuid/confirm-delivery', asyncHandler(authenticate), requireCsrf, requireRole('bidder', 'admin'), asyncHandler(confirmDeliveryHandler));
 router.get('/:uuid', asyncHandler(authenticateOptional), asyncHandler(getListing));
 
 export default router;

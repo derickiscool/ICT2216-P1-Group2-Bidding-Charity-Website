@@ -72,6 +72,9 @@ export interface Listing {
   min_increment?: number
   bid_count: number
   status: ListingStatus
+  can_ship?: boolean
+  payment_held?: boolean
+  has_shipped?: boolean
   start_time: string
   end_time: string
   winner_id?: number
@@ -171,6 +174,8 @@ export interface PaymentWithListing extends Payment {
   listing_uuid: string
   listing_title: string
   charity_name: string
+  has_shipping: boolean
+  listing_status?: string
 }
 
 export interface Receipt {
@@ -239,6 +244,10 @@ export interface CharityStats {
   totalItems: number
   activeItems: number
   totalRaised: number
+  paymentsReceived: number
+  paymentsPending: number
+  paymentsReleasedCount: number
+  paymentsHeldCount: number
 }
 
 export interface AdminStats {
@@ -265,6 +274,20 @@ export interface CharityOrganisation {
   reviewedAt?: string
   rejectionReason?: string
   created_at: string
+}
+
+export interface Receipt {
+  id: number
+  uuid: string
+  payment_id: number
+  listing_id: number
+  bidder_id: number
+  item_title: string
+  amount: number
+  charity_name: string
+  receipt_ref: string
+  integrity_hash: string
+  generated_at: string
 }
 
 export interface AuditEvent {

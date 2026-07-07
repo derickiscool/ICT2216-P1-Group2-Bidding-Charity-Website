@@ -25,8 +25,7 @@ io.on('connection', (socket) => {
 const startPaymentDeadlineWorker = () => {
   const run = async () => {
     try {
-      const result = await processAuctionDeadlines();
-      if (result.processed > 0) console.log(`FR14 payment deadline worker processed ${result.processed} auction/payment record(s).`);
+      await processAuctionDeadlines();
     } catch (error) {
       console.error('FR14 payment deadline worker failed:', error);
     }

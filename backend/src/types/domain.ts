@@ -88,7 +88,7 @@ export interface CharityOrganisation {
   created_at: string;
 }
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
 export interface Listing {
   id: number;
   uuid: string;
@@ -119,6 +119,8 @@ export interface DonorListingStatusSummary {
   pending: number;
   active: number;
   sold: number;
+  shipped: number;
+  delivered: number;
   expired: number;
   cancelled: number;
   rejected: number;
@@ -178,6 +180,31 @@ export interface BidWithListing extends Bid {
   listingUuid?: string;
 }
 
+export interface Delivery {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  tracking_number?: string;
+  courier?: string;
+  shipped_at?: string;
+  confirmed_at?: string;
+  created_at: string;
+}
+
+export interface Receipt {
+  id: number;
+  uuid: string;
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+  generated_at: string;
+}
+
 export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired';
 export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded';
 
@@ -203,6 +230,7 @@ export interface PaymentWithListing extends Payment {
   listing_uuid: string;
   listing_title: string;
   charity_name: string;
+  has_shipping: boolean;
 }
 
 export interface PasswordResetToken {

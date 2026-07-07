@@ -1,17 +1,20 @@
 import type { Request, Response } from 'express';
 import {
   approveListing,
+  confirmDelivery,
   createListing,
   deleteListing,
   getDonorListings,
   getPendingListings,
   getPublicListing,
   listMyListings,
+  provideTracking,
   rejectListing,
   searchPublicListings,
   updateListingDetails,
 } from '../services/listing.service';
 import { getMyListingTrackingDashboard } from '../services/listingTracking.service';
+import { closeExpiredAuctions } from '../services/payment.service';
 
 export const listActive = async (req: Request, res: Response): Promise<void> => {
   const listings = await searchPublicListings(req.query);
@@ -59,4 +62,21 @@ export const reject = async (req: Request, res: Response): Promise<void> => {
 export const donorListings = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) return;
   res.json(await getDonorListings(req.user.id));
+};
+
+export const shipping = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) return;
+  const result = await provideTracking(req.params.uuid, req.body.tracking_number, req.body.courier, req);
+  res.json(result);
+};
+
+export const confirmDeliveryHandler = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) return;
+  const result = await confirmDelivery(req.params.uuid, req);
+  res.json(result);
+};
+
+export const forceClose = async (req: Request, res: Response): Promise<void> => {
+  const count = await closeExpiredAuctions(req.params.uuid);
+  res.json({ message: `Closed ${count} listing(s).`, processed: count });
 };

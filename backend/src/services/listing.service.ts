@@ -1,9 +1,10 @@
 import type { Request } from 'express';
-import type { Listing, ListingStatus } from '../types/domain';
-import { addListing, getCampaignById, getCharityById, getListingByUuid, listActiveListings, listListings, listListingsByDonor, listPendingListings, updateListing } from '../repositories';
+import type { Delivery, Listing, ListingStatus } from '../types/domain';
+import { addDelivery, addListing, getCampaignById, getCharityById, getDeliveryByListingId, getListingByUuid, getPaymentsForListing, listActiveListings, listListings, listListingsByDonor, listPendingListings, updateDelivery, updateListing } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
 import { containsScriptLikeContent, isSafeSearchQuery, roundMoney, sanitizeText, safeString } from '../utils/security';
 import { audit } from './audit.service';
+import { releaseEscrowForListing } from './payment.service';
 import { MAX_LISTING_IMAGES, MAX_LISTING_IMAGE_BYTES } from '../middleware/upload.middleware';
 
 const LOCKED_FIELDS = new Set([
@@ -283,6 +284,54 @@ export const rejectListing = async (uuid: string, reason: string | undefined, re
   return listing;
 };
 
+export const provideTracking = async (uuid: string, trackingNumber: string, courier: string, req: Request): Promise<{ delivery: Delivery; listing: Listing }> => {
+  const listing = await getListingByUuid(uuid);
+  if (!listing) throw notFound('Listing not found');
+  if (listing.donor_id !== req.user?.id && !req.user?.roles.includes('admin')) throw forbidden('Only the donor who created this listing can provide shipping details.');
+
+  // Verify payment is held (bidder paid)
+  const payments = await getPaymentsForListing(listing.id);
+  const heldPayment = payments.find(p => p.escrow_state === 'held');
+  if (!heldPayment) throw badRequest('Payment must be completed before providing shipping details.', 'SHIPPING_PAYMENT_NOT_HELD');
+
+  // Sanitize inputs to prevent stored XSS
+  const cleanedTracking = sanitizeText(trackingNumber, 120);
+  const cleanedCourier = sanitizeText(courier, 60);
+  if (!cleanedTracking || !cleanedCourier) throw badRequest('Tracking number and courier name are required.');
+
+  let delivery = await getDeliveryByListingId(listing.id);
+  if (!delivery) delivery = await addDelivery(listing.id);
+
+  delivery.tracking_number = cleanedTracking;
+  delivery.courier = cleanedCourier;
+  delivery.shipped_at = new Date().toISOString();
+  await updateDelivery(delivery);
+
+  await audit(req, 'LISTING_SHIPPED', { uuid, tracking: cleanedTracking, courier: cleanedCourier }, 'listing', listing.uuid, req.user?.id);
+  return { delivery, listing };
+};
+
+export const confirmDelivery = async (uuid: string, req: Request): Promise<{ delivery: Delivery; listing: Listing }> => {
+  const listing = await getListingByUuid(uuid);
+  if (!listing) throw notFound('Listing not found');
+
+  // Verify caller is the winning bidder
+  if (listing.winner_id !== req.user?.id && !req.user?.roles.includes('admin')) throw forbidden('Only the winning bidder can confirm delivery.');
+
+  const delivery = await getDeliveryByListingId(listing.id);
+  if (!delivery) throw badRequest('Shipping has not been arranged yet.', 'SHIPPING_NOT_ARRANGED');
+  if (delivery.confirmed_at) throw badRequest('Delivery has already been confirmed.', 'DELIVERY_ALREADY_CONFIRMED');
+
+  delivery.confirmed_at = new Date().toISOString();
+  await updateDelivery(delivery);
+
+  // Release escrow to charity
+  await releaseEscrowForListing(listing.id, req);
+
+  await audit(req, 'DELIVERY_CONFIRMED', { uuid }, 'listing', listing.uuid, req.user?.id);
+  return { delivery, listing };
+};
+
 const ALLOWED_SORTS = new Set(['ending_soon', 'newest', 'price_low', 'price_high']);
 const ALLOWED_CONDITIONS = new Set(['new', 'like_new', 'good', 'fair']);
 
@@ -336,8 +385,33 @@ export const getPublicListing = async (uuid: string, isAdmin = false): Promise<L
 
 export const getPendingListings = async (): Promise<Listing[]> => listPendingListings();
 
-export const getDonorListings = async (donorId: number): Promise<{ listings: Listing[]; stats: DonorStats }> => {
+export const getDonorListings = async (donorId: number): Promise<{ listings: Array<Listing & { can_ship?: boolean; payment_held?: boolean; has_shipped?: boolean }>; stats: DonorStats }> => {
   const listings = await listListingsByDonor(donorId);
+
+  // For sold listings, check if payment is held (buyer paid) and if already shipped
+  const paymentPromises = listings
+    .filter(l => l.status === 'sold')
+    .map(async (listing) => {
+      const payments = await getPaymentsForListing(listing.id);
+      const heldPayment = payments.find(p => p.escrow_state === 'held');
+      const delivery = await getDeliveryByListingId(listing.id);
+      return {
+        listingId: listing.id,
+        isHeld: !!heldPayment,
+        isShipped: !!(delivery?.shipped_at),
+      };
+    });
+  const paymentResults = await Promise.all(paymentPromises);
+  const heldMap = new Map(paymentResults.map(r => [r.listingId, r.isHeld]));
+  const shippedMap = new Map(paymentResults.map(r => [r.listingId, r.isShipped]));
+
+  const listingsWithPayment = listings.map(l => ({
+    ...l,
+    can_ship: l.status === 'sold' && heldMap.get(l.id) === true && !shippedMap.get(l.id),
+    payment_held: l.status === 'sold' && heldMap.get(l.id) === true,
+    has_shipped: l.status === 'sold' && shippedMap.get(l.id) === true,
+  }));
+
   const stats: DonorStats = {
     total: listings.length,
     active: listings.filter(l => l.status === 'active').length,
@@ -346,7 +420,7 @@ export const getDonorListings = async (donorId: number): Promise<{ listings: Lis
     draft: listings.filter(l => l.status === 'draft').length,
     totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
   };
-  return { listings, stats };
+  return { listings: listingsWithPayment, stats };
 };
 
 export interface DonorStats {

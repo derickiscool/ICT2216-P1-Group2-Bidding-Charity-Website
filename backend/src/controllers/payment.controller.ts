@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { completePayment, listMyPayments, processAuctionDeadlines } from '../services/payment.service';
+import { completePayment, listMyPayments, processAuctionDeadlines, regenerateReceipt as regenReceipt } from '../services/payment.service';
 
 export const listMine = async (req: Request, res: Response): Promise<void> => {
   const payments = await listMyPayments(req);
@@ -13,4 +13,8 @@ export const complete = async (req: Request, res: Response): Promise<void> => {
 
 export const processDeadlines = async (req: Request, res: Response): Promise<void> => {
   res.json(await processAuctionDeadlines(req));
+};
+
+export const regenerateReceipt = async (req: Request, res: Response): Promise<void> => {
+  res.json(await regenReceipt(req.params.uuid, req));
 };

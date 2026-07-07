@@ -109,3 +109,57 @@ Password Reset Flow
 | 5-attempt lockout | After 5 consecutive wrong OTP submissions the token is removed; the correct OTP then also fails with 400 `RESET_OTP_INVALID` |
 | expired OTP | Token is backdated in the DB; the correct OTP is still rejected with 400 `RESET_OTP_INVALID` and the token is cleaned up |
 | successful reset + session revocation | Valid OTP resets the password; the pre-existing session receives 401 on `/me`, old password login returns 401, new password login returns 200 |
+
+---
+
+### SFR14 — Digital Donation Receipt
+
+> The application shall generate a digital donation receipt, but must strictly reject any attempts by Users to modify the amount, beneficiary, or item details after receipt generation.
+
+**Test file:** `backend/src/__tests__/routes/payment.routes.test.ts`
+
+```
+SFR14 — Digital Donation Receipt
+  ✓ receipt is automatically generated when payment is completed
+  ✓ receipt captures the correct amount, item title, and beneficiary
+  ✓ receipt is not accessible to a different bidder — 403
+  ✓ no PUT or PATCH route exists for receipts — 404
+  ✓ completing the same payment a second time is rejected — immutability guard
+```
+
+| Test case | What it verifies |
+|---|---|
+| auto-generation | A `receipts` row is inserted atomically inside `completePayment`; the UUID is retrievable immediately after |
+| correct fields | `itemTitle` matches the listing title, `beneficiaryName` matches `charityName`, `amount` is a positive number, `generatedAt` is a timestamp |
+| access control | A non-bidder (admin) session receives 403 from `requireRole('bidder')` on `GET /api/payments/receipts/:uuid` |
+| no mutation endpoints | `PUT` and `PATCH` on the receipt URL return 404 — no such routes are registered |
+| double-complete rejected | Calling `POST /:uuid/complete` on an already-completed payment returns 400 `PAYMENT_NOT_PENDING`, preventing a second receipt from being generated |
+
+---
+
+### SFR15 — Shipping Verification & Delivery Confirmation
+
+> Upon payment confirmation from the Winning Bidder, the system shall require the Donor to provide shipping verification details before updating the listing status to "Shipped" and enabling the Bidder to confirm when they have received the item, but must sanitize the input to prevent XSS and reject any attempts to manually force the listing into a "Delivered" state.
+
+**Test file:** `backend/src/__tests__/routes/payment.routes.test.ts`
+
+```
+SFR15 — Shipping Verification & Delivery Confirmation
+  ✓ donor cannot confirm shipping when listing is not yet sold — status guard
+  ✓ non-donor role cannot submit shipping details — 403
+  ✓ XSS payloads in shipping fields are sanitized before storage
+  ✓ valid shipping confirmation transitions listing status to shipped
+  ✓ bidder cannot confirm delivery when listing is not yet shipped — forced delivery rejected
+  ✓ non-winner bidder cannot confirm delivery — 403
+  ✓ winning bidder confirming delivery transitions listing to delivered and releases escrow
+```
+
+| Test case | What it verifies |
+|---|---|
+| status guard on ship | `POST /:uuid/ship` on an active (not yet sold) listing returns 400 `INVALID_LISTING_STATUS` — shipping cannot be confirmed before payment |
+| role guard on ship | A bidder session on `POST /:uuid/ship` returns 403 — only donors may confirm shipping |
+| XSS sanitization | `<script>alert(1)</script>` in `trackingNumber`, `carrier`, and `notes` is HTML-escaped by `sanitizeText` before storage; the raw tag never reaches the DB |
+| ship transitions status | After `POST /:uuid/ship` returns 200, the DB row shows `status = 'shipped'` |
+| forced delivery rejected | `POST /:uuid/deliver` on a `sold` (not yet `shipped`) listing returns 400 `INVALID_LISTING_STATUS` — the `delivered` state cannot be reached without passing through `shipped` |
+| non-winner delivery blocked | A non-bidder session (admin) on `POST /:uuid/deliver` returns 403 |
+| full delivery flow | After a valid `POST /:uuid/deliver`, the listing status is `delivered` and the payment `escrow_state` is `released` |

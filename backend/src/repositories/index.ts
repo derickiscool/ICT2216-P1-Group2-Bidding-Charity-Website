@@ -57,6 +57,14 @@ export const {
   listAutoBidsByBidder,
   deactivateAutoBid,
   withListingLock,
+  addDelivery,
+  getDeliveryByListingId,
+  updateDelivery,
+
+  addReceipt,
+  getReceiptByUuid,
+  getReceiptsByBidder,
+
   addPayment,
   updatePayment,
   getPaymentByUuid,

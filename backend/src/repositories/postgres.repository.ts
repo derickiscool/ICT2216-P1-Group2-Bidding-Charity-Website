@@ -7,9 +7,11 @@ import type {
   BidWithListing,
   Campaign,
   CharityOrganisation,
+  Delivery,
   Listing,
   Payment,
   PaymentWithListing,
+  Receipt,
   NewCampaignInput,
   PasswordResetToken,
   PendingRegistration,
@@ -146,6 +148,17 @@ interface BidRow {
   created_at: DbDate;
 }
 
+interface DeliveryRow {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  tracking_number: string | null;
+  courier: string | null;
+  shipped_at: Date | null;
+  confirmed_at: Date | null;
+  created_at: Date;
+}
+
 interface AutoBidRow {
   id: number;
   uuid: string;
@@ -183,9 +196,10 @@ interface PaymentRow {
 }
 
 interface PaymentWithListingRow extends PaymentRow {
-  listing_uuid: string;
-  listing_title: string;
-  charity_name: string;
+  listing_title?: string;
+  listing_uuid?: string;
+  charity_name?: string;
+  has_shipping?: boolean;
 }
 
 interface AuditEventRow {
@@ -200,6 +214,20 @@ interface AuditEventRow {
   payload: unknown;
   previous_hash: string;
   current_hash: string;
+}
+
+interface ReceiptRow {
+  id: number;
+  uuid: string;
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number | string;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+  generated_at: DbDate;
 }
 
 const USER_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
@@ -378,11 +406,37 @@ const mapPayment = (row: PaymentRow): Payment => ({
   updated_at: toIso(row.updated_at),
 });
 
+const mapDelivery = (row: DeliveryRow): Delivery => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  listing_id: Number(row.listing_id),
+  tracking_number: row.tracking_number ?? undefined,
+  courier: row.courier ?? undefined,
+  shipped_at: optionalIso(row.shipped_at),
+  confirmed_at: optionalIso(row.confirmed_at),
+  created_at: toIso(row.created_at),
+});
+
 const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing => ({
   ...mapPayment(row),
-  listing_uuid: row.listing_uuid,
-  listing_title: row.listing_title,
+  listing_uuid: row.listing_uuid ?? '',
+  listing_title: row.listing_title ?? '',
+  charity_name: row.charity_name ?? '',
+  has_shipping: row.has_shipping ?? false,
+});
+
+const mapReceipt = (row: ReceiptRow): Receipt => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  payment_id: Number(row.payment_id),
+  listing_id: Number(row.listing_id),
+  bidder_id: Number(row.bidder_id),
+  item_title: row.item_title,
+  amount: Number(row.amount),
   charity_name: row.charity_name,
+  receipt_ref: row.receipt_ref,
+  integrity_hash: row.integrity_hash,
+  generated_at: toIso(row.generated_at),
 });
 
 const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
@@ -1004,6 +1058,58 @@ const withListingLock = async <T>(listingId: number, fn: () => Promise<T>): Prom
     return fn();
   });
 
+const addDelivery = async (listingId: number): Promise<Delivery> => {
+  const row = await firstRow<DeliveryRow>(
+    'INSERT INTO deliveries (listing_id) VALUES ($1) RETURNING *',
+    [listingId],
+  );
+  if (!row) throw new Error('Failed to create delivery record.');
+  return mapDelivery(row);
+};
+
+const getDeliveryByListingId = async (listingId: number): Promise<Delivery | undefined> => {
+  const row = await firstRow<DeliveryRow>('SELECT * FROM deliveries WHERE listing_id = $1 LIMIT 1', [listingId]);
+  return row ? mapDelivery(row) : undefined;
+};
+
+const updateDelivery = async (delivery: Delivery): Promise<void> => {
+  await query(
+    `UPDATE deliveries
+     SET tracking_number = $2, courier = $3, shipped_at = $4, confirmed_at = $5
+     WHERE id = $1`,
+    [delivery.id, delivery.tracking_number ?? null, delivery.courier ?? null, delivery.shipped_at ?? null, delivery.confirmed_at ?? null],
+  );
+};
+
+const addReceipt = async (input: {
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+}): Promise<Receipt> => {
+  const row = await firstRow<ReceiptRow>(
+    `INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [input.payment_id, input.listing_id, input.bidder_id, input.item_title, input.amount, input.charity_name, input.receipt_ref, input.integrity_hash],
+  );
+  if (!row) throw new Error('Failed to create receipt.');
+  return mapReceipt(row);
+};
+
+const getReceiptByUuid = async (uuid: string): Promise<Receipt | undefined> => {
+  const row = await firstRow<ReceiptRow>('SELECT * FROM receipts WHERE uuid = $1 LIMIT 1', [uuid]);
+  return row ? mapReceipt(row) : undefined;
+};
+
+const getReceiptsByBidder = async (bidderId: number): Promise<Receipt[]> => {
+  const rows = await allRows<ReceiptRow>('SELECT * FROM receipts WHERE bidder_id = $1 ORDER BY generated_at DESC, id DESC', [bidderId]);
+  return rows.map(mapReceipt);
+};
+
 const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
   const row = await firstRow<PaymentRow>(
     `INSERT INTO payments
@@ -1074,9 +1180,11 @@ const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListin
        p.*,
        l.uuid AS listing_uuid,
        l.title AS listing_title,
-       l.charity_name AS charity_name
+       l.charity_name AS charity_name,
+       (d.tracking_number IS NOT NULL) AS has_shipping
      FROM payments p
      INNER JOIN listings l ON l.id = p.listing_id
+     LEFT JOIN deliveries d ON d.listing_id = p.listing_id
      WHERE p.bidder_id = $1
      ORDER BY
        CASE p.status WHEN 'pending' THEN 0 WHEN 'successful' THEN 1 ELSE 2 END,
@@ -1259,6 +1367,14 @@ export const postgresRepository: BidForGoodRepository = {
   listAutoBidsByBidder,
   deactivateAutoBid,
   withListingLock,
+
+  addDelivery,
+  getDeliveryByListingId,
+  updateDelivery,
+
+  addReceipt,
+  getReceiptByUuid,
+  getReceiptsByBidder,
 
   addPayment,
   updatePayment,

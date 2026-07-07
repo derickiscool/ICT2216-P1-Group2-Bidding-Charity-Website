@@ -194,6 +194,7 @@ charity2@bidforgood.test  (charity) — owns the pending demo charity
 | Professional Photography Session | Experiences | active | $350 | 1 bid from `bidder2` |
 | Pending Vintage Camera | Collectibles | pending | $400 | awaiting admin review, hidden from Browse |
 | Antique Pocket Watch | Collectibles | sold | $750 | closed auction, won by `bidder` |
+| Handcrafted Ceramic Vase | Art | sold | $320 | won by `bidder`, pending payment — use this to test SFR14/SFR15 |
 | Weekend Spa Getaway | Experiences | draft | $1,500 | not yet submitted by the donor |
 
 ## Security Notes
