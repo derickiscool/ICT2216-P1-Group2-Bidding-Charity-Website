@@ -72,9 +72,10 @@ function PaginationBar({ page, totalPages, totalItems, onPageChange }: {
 
 // ─── Rejection modal ──────────────────────────────────────────────────────────
 
-function RejectModal({ onConfirm, onClose }: {
+function RejectModal({ onConfirm, onClose, label }: {
   onConfirm: (reason: string) => Promise<void>
   onClose: () => void
+  label?: string
 }) {
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
@@ -91,7 +92,7 @@ function RejectModal({ onConfirm, onClose }: {
         </div>
         <div className="px-6 py-5 space-y-4">
           <p className="text-sm" style={{ color: C.muted }}>
-            Please provide a reason for rejecting this item. This will be visible to the submitter.
+            Please provide a reason for rejecting this {label || 'item'}. This will be visible to the submitter.
           </p>
           <textarea value={reason} autoFocus rows={4}
             onChange={e => setReason(e.target.value)}
@@ -270,7 +271,8 @@ export default function AdminPage() {
     setActionLoading(uuid)
     try {
       await api.post(`/listings/${uuid}/approve`)
-      setListingsData(prev => prev.filter(l => l.uuid !== uuid))
+      setMessage('Listing approved successfully.')
+      setListingsData(prev => prev.map(l => l.uuid === uuid ? { ...l, status: 'active' as const } : l))
     } catch (err) {
       setError((err as ApiError).message || 'Failed to approve listing.')
     } finally {
@@ -976,6 +978,7 @@ export default function AdminPage() {
       {/* Rejection modal */}
       {rejectModal && (
         <RejectModal
+          label={rejectModal.type === 'listing' ? 'listing' : 'charity registration'}
           onConfirm={async (reason) => {
             if (rejectModal.type === 'listing') await handleRejectListing(reason)
             else await handleRejectCharity(reason)

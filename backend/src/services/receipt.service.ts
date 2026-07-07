@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { addReceipt, getReceiptByUuid, getReceiptsByBidder } from '../repositories';
+import { addReceipt, getPaymentByUuid, getReceiptByPaymentId, getReceiptByUuid, getReceiptsByBidder } from '../repositories';
 import type { Payment, Listing } from '../types/domain';
 import type { Receipt } from '../types/domain';
 
@@ -30,5 +30,11 @@ export const generateReceipt = async (payment: Payment, listing: Listing, _bidde
 };
 
 export const getReceipt = async (uuid: string): Promise<Receipt | undefined> => getReceiptByUuid(uuid);
+
+export const getReceiptByPaymentUuid = async (paymentUuid: string): Promise<Receipt | undefined> => {
+  const payment = await getPaymentByUuid(paymentUuid);
+  if (!payment) return undefined;
+  return getReceiptByPaymentId(payment.id);
+};
 
 export const listMyReceipts = async (bidderId: number): Promise<Receipt[]> => getReceiptsByBidder(bidderId);

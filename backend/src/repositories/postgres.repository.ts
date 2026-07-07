@@ -1219,6 +1219,11 @@ const getReceiptByUuid = async (uuid: string): Promise<Receipt | undefined> => {
   return row ? mapReceipt(row) : undefined;
 };
 
+const getReceiptByPaymentId = async (paymentId: number): Promise<Receipt | undefined> => {
+  const row = await firstRow<ReceiptRow>('SELECT * FROM receipts WHERE payment_id = $1 LIMIT 1', [paymentId]);
+  return row ? mapReceipt(row) : undefined;
+};
+
 const getReceiptsByBidder = async (bidderId: number): Promise<Receipt[]> => {
   const rows = await allRows<ReceiptRow>('SELECT * FROM receipts WHERE bidder_id = $1 ORDER BY generated_at DESC, id DESC', [bidderId]);
   return rows.map(mapReceipt);
@@ -1495,6 +1500,7 @@ export const postgresRepository: BidForGoodRepository = {
 
   addReceipt,
   getReceiptByUuid,
+  getReceiptByPaymentId,
   getReceiptsByBidder,
 
   addPayment,

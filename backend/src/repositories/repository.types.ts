@@ -121,6 +121,7 @@ export interface BidForGoodRepository {
     integrity_hash: string;
   }): Promise<Receipt>;
   getReceiptByUuid(uuid: string): Promise<Receipt | undefined>;
+  getReceiptByPaymentId(paymentId: number): Promise<Receipt | undefined>;
   getReceiptsByBidder(bidderId: number): Promise<Receipt[]>;
 
   addPayment(input: NewPaymentInput): Promise<Payment>;

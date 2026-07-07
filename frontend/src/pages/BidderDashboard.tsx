@@ -334,6 +334,7 @@ export default function BidderDashboard() {
       if (payment) {
         await viewReceipt(payment.uuid)
       }
+      setMessage('Item received! Check Payment History for your receipt.')
       await loadData()
     } catch (err) {
       setError((err as ApiError).message || 'Failed to confirm delivery.')
@@ -739,12 +740,12 @@ export default function BidderDashboard() {
                                   <button type="button"
                                     onClick={() => confirmDelivery(payment.listing_uuid)}
                                     disabled={confirming === payment.listing_uuid}
-                                    className="w-full py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest text-white transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-                                    style={{ background: C.emerald, boxShadow: '0 2px 8px rgba(4,120,87,0.3)' }}>
+                                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    style={{ background: C.emerald }}>
                                     {confirming === payment.listing_uuid
                                       ? <Loader2 className="w-4 h-4 animate-spin" />
                                       : <PackageCheck className="w-4 h-4" />}
-                                    {confirming === payment.listing_uuid ? 'Confirming…' : 'Confirm Item Received'}
+                                    {confirming === payment.listing_uuid ? 'Confirming…' : 'Item Received'}
                                   </button>
                                 ) : (
                                   <div className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full"
