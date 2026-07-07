@@ -240,12 +240,17 @@ async function attemptDelivery(relay: RelayConfig, dkim: DkimConfig, params: Sen
       throw new RelayError(`Unexpected greeting: ${greeting.trim()}`);
     }
 
-    await smtp.send(`EHLO ${ehloName}`);
+    const ehloResponse = await smtp.send(`EHLO ${ehloName}`);
 
-    const authPayload = Buffer.from(`\0${user}\0${pass}`).toString("base64");
-    const authResponse = await smtp.send(`AUTH PLAIN ${authPayload}`, "AUTH PLAIN ****");
-    if (!authResponse.startsWith("235")) {
-      throw new RelayError(`Authentication failed: ${authResponse.trim()}`);
+    // Only attempt AUTH if the server actually advertised it — Mailpit (used
+    // in dev/test) doesn't require auth and rejects AUTH PLAIN with "not
+    // required" if we send it anyway.
+    if (/^250[- ]AUTH\b/im.test(ehloResponse)) {
+      const authPayload = Buffer.from(`\0${user}\0${pass}`).toString("base64");
+      const authResponse = await smtp.send(`AUTH PLAIN ${authPayload}`, "AUTH PLAIN ****");
+      if (!authResponse.startsWith("235")) {
+        throw new RelayError(`Authentication failed: ${authResponse.trim()}`);
+      }
     }
 
     await smtp.send(`MAIL FROM:<${from}>`);
