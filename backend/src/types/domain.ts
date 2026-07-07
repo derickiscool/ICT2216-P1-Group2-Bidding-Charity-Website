@@ -40,6 +40,18 @@ export interface LoginOtp {
   createdAt: Date;
 }
 
+export interface EmailChangeRequest {
+  user_id: number;
+  newEmail: string;
+  oldEmail: string;
+  oldEmailOtpHash: string;
+  newEmailOtpHash: string | null;
+  oldEmailConfirmed: boolean;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
 export interface Campaign {
   id: number;
   uuid: string;
