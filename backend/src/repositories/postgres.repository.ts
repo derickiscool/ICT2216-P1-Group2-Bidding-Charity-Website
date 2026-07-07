@@ -46,6 +46,7 @@ interface UserRow {
   username: string;
   full_name: string;
   roles: UserRole[];
+  must_change_password: boolean | null;
   password_hash: string;
   is_verified: boolean;
   is_active: boolean;
@@ -284,6 +285,7 @@ const mapUser = (row: UserRow): User => ({
   username: row.username,
   full_name: row.full_name,
   roles: mapRoles(row.roles),
+  mustChangePassword: row.must_change_password ?? false,
   passwordHash: row.password_hash,
   is_verified: row.is_verified,
   is_active: row.is_active,
@@ -524,10 +526,10 @@ const findUserByUuid = async (uuid: string): Promise<User | undefined> => {
 
 const addUser = async (input: NewUserInput): Promise<User> => {
   const row = await firstRow<UserRow>(
-    `INSERT INTO users (email, username, full_name, roles, password_hash, is_verified, is_active, failed_login_attempts, charity_id)
-     VALUES ($1, $2, $3, $4, $5, $6, true, 0, $7)
+    `INSERT INTO users (email, username, full_name, roles, must_change_password, password_hash, is_verified, is_active, failed_login_attempts, charity_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, 0, $8)
      RETURNING *`,
-    [input.email, input.username, input.full_name, input.roles, input.passwordHash, input.is_verified, input.charityId ?? null],
+    [input.email, input.username, input.full_name, input.roles, input.mustChangePassword ?? false, input.passwordHash, input.is_verified, input.charityId ?? null],
   );
   if (!row) throw new Error('Failed to create user.');
   return mapUser(row);
@@ -537,8 +539,8 @@ const updateUser = async (user: User): Promise<void> => {
   await query(
     `UPDATE users
      SET email = $2, username = $3, full_name = $4, contact_number = $5, roles = $6,
-         password_hash = $7, is_verified = $8, is_active = $9, failed_login_attempts = $10,
-         locked_until = $11, charity_id = $12, last_login_at = $13
+         must_change_password = $7, password_hash = $8, is_verified = $9, is_active = $10, failed_login_attempts = $11,
+         locked_until = $12, charity_id = $13, last_login_at = $14
      WHERE id = $1`,
     [
       user.id,
@@ -547,6 +549,7 @@ const updateUser = async (user: User): Promise<void> => {
       user.full_name,
       user.contactNumber ?? null,
       user.roles,
+      user.mustChangePassword,
       user.passwordHash,
       user.is_verified,
       user.is_active,
@@ -1030,7 +1033,13 @@ const listListingsByStatus = async (status?: string): Promise<Listing[]> => {
 };
 
 const listActiveListings = async (): Promise<Listing[]> => {
-  const rows = await allRows<ListingRow>("SELECT * FROM listings WHERE status = 'active' ORDER BY created_at DESC, id DESC");
+  const rows = await allRows<ListingRow>(`
+    SELECT l.* FROM listings l
+    JOIN campaigns c ON l.campaign_id = c.id
+    JOIN charities ch ON c.charity_id = ch.id
+    WHERE l.status = 'active' AND ch.status = 'approved'
+    ORDER BY l.created_at DESC, l.id DESC
+  `);
   return rows.map(mapListing);
 };
 
@@ -1066,9 +1075,17 @@ const addBid = async (input: NewBidInput): Promise<Bid> => {
   return mapBid(row);
 };
 
+// maskUsername: masks bidder username at the backend before it leaves the API.
+// This is the authoritative masking point — frontend masking is defence-in-depth only.
+const maskUsername = (u: string): string => {
+  if (!u || u.length === 0) return '***';
+  if (u.length <= 2) return u[0] + '***';
+  return u[0] + '***' + u[u.length - 1];
+};
+
 const getBidsForListing = async (listingId: number): Promise<Bid[]> => {
   const rows = await allRows<BidRow>('SELECT * FROM bids WHERE listing_id = $1 ORDER BY amount DESC, created_at ASC', [listingId]);
-  return rows.map(mapBid);
+  return rows.map(row => ({ ...mapBid(row), bidder_username: maskUsername(row.bidder_username) }));
 };
 
 interface BidWithListingRow extends BidRow {

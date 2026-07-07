@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL,
   full_name TEXT NOT NULL,
   roles TEXT[] NOT NULL DEFAULT ARRAY['bidder']::TEXT[],
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
   password_hash TEXT NOT NULL,
   is_verified BOOLEAN NOT NULL DEFAULT FALSE,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -23,6 +24,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_uidx ON users (LOWER(email))
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_uidx ON users (LOWER(username));
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_number TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS pending_registrations (

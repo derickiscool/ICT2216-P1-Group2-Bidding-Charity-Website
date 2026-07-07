@@ -1,3 +1,12 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* The app uses a fixed light-mode colour palette. Tell the browser to always
+   render native form controls (inputs, selects, textareas, scrollbars, etc.)
+   using light-mode colours, regardless of the OS/user dark-mode preference.
+   Without this, browsers in dark mode render input backgrounds as near-black
+   while the inherited text colour is also dark, making text invisible. */
+:root {
+  color-scheme: light;
+}

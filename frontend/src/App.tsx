@@ -91,6 +91,7 @@ import CharityListingReviewPage from './pages/CharityListingReviewPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ReceiptPage from './pages/ReceiptPage'
+import ForceChangePasswordPage from './pages/ForceChangePasswordPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -119,6 +120,7 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/force-change-password" element={<ForceChangePasswordPage />} />
           </Route>
 
           {/* ── Charity Org / Staff / Admin ── */}

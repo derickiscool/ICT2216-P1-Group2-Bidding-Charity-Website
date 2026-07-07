@@ -24,7 +24,7 @@ import type {
 
 export type PublicUser = Omit<User, 'passwordHash'>;
 
-export type NewUserInput = Omit<User, 'id' | 'uuid' | 'created_at' | 'failedLoginAttempts' | 'is_active'>;
+export type NewUserInput = Omit<User, 'id' | 'uuid' | 'created_at' | 'failedLoginAttempts' | 'is_active' | 'mustChangePassword'> & { mustChangePassword?: boolean };
 export type NewCharityInput = Omit<CharityOrganisation, 'id' | 'uuid' | 'status' | 'created_at'>;
 export type NewListingInput = Omit<Listing, 'id' | 'uuid' | 'created_at' | 'current_bid' | 'bid_count' | 'winner_id'>;
 export type NewBidInput = Omit<Bid, 'id' | 'uuid' | 'created_at'>;

@@ -16,6 +16,23 @@ type DonorListing = Listing & {
   payment_released?: boolean
 }
 
+// ─── Validation ─────────────────────────────────────────────────────────────
+
+const TRACKING_RE = /^[A-Za-z0-9 \-]{4,50}$/
+const COURIER_RE = /^[A-Za-z0-9 \-\.&]{2,60}$/
+
+const validateTracking = (v: string): string | null => {
+  if (!v.trim()) return 'Tracking number is required.'
+  if (!TRACKING_RE.test(v.trim())) return 'Use 4–50 alphanumeric characters, hyphens, or spaces only.'
+  return null
+}
+
+const validateCourier = (v: string): string | null => {
+  if (!v.trim()) return 'Courier name is required.'
+  if (!COURIER_RE.test(v.trim())) return 'Use 2–60 alphanumeric characters, spaces, hyphens, or periods only.'
+  return null
+}
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const C = {
@@ -94,6 +111,8 @@ export default function DonorDashboard() {
   const [shippingUuid, setShippingUuid] = useState<string | null>(null)
   const [trackingNumber, setTrackingNumber] = useState('')
   const [courier, setCourier] = useState('')
+  const [trackingError, setTrackingError] = useState<string | null>(null)
+  const [courierError, setCourierError] = useState<string | null>(null)
   const [shippingLoading, setShippingLoading] = useState<string | null>(null)
 
   // ─── Derived data ───────────────────────────────────────────────────────
@@ -138,26 +157,20 @@ export default function DonorDashboard() {
 
   // ─── Actions ───────────────────────────────────────────────────────────
 
-  const sanitize = (value: string): string =>
-    value.replace(/[^a-zA-Z0-9\s\-\.\_\#\/\:]/g, '').trim()
-
   const handleShipping = async (uuid: string) => {
-    const cleanTracking = sanitize(trackingNumber)
-    const cleanCourier = sanitize(courier)
-    if (!cleanTracking || cleanTracking.length > 100) {
-      setError('Please enter a valid tracking number (max 100 characters).')
-      return
-    }
-    if (!cleanCourier || cleanCourier.length > 50) {
-      setError('Please enter a valid courier name (max 50 characters).')
-      return
-    }
+    const tErr = validateTracking(trackingNumber)
+    const cErr = validateCourier(courier)
+    setTrackingError(tErr)
+    setCourierError(cErr)
+    if (tErr || cErr) return
     setShippingLoading(uuid)
     try {
-      await api.post(`/listings/${uuid}/shipping`, { tracking_number: cleanTracking, courier: cleanCourier })
+      await api.post(`/listings/${uuid}/shipping`, { tracking_number: trackingNumber.trim(), courier: courier.trim() })
       setShippingUuid(null)
       setTrackingNumber('')
       setCourier('')
+      setTrackingError(null)
+      setCourierError(null)
       setMessage('Shipping details submitted successfully.')
       await loadData()
     } catch (err) {
@@ -308,28 +321,59 @@ export default function DonorDashboard() {
                         </div>
                         {shippingUuid === listing.uuid ? (
                           <form onSubmit={(e: FormEvent) => { e.preventDefault(); handleShipping(listing.uuid!) }}
-                            className="flex flex-col sm:flex-row gap-3">
-                            <input type="text" value={trackingNumber} autoFocus required
-                              onChange={(e) => setTrackingNumber(e.target.value)}
-                              placeholder="Tracking number"
-                              className="flex-1 px-3 py-2 text-sm rounded-lg outline-none"
-                              style={{ border: `1px solid ${C.beige}` }}
-                            />
-                            <input type="text" value={courier} required
-                              onChange={(e) => setCourier(e.target.value)}
-                              placeholder="Courier (e.g. DHL, FedEx)"
-                              className="flex-1 px-3 py-2 text-sm rounded-lg outline-none"
-                              style={{ border: `1px solid ${C.beige}` }}
-                            />
-                            <button type="submit" disabled={shippingLoading === listing.uuid || !trackingNumber.trim() || !courier.trim()}
-                              className="px-4 py-2 text-sm font-bold text-white rounded-lg disabled:opacity-50"
-                              style={{ background: C.emerald }}>
-                              {shippingLoading === listing.uuid ? 'Submitting...' : 'Submit'}
-                            </button>
-                            <button type="button" onClick={() => { setShippingUuid(null); setTrackingNumber(''); setCourier('') }}
-                              className="px-4 py-2 text-sm rounded-lg" style={{ color: C.muted }}>
-                              Cancel
-                            </button>
+                            className="flex flex-col gap-2">
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <div className="flex-1">
+                                <input type="text" value={trackingNumber} autoFocus
+                                  onChange={(e) => { setTrackingNumber(e.target.value); setTrackingError(null) }}
+                                  onBlur={() => setTrackingError(validateTracking(trackingNumber))}
+                                  placeholder="Tracking number (e.g. 1Z999AA10123456784)"
+                                  maxLength={50}
+                                  className="w-full px-3 py-2 text-sm rounded-lg outline-none"
+                                  style={{
+                                    border: `1px solid ${trackingError ? '#EF4444' : C.beige}`,
+                                    background: '#fff',
+                                    color: C.slate,
+                                  }}
+                                />
+                                {trackingError && (
+                                  <p className="text-xs mt-1 font-medium" style={{ color: '#EF4444' }}>{trackingError}</p>
+                                )}
+                              </div>
+                              <div className="flex-1">
+                                <input type="text" value={courier}
+                                  onChange={(e) => { setCourier(e.target.value); setCourierError(null) }}
+                                  onBlur={() => setCourierError(validateCourier(courier))}
+                                  placeholder="Courier (e.g. DHL, FedEx, SingPost)"
+                                  maxLength={60}
+                                  className="w-full px-3 py-2 text-sm rounded-lg outline-none"
+                                  style={{
+                                    border: `1px solid ${courierError ? '#EF4444' : C.beige}`,
+                                    background: '#fff',
+                                    color: C.slate,
+                                  }}
+                                />
+                                {courierError && (
+                                  <p className="text-xs mt-1 font-medium" style={{ color: '#EF4444' }}>{courierError}</p>
+                                )}
+                              </div>
+                              <div className="flex gap-2 items-start">
+                                <button type="submit" disabled={shippingLoading === listing.uuid}
+                                  className="px-4 py-2 text-sm font-bold text-white rounded-lg disabled:opacity-50"
+                                  style={{ background: C.emerald }}>
+                                  {shippingLoading === listing.uuid ? 'Submitting...' : 'Submit'}
+                                </button>
+                                <button type="button" onClick={() => {
+                                  setShippingUuid(null)
+                                  setTrackingNumber('')
+                                  setCourier('')
+                                  setTrackingError(null)
+                                  setCourierError(null)
+                                }} className="px-4 py-2 text-sm rounded-lg" style={{ color: C.muted }}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
                           </form>
                         ) : (
                           <button onClick={() => setShippingUuid(listing.uuid!)}
