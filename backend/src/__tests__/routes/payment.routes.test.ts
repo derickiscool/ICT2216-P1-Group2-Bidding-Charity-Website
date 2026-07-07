@@ -206,10 +206,12 @@ describe('FR17 — Shipping & Delivery', () => {
     assert.equal(res.response.status, 403);
   });
 
-  test('XSS payloads in shipping fields are sanitized before storage', async () => {
+  test('XSS payloads in shipping fields are rejected by input validation', async () => {
     const { listing, donor } = await setupPaidAuction();
     const xssPayload = '<script>alert(1)</script>';
 
+    // Characters like < > / are not in the allowed whitelist — the backend must
+    // reject them before any sanitization runs, not silently strip and store.
     const res = await postJson(
       `/api/listings/${listing.uuid as string}/shipping`,
       {
@@ -218,10 +220,8 @@ describe('FR17 — Shipping & Delivery', () => {
       },
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
-    assert.equal(res.response.status, 200);
-
-    const shipBody = res.body as unknown as { delivery: Rec; listing: Rec };
-    assert.ok(!String(shipBody.delivery.courier).includes('<script>'), 'courier must have HTML stripped');
+    assert.equal(res.response.status, 400);
+    assert.equal((res.body as Rec).code, 'COURIER_INVALID_FORMAT');
   });
 
   test('valid shipping creates a delivery record', async () => {
