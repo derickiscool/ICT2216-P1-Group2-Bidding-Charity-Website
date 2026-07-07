@@ -94,6 +94,9 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ReceiptPage from './pages/ReceiptPage'
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage'
+import AboutPage from './pages/AboutPage'
+import TermsPage from './pages/TermsPage'
+import PrivacyPage from './pages/PrivacyPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -115,6 +118,9 @@ export default function App() {
           <Route path="/auctions/:id" element={<AuctionDetailPage />} />
           <Route path="/charities" element={<CharitiesPage />} />
           <Route path="/register/charity" element={<RegisterCharityPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 

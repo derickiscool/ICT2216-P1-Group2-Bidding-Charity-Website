@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation } from 'react-router-dom'
 import { AlertCircle } from 'lucide-react'
 import Navbar from './Navbar'
 import { useAuthStore } from '../../store/authStore'
@@ -60,12 +60,17 @@ export default function Layout() {
               </p>
             </div>
             <div className="flex flex-wrap gap-6 text-sm">
-              {['About', 'Contact', 'Terms of Service', 'Privacy Policy'].map(label => (
-                <a key={label} href="#"
+              {[
+                { label: 'About', to: '/about' },
+                { label: 'Terms of Service', to: '/terms' },
+                { label: 'Privacy Policy', to: '/privacy' },
+              ].map(({ label, to }) => (
+                <Link key={label} to={to}
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'instant' })}
                   className="transition-colors hover:text-white"
                   style={{ color: '#BBB09B' }}>
                   {label}
-                </a>
+                </Link>
               ))}
             </div>
           </div>
