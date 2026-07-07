@@ -13,14 +13,15 @@ const C = {
   danger: '#B91C1C', dangerLight: '#FEF2F2', dangerBorder: '#FECACA',
 }
 
-// Temporary type extension because backend may name the phone field differently.
-// Once backend confirms the exact field, we can keep only one field name.
-type ProfileUser = User & { contact_number?: string | null; phone_number?: string | null }
+// Backend returns the saved contact number as contactNumber. Keep one legacy alias
+// only so older sessions do not display a blank field before users refresh.
+type ProfileUser = User & { contactNumber?: string | null; contact_number?: string | null }
 type ProfileForm = { full_name: string; username: string; email: string; contact_number: string }
 type EditableProfileField = 'full_name' | 'username' | 'contact_number'
-type PasswordForm = { currentPassword: string; newPassword: string; confirmPassword: string }
+type PasswordForm = { currentPassword: string; newPassword: string; confirmPassword: string; verificationCode: string }
 
-const emptyPwd: PasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '' }
+const emptyPwd: PasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '', verificationCode: '' }
+const SG_MOBILE_ERROR = 'Enter a valid Singapore mobile number: 8 digits starting with 8 or 9, optional +65.'
 
 function inputSt(hasErr: boolean, extra?: CSSProperties): CSSProperties {
   return {
@@ -37,8 +38,21 @@ function toForm(user: User | null): ProfileForm {
     full_name: u?.full_name ?? '',
     username: u?.username ?? '',
     email: u?.email ?? '',
-    contact_number: u?.contact_number ?? u?.phone_number ?? '',
+    contact_number: u?.contactNumber ?? u?.contact_number ?? '',
   }
+}
+
+// Mirrors backend validation so users get immediate feedback before submission.
+// Backend remains the source of truth and also normalises valid numbers to +65XXXXXXXX.
+function isValidSingaporeMobile(value: string) {
+  const compact = value.trim().replace(/[\s\-()]/g, '')
+  if (!/^\+?\d+$/.test(compact)) return false
+
+  let local = compact
+  if (local.startsWith('+65')) local = local.slice(3)
+  else if (local.startsWith('65') && local.length === 10) local = local.slice(2)
+
+  return /^[89]\d{7}$/.test(local)
 }
 
 // Simple client-side password strength indicator.
@@ -69,7 +83,6 @@ function roleText(role: string) {
 }
 
 // Shows user-friendly error messages instead of raw backend messages like "Not found".
-// The current "Not found" happens because backend profile routes are not implemented/mounted yet.
 function errMsg(err: unknown, fallback: string) {
   const ae = err as ApiError
   const msg = ae.message?.toLowerCase() ?? ''
@@ -90,6 +103,8 @@ export default function ProfilePage() {
 
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPwd, setSavingPwd] = useState(false)
+  const [requestingPwdCode, setRequestingPwdCode] = useState(false)
+  const [verificationSent, setVerificationSent] = useState(false)
   const [showCur, setShowCur] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showCfm, setShowCfm] = useState(false)
@@ -100,27 +115,42 @@ export default function ProfilePage() {
   const dirty = profile.full_name !== original.full_name || profile.username !== original.username || profile.contact_number !== original.contact_number
 
   const setProfileField = (key: EditableProfileField) => (e: ChangeEvent<HTMLInputElement>) => {
-  const value = e.target.value
+    const value = e.target.value
 
-  // Avoid dynamic object injection warning by updating known fields only.
-  setProfileEdits(prev => {
-    if (key === 'full_name') return { ...prev, full_name: value }
-    if (key === 'username') return { ...prev, username: value }
-    return { ...prev, contact_number: value }
-  })
+    // Avoid dynamic object injection warning by updating known fields only.
+    setProfileEdits(prev => {
+      if (key === 'full_name') return { ...prev, full_name: value }
+      if (key === 'username') return { ...prev, username: value }
+      return { ...prev, contact_number: value }
+    })
 
-  setProfileErrs(prev => {
-    if (key === 'full_name') return { ...prev, full_name: '' }
-    if (key === 'username') return { ...prev, username: '' }
-    return { ...prev, contact_number: '' }
-  })
+    setProfileErrs(prev => {
+      if (key === 'full_name') return { ...prev, full_name: '' }
+      if (key === 'username') return { ...prev, username: '' }
+      return { ...prev, contact_number: '' }
+    })
 
-  setProfileMsg(null)
-}
+    setProfileMsg(null)
+  }
 
   const setPwdField = (key: keyof PasswordForm) => (e: ChangeEvent<HTMLInputElement>) => {
-    setPasswords(prev => ({ ...prev, [key]: e.target.value }))
-    setPwdErrs(prev => ({ ...prev, [key]: '' }))
+    const value = e.target.value
+
+    // Keep this explicit instead of using [key] to avoid unsafe dynamic object writes.
+    setPasswords(prev => {
+      if (key === 'currentPassword') return { ...prev, currentPassword: value }
+      if (key === 'newPassword') return { ...prev, newPassword: value }
+      if (key === 'confirmPassword') return { ...prev, confirmPassword: value }
+      return { ...prev, verificationCode: value }
+    })
+
+    setPwdErrs(prev => {
+      if (key === 'currentPassword') return { ...prev, currentPassword: '' }
+      if (key === 'newPassword') return { ...prev, newPassword: '' }
+      if (key === 'confirmPassword') return { ...prev, confirmPassword: '' }
+      return { ...prev, verificationCode: '' }
+    })
+
     setPwdMsg(null)
   }
 
@@ -133,20 +163,20 @@ export default function ProfilePage() {
 
     if (!name) e.full_name = 'Full name is required.'
     else if (name.length < 2) e.full_name = 'Full name must be at least 2 characters.'
-    else if (name.length > 80) e.full_name = 'Full name must be 80 characters or less.'
+    else if (name.length > 120) e.full_name = 'Full name must be 120 characters or less.'
 
     if (!username) e.username = 'Username is required.'
     else if (username.length < 3) e.username = 'Username must be at least 3 characters.'
-    else if (username.length > 30) e.username = 'Username must be 30 characters or less.'
+    else if (username.length > 40) e.username = 'Username must be 40 characters or less.'
     else if (!/^[a-zA-Z0-9_]+$/.test(username)) e.username = 'Use letters, numbers, and underscores only.'
 
-    if (contact && !/^\+?[0-9\s-]{8,20}$/.test(contact)) e.contact_number = 'Enter a valid contact number.'
+    if (contact && !isValidSingaporeMobile(contact)) e.contact_number = SG_MOBILE_ERROR
 
     setProfileErrs(e)
     return Object.keys(e).length === 0
   }
 
-  function validatePassword() {
+  function validatePassword(requireCode = true) {
     const e: Record<string, string> = {}
 
     if (!passwords.currentPassword) e.currentPassword = 'Current password is required.'
@@ -157,6 +187,10 @@ export default function ProfilePage() {
 
     if (!passwords.confirmPassword) e.confirmPassword = 'Please confirm your new password.'
     else if (passwords.newPassword !== passwords.confirmPassword) e.confirmPassword = 'Passwords do not match.'
+
+    if (requireCode && !passwords.verificationCode.trim()) {
+      e.verificationCode = 'Email verification code is required.'
+    }
 
     if (passwords.currentPassword && passwords.newPassword && passwords.currentPassword === passwords.newPassword) {
       e.newPassword = 'New password must be different from current password.'
@@ -211,6 +245,30 @@ export default function ProfilePage() {
     }
   }
 
+  async function requestPasswordCode() {
+    setPwdMsg(null)
+
+    // Validate the password fields first so users do not receive a code for a form
+    // that still cannot be submitted. The OTP itself is verified by the backend.
+    if (!validatePassword(false)) return
+
+    try {
+      setRequestingPwdCode(true)
+      const res = await api.post<{ message: string }>('/users/profile/password/verification', {
+        currentPassword: passwords.currentPassword,
+      })
+      setVerificationSent(true)
+      setPwdMsg({ type: 'success', text: res.data.message })
+    } catch (err) {
+      setPwdMsg({
+        type: 'error',
+        text: errMsg(err, 'Unable to send verification code right now. Please try again later.'),
+      })
+    } finally {
+      setRequestingPwdCode(false)
+    }
+  }
+
   async function savePassword(e: FormEvent) {
     e.preventDefault()
     setPwdMsg(null)
@@ -229,9 +287,11 @@ export default function ProfilePage() {
       await api.put('/users/profile/password', {
         currentPassword: passwords.currentPassword,
         newPassword: passwords.newPassword,
+        verificationCode: passwords.verificationCode.trim(),
       })
 
       setPasswords(emptyPwd)
+      setVerificationSent(false)
       setPwdMsg({ type: 'success', text: 'Password updated successfully.' })
     } catch (err) {
       const ae = err as ApiError
@@ -260,13 +320,13 @@ export default function ProfilePage() {
                 <Alert msg={profileMsg} />
 
                 <div className="grid md:grid-cols-2 gap-4">
-                  <TextInput label="Full name" value={profile.full_name} error={profileErrs.full_name} onChange={setProfileField('full_name')} autoComplete="name" />
-                  <TextInput label="Username" value={profile.username} error={profileErrs.username} onChange={setProfileField('username')} autoComplete="username" />
+                  <TextInput label="Full name" value={profile.full_name} error={profileErrs.full_name} onChange={setProfileField('full_name')} autoComplete="name" maxLength={120} />
+                  <TextInput label="Username" value={profile.username} error={profileErrs.username} onChange={setProfileField('username')} autoComplete="username" maxLength={40} />
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
-                  <IconInput label="Email address" icon={<Mail className="w-4 h-4" />} value={profile.email} disabled note="Email changes require verification." />
-                  <IconInput label="Contact number" icon={<Phone className="w-4 h-4" />} value={profile.contact_number} error={profileErrs.contact_number} onChange={setProfileField('contact_number')} autoComplete="tel" placeholder="+65 9123 4567" />
+                  <IconInput label="Email address" icon={<Mail className="w-4 h-4" />} value={profile.email} disabled />
+                  <IconInput label="Contact number" icon={<Phone className="w-4 h-4" />} value={profile.contact_number} error={profileErrs.contact_number} onChange={setProfileField('contact_number')} autoComplete="tel" placeholder="+65 9123 4567" maxLength={15} inputMode="tel" />
                 </div>
 
                 <div className="flex justify-end pt-2">
@@ -299,6 +359,15 @@ export default function ProfilePage() {
                   </div>
 
                   <PasswordInput label="Confirm new password" value={passwords.confirmPassword} error={pwdErrs.confirmPassword} show={showCfm} setShow={setShowCfm} onChange={setPwdField('confirmPassword')} autoComplete="new-password" />
+                </div>
+
+                <div className="grid md:grid-cols-[1fr_auto] gap-3 items-end">
+                  <TextInput label="Email verification code" value={passwords.verificationCode} error={pwdErrs.verificationCode} onChange={setPwdField('verificationCode')} autoComplete="one-time-code" maxLength={6} />
+                  <button type="button" onClick={requestPasswordCode} disabled={requestingPwdCode || savingPwd}
+                    className="px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+                    style={{ background: C.emeraldLight, color: C.emerald, border: `1px solid ${C.emerald}`, cursor: requestingPwdCode || savingPwd ? 'not-allowed' : 'pointer' }}>
+                    {requestingPwdCode ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : verificationSent ? 'Resend code' : 'Send code'}
+                  </button>
                 </div>
 
                 <div className="flex justify-end pt-2">
@@ -339,13 +408,10 @@ export default function ProfilePage() {
               </div>
             </section>
 
-            {/*
-              TODO: Remove this block when backend profile/password routes are fully completed.
-            */}
             <section className="rounded-2xl p-5" style={{ background: C.warningLight, border: '1px solid #FDE68A' }}>
               <h3 className="font-bold text-sm mb-2" style={{ color: C.warning }}>Security reminder</h3>
               <p className="text-sm leading-relaxed" style={{ color: '#A16207' }}>
-                For your security, profile and password changes may require verification before they are saved.
+                Email is read-only. Password changes require your current password and a one-time code sent to your registered email.
               </p>
             </section>
           </aside>
@@ -413,13 +479,13 @@ function Alert({ msg }: { msg: { type: 'success' | 'error'; text: string } | nul
   )
 }
 
-function TextInput({ label, value, error, onChange, autoComplete }: {
-  label: string; value: string; error?: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; autoComplete?: string
+function TextInput({ label, value, error, onChange, autoComplete, maxLength }: {
+  label: string; value: string; error?: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; autoComplete?: string; maxLength?: number
 }) {
   return (
     <div>
       <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>{label}</label>
-      <input type="text" value={value} onChange={onChange} autoComplete={autoComplete} style={inputSt(!!error)}
+      <input type="text" value={value} onChange={onChange} autoComplete={autoComplete} maxLength={maxLength} style={inputSt(!!error)}
         onFocus={e => (e.target.style.borderColor = C.emerald)}
         onBlur={e => (e.target.style.borderColor = error ? C.danger : C.beige)} />
       {error && <p className="text-xs mt-1" style={{ color: C.danger }}>{error}</p>}
@@ -427,8 +493,8 @@ function TextInput({ label, value, error, onChange, autoComplete }: {
   )
 }
 
-function IconInput({ label, icon, value, error, onChange, disabled, note, autoComplete, placeholder }: {
-  label: string; icon: ReactNode; value: string; error?: string; disabled?: boolean; note?: string; autoComplete?: string; placeholder?: string;
+function IconInput({ label, icon, value, error, onChange, disabled, note, autoComplete, placeholder, maxLength, inputMode }: {
+  label: string; icon: ReactNode; value: string; error?: string; disabled?: boolean; note?: string; autoComplete?: string; placeholder?: string; maxLength?: number; inputMode?: 'tel';
   onChange?: (e: ChangeEvent<HTMLInputElement>) => void
 }) {
   return (
@@ -437,7 +503,7 @@ function IconInput({ label, icon, value, error, onChange, disabled, note, autoCo
       <div className="relative">
         <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>{icon}</span>
         <input type={label.includes('Email') ? 'email' : 'tel'} value={value} disabled={disabled} onChange={onChange}
-          autoComplete={autoComplete} placeholder={placeholder}
+          autoComplete={autoComplete} placeholder={placeholder} maxLength={maxLength} inputMode={inputMode}
           style={inputSt(!!error, { paddingLeft: '40px', background: disabled ? C.linen : '#fff', color: disabled ? C.muted : C.slate, cursor: disabled ? 'not-allowed' : 'text' })}
           onFocus={e => (e.target.style.borderColor = C.emerald)}
           onBlur={e => (e.target.style.borderColor = error ? C.danger : C.beige)} />

@@ -11,6 +11,7 @@ export interface User {
   roles: UserRole[]
   is_verified: boolean
   is_active: boolean
+  contactNumber?: string
   created_at: string
 }
 
