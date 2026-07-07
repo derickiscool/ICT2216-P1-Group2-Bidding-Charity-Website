@@ -38,6 +38,25 @@ SELECT
   'pending'
 WHERE NOT EXISTS (SELECT 1 FROM charities WHERE organisation_name = 'Green Paws Animal Rescue');
 
+-- Demo campaigns. Keep these before listings so clean seed data has valid campaign ownership for FR09 charity listing review.
+INSERT INTO campaigns (charity_id, name, description, status, end_date)
+SELECT
+  (SELECT id FROM charities WHERE organisation_name = 'Children''s Hospital Trust'),
+  'Winter Fundraising 2026',
+  'Raising funds for children and families through donated auction items.',
+  'active',
+  CURRENT_DATE + 60
+WHERE NOT EXISTS (SELECT 1 FROM campaigns WHERE name = 'Winter Fundraising 2026');
+
+INSERT INTO campaigns (charity_id, name, description, status, end_date)
+SELECT
+  (SELECT id FROM charities WHERE organisation_name = 'Green Paws Animal Rescue'),
+  'Animal Rescue Support Drive',
+  'Supporting rescue, rehabilitation, and rehoming for abandoned animals.',
+  'active',
+  CURRENT_DATE + 45
+WHERE NOT EXISTS (SELECT 1 FROM campaigns WHERE name = 'Animal Rescue Support Drive');
+
 -- Demo listings covering active (with bid history), pending review, sold, draft, and active-with-no-bids states.
 INSERT INTO listings (donor_id, campaign_id, title, description, condition, category, images, starting_price, current_bid, bid_count, status, start_time, end_time, charity_name, min_increment)
 SELECT (SELECT id FROM users WHERE email = 'donor@bidforgood.test'), 1, 'Signed Premier League Jersey',

@@ -1,9 +1,9 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import { Clock, Heart, ArrowLeft, Flame, Shield, CheckCircle } from 'lucide-react'
 import api from '../services/api'
-import type { Bid, Listing } from '../types'
+import type { AutoBid, AutoBidResponse, Bid, BidPlacementResponse, Listing } from '../types'
 import { useAuthStore } from '../store/authStore'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -109,6 +109,7 @@ function BidRow({ bid, isTop }: { bid: Bid; isTop: boolean }) {
 export default function AuctionDetailPage() {
   const { id } = useParams()          // UUID from the URL
   const { isAuthenticated, user } = useAuthStore()
+  const isBidderUser = Boolean(isAuthenticated && user?.roles.includes('bidder'))
 
   const [listing, setListing]       = useState<Listing | null>(null)
   const [bidHistory, setBidHistory] = useState<Bid[]>([])
@@ -120,6 +121,8 @@ export default function AuctionDetailPage() {
   const [selectedImage, setSelectedImage] = useState(0)
   const [autoBidOn, setAutoBidOn]   = useState(false)
   const [maxAutoBid, setMaxAutoBid] = useState('')
+  const [savedAutoBidActive, setSavedAutoBidActive] = useState(false)
+  const [autoBidSaving, setAutoBidSaving] = useState(false)
   const [saved, setSaved]           = useState(false)
   const processedBids = useRef<Set<number>>(new Set())
   const listingRef = useRef<Listing | null>(null)
@@ -127,6 +130,28 @@ export default function AuctionDetailPage() {
   useEffect(() => {
     listingRef.current = listing
   }, [listing])
+
+  // Keep bid-history and the listing summary in sync for both manual bids and
+  // backend-generated auto-bids. The processedBids set prevents double counting
+  // when the same event arrives through HTTP response and WebSocket.
+  const applyAcceptedBid = useCallback((bid: Bid) => {
+    if (!bid.id || processedBids.current.has(bid.id)) return
+    processedBids.current.add(bid.id)
+
+    setListing(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        current_bid: bid.amount,
+        bid_count: prev.bid_count + 1,
+        winner_id: bid.bidder_id,
+      }
+    })
+    setBidHistory(prev => prev.some(existing => existing.id === bid.id) ? prev : [bid, ...prev])
+
+    const minInc = listingRef.current?.min_increment ?? 1
+    setAmount(String(bid.amount + minInc))
+  }, [])
 
   // ── Track current time for pure renders & dynamic badges ────────────────
   const [now, setNow] = useState(() => Date.now())
@@ -164,6 +189,46 @@ export default function AuctionDetailPage() {
   }, [listing?.id])
 
   useEffect(() => {
+    let cancelled = false
+
+    const resetAutoBidState = () => {
+      if (cancelled) return
+
+      setAutoBidOn(false)
+      setSavedAutoBidActive(false)
+      setMaxAutoBid('')
+    }
+
+    if (!listing?.id || !isBidderUser) {
+      queueMicrotask(resetAutoBidState)
+
+      return () => {
+        cancelled = true
+      }
+    }
+
+    api.get<AutoBid | null>(`/bids/auto-bids/${listing.id}`)
+      .then(res => {
+        if (cancelled) return
+
+        if (res.data?.is_active) {
+          setAutoBidOn(true)
+          setSavedAutoBidActive(true)
+          setMaxAutoBid(String(res.data.max_amount))
+        } else {
+          resetAutoBidState()
+        }
+      })
+      .catch(() => {
+        resetAutoBidState()
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [listing?.id, isBidderUser])
+
+  useEffect(() => {
     if (!listing?.id) return
     // @ts-expect-error - Vite env types may not be loaded in CI checks
     const url = import.meta.env.VITE_WS_URL || ''
@@ -171,23 +236,11 @@ export default function AuctionDetailPage() {
     socket.emit('listing:join', listing.id)
 
     socket.on('bid:placed', (bid: Bid) => {
-      if (!bid.id) return
-      if (processedBids.current.has(bid.id)) return
-      processedBids.current.add(bid.id)
-
-      // Legitimate new bid from another user
-      setListing(prev => {
-        if (!prev) return prev
-        return { ...prev, current_bid: bid.amount, bid_count: prev.bid_count + 1 }
-      })
-      setBidHistory(prev => [bid, ...prev])
-
-      const minInc = listingRef.current?.min_increment ?? 1
-      setAmount(String(bid.amount + minInc))
+      applyAcceptedBid(bid)
     })
 
     return () => { socket.disconnect() }
-  }, [listing?.id])
+  }, [listing?.id, applyAcceptedBid])
 
   // ── Place bid ─────────────────────────────────────────────────────────────
   const submitBid = async () => {
@@ -197,25 +250,69 @@ export default function AuctionDetailPage() {
     const amt = Number(amount)
     const min = Math.max(listing.starting_price, listing.current_bid) + (listing.min_increment ?? 1)
 
-    if (new Date(listing.end_time).getTime() <= Date.now()) { setBidError('This auction has ended.'); return }
+    if (new Date(listing.end_time).getTime() <= now) { setBidError('This auction has ended.'); return }
     if (listing.donor_id === user?.id)                      { setBidError('You cannot bid on your own listing.'); return }
     if (isNaN(amt) || amt < min)                            { setBidError(`Bid must be at least $${min.toLocaleString()}.`); return }
 
     setSubmitting(true)
     try {
-      const res = await api.post<Bid>('/bids', { listing_id: listing.id, amount: amt })
-      setBidMessage(`Bid of $${res.data.amount.toLocaleString()} placed!`)
+      const res = await api.post<BidPlacementResponse>('/bids', { listing_id: listing.id, amount: amt })
+      res.data.bids.forEach(applyAcceptedBid)
+      setListing(prev => prev ? { ...prev, current_bid: res.data.currentBid, winner_id: res.data.winnerId } : prev)
 
-      if (res.data.id && !processedBids.current.has(res.data.id)) {
-        processedBids.current.add(res.data.id)
-        setListing(prev => prev ? { ...prev, current_bid: res.data.amount, bid_count: prev.bid_count + 1 } : prev)
-        setBidHistory(prev => prev.some(b => b.id === res.data.id) ? prev : [res.data, ...prev])
-        setAmount(String(res.data.amount + (listing.min_increment ?? 1)))
+      const autoResponse = res.data.bids.find(bid => bid.is_auto_bid && bid.bidder_id !== user?.id)
+      if (autoResponse) {
+        setBidMessage(`Bid accepted, but another bidder's auto-bid raised the price to $${res.data.currentBid.toLocaleString()}.`)
+      } else {
+        setBidMessage(`Bid of $${amt.toLocaleString()} placed!`)
       }
     } catch (err) {
       setBidError((err as { message?: string }).message || 'Bid failed. Please try again.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const submitAutoBid = async () => {
+    if (!listing) return
+    setBidError(null); setBidMessage(null)
+
+    const max = Number(maxAutoBid)
+    const min = listing.winner_id === user?.id ? listing.current_bid : minNextBid
+    if (new Date(listing.end_time).getTime() <= now) { setBidError('This auction has ended.'); return }
+    if (listing.donor_id === user?.id)                      { setBidError('You cannot auto-bid on your own listing.'); return }
+    if (isNaN(max) || max < min)                            { setBidError(`Maximum auto-bid must be at least $${min.toLocaleString()}.`); return }
+
+    setAutoBidSaving(true)
+    try {
+      const res = await api.post<AutoBidResponse>('/bids/auto-bids', { listing_id: listing.id, max_amount: max })
+      res.data.result.bids.forEach(applyAcceptedBid)
+      setListing(prev => prev ? { ...prev, current_bid: res.data.result.currentBid, winner_id: res.data.result.winnerId } : prev)
+      setSavedAutoBidActive(res.data.autoBid.is_active)
+      setAutoBidOn(true)
+      setMaxAutoBid(String(res.data.autoBid.max_amount))
+      setBidMessage('Auto-bid saved. Your maximum stays private.')
+    } catch (err) {
+      setBidError((err as { message?: string }).message || 'Auto-bid failed. Please try again.')
+    } finally {
+      setAutoBidSaving(false)
+    }
+  }
+
+  const cancelSavedAutoBid = async () => {
+    if (!listing) return
+    setBidError(null); setBidMessage(null)
+    setAutoBidSaving(true)
+    try {
+      await api.delete(`/bids/auto-bids/${listing.id}`)
+      setSavedAutoBidActive(false)
+      setAutoBidOn(false)
+      setMaxAutoBid('')
+      setBidMessage('Auto-bid cancelled.')
+    } catch (err) {
+      setBidError((err as { message?: string }).message || 'Could not cancel auto-bid.')
+    } finally {
+      setAutoBidSaving(false)
     }
   }
 
@@ -476,7 +573,7 @@ export default function AuctionDetailPage() {
                 </div>
 
                 {/* Bid form — bidders only */}
-                {isAuthenticated && user?.roles.includes('bidder') ? (
+                {isBidderUser ? (
                   <>
                     <div>
                       <div className="flex justify-between items-baseline mb-2">
@@ -551,19 +648,44 @@ export default function AuctionDetailPage() {
                         </button>
                       </div>
                       {autoBidOn && (
-                        <div className="flex items-center rounded-xl overflow-hidden"
-                             style={{ border: '1px solid var(--bfg-beige)' }}>
-                          <span className="pl-4 pr-1 font-bold text-sm flex-shrink-0 select-none"
-                                style={{ color: 'var(--bfg-text-muted)' }}>$</span>
-                          <input
-                            type="number"
-                            placeholder="Max amount…"
-                            value={maxAutoBid}
-                            onChange={e => setMaxAutoBid(e.target.value)}
-                            className="flex-1 py-2.5 pr-3 text-sm bg-transparent outline-none"
-                            style={{ color: 'var(--bfg-slate)' }}
-                          />
+                        <div className="space-y-3">
+                          <div className="flex items-center rounded-xl overflow-hidden"
+                               style={{ border: '1px solid var(--bfg-beige)' }}>
+                            <span className="pl-4 pr-1 font-bold text-sm flex-shrink-0 select-none"
+                                  style={{ color: 'var(--bfg-text-muted)' }}>$</span>
+                            <input
+                              type="number"
+                              min={listing.winner_id === user?.id ? listing.current_bid : minNextBid}
+                              placeholder="Max amount…"
+                              value={maxAutoBid}
+                              onChange={e => setMaxAutoBid(e.target.value)}
+                              className="flex-1 py-2.5 pr-3 text-sm bg-transparent outline-none"
+                              style={{ color: 'var(--bfg-slate)' }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={submitAutoBid}
+                            disabled={auctionEnded || autoBidSaving}
+                            className="w-full py-2.5 text-white font-black rounded-xl text-xs uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            style={{ background: 'var(--bfg-slate)' }}>
+                            {autoBidSaving ? 'Saving Auto-Bid…' : savedAutoBidActive ? 'Update Auto-Bid' : 'Save Auto-Bid'}
+                          </button>
+                          <p className="text-[10px] leading-relaxed" style={{ color: 'var(--bfg-text-muted)' }}>
+                            Your maximum is only visible to you. Other bidders only see public bid amounts.
+                          </p>
                         </div>
+                      )}
+
+                      {!autoBidOn && savedAutoBidActive && (
+                        <button
+                          type="button"
+                          onClick={cancelSavedAutoBid}
+                          disabled={autoBidSaving}
+                          className="w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{ border: '1px solid var(--bfg-danger-border)', color: 'var(--bfg-danger)', background: 'var(--bfg-danger-light)' }}>
+                          {autoBidSaving ? 'Cancelling…' : 'Cancel Saved Auto-Bid'}
+                        </button>
                       )}
                     </div>
 

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Gavel, DollarSign, Target, ExternalLink, Loader2, AlertCircle, CheckCircle, Truck, FileText } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
-import type { Bid, BidderStats, ApiError } from '../types'
+import type { AutoBid, Bid, BidderStats, ApiError } from '../types'
 
 const C = {
   slate: '#2D3A3A', emerald: '#047857', emeraldLight: '#ECFDF5',
@@ -16,6 +16,7 @@ const money = (value: number) => `$${value.toLocaleString(undefined, { minimumFr
 export default function BidderDashboard() {
   const { user } = useAuthStore()
   const [bids, setBids] = useState<Bid[]>([])
+  const [autoBids, setAutoBids] = useState<AutoBid[]>([])
   const [stats, setStats] = useState<BidderStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -57,13 +58,15 @@ export default function BidderDashboard() {
       setLoading(true)
       setError(null)
       try {
-        const [bidsRes, paymentsRes, receiptsRes] = await Promise.all([
+        const [bidRes, autoBidRes, paymentsRes, receiptsRes] = await Promise.all([
           api.get<{ bids: Bid[]; stats: BidderStats }>('/bids/bidder'),
+          api.get<AutoBid[]>('/bids/auto-bids'),
           api.get<{ data: PaidItem[] }>('/payments/mine').catch(() => ({ data: { data: [] as PaidItem[] } })),
           api.get<{ data: ReceiptItem[] }>('/receipts/mine').catch(() => ({ data: { data: [] as ReceiptItem[] } })),
         ])
-        setBids(bidsRes.data.bids)
-        setStats(bidsRes.data.stats)
+        setBids(bidRes.data.bids)
+        setStats(bidRes.data.stats)
+        setAutoBids(autoBidRes.data)
         setPaidItems((paymentsRes.data.data ?? []).filter(p => p.escrow_state === 'held'))
         setReceipts(receiptsRes.data.data ?? [])
       } catch (err) {
@@ -193,6 +196,45 @@ export default function BidderDashboard() {
             </div>
           </div>
         )}
+
+        {/* Auto-bid settings */}
+        <div className="rounded-2xl bg-white overflow-hidden mb-8" style={{ border: '1px solid', borderColor: C.beige }}>
+          <div className="px-6 py-4 border-b" style={{ borderColor: C.beige }}>
+            <h2 className="font-bold" style={{ color: C.slate }}>Auto-Bid Settings</h2>
+            <p className="text-xs mt-1" style={{ color: C.muted }}>Your maximum amounts are shown only to you.</p>
+          </div>
+          {autoBids.filter(autoBid => autoBid.is_active).length === 0 ? (
+            <div className="px-6 py-6 text-sm" style={{ color: C.muted }}>
+              No active auto-bids yet. Open an auction listing to set one.
+            </div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: C.beige }}>
+              {autoBids.filter(autoBid => autoBid.is_active).map((autoBid) => (
+                <div key={autoBid.id} className="px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium" style={{ color: C.slate }}>
+                        {autoBid.listingTitle || `Listing #${autoBid.listing_id}`}
+                      </p>
+                      {autoBid.listingUuid && (
+                        <Link to={`/auctions/${autoBid.listingUuid}`} className="flex-shrink-0">
+                          <ExternalLink className="w-3.5 h-3.5" style={{ color: C.emerald }} />
+                        </Link>
+                      )}
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: C.muted }}>
+                      Current bid: {money(autoBid.currentBid ?? 0)} · Status: {autoBid.listingStatus ?? 'active'}
+                    </p>
+                  </div>
+                  <div className="text-left md:text-right">
+                    <p className="text-xs" style={{ color: C.muted }}>Private max</p>
+                    <p className="font-bold" style={{ color: C.emerald }}>{money(autoBid.max_amount)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Bid history */}
         <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid', borderColor: C.beige }}>

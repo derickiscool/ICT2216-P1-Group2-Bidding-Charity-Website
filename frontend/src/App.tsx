@@ -91,6 +91,7 @@ import AdminActiveListingsPage from './pages/AdminActiveListingsPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import DonorListingsPage from './pages/DonorListingsPage'
 import PaymentDeadlinesPage from './pages/PaymentDeadlinesPage'
+import CharityListingReviewPage from './pages/CharityListingReviewPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ReceiptPage from './pages/ReceiptPage'
@@ -131,6 +132,10 @@ export default function App() {
 
           <Route element={<RoleProtectedRoute allowedRoles={['charity', 'charity_staff', 'admin']} />}>
             <Route path="/charity/campaigns" element={<CampaignManagementPage />} />
+          </Route>
+
+          <Route element={<RoleProtectedRoute allowedRoles={['charity', 'charity_staff']} />}>
+            <Route path="/charity/listing-reviews" element={<CharityListingReviewPage />} />
           </Route>
 
           {/* ── Bidder only ── */}

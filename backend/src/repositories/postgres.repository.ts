@@ -1,6 +1,8 @@
 import argon2 from 'argon2';
 import type {
   AuditEvent,
+  AutoBidSetting,
+  AutoBidWithListing,
   Bid,
   BidWithListing,
   Campaign,
@@ -23,6 +25,7 @@ import { sha256 } from '../utils/security';
 import type {
   BidForGoodRepository,
   NewAuditEventInput,
+  NewAutoBidInput,
   NewBidInput,
   NewCharityInput,
   NewListingInput,
@@ -68,6 +71,7 @@ interface PasswordResetTokenRow {
   email: string;
   token_hash: string;
   expires_at: DbDate;
+  attempts: number;
   created_at: DbDate;
 }
 
@@ -143,6 +147,26 @@ interface DeliveryRow {
   shipped_at: Date | null;
   confirmed_at: Date | null;
   created_at: Date;
+}
+
+interface AutoBidRow {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  bidder_username: string;
+  max_amount: number | string;
+  is_active: boolean;
+  created_at: DbDate;
+  updated_at: DbDate;
+}
+
+interface AutoBidWithListingRow extends AutoBidRow {
+  listing_title?: string;
+  listing_uuid?: string;
+  listing_status?: 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+  current_bid?: number | string;
+  end_time?: DbDate;
 }
 
 interface PaymentRow {
@@ -270,6 +294,7 @@ const mapPasswordResetToken = (row: PasswordResetTokenRow): PasswordResetToken =
   email: row.email,
   tokenHash: row.token_hash,
   expiresAt: toDate(row.expires_at),
+  attempts: Number(row.attempts),
   createdAt: toDate(row.created_at),
 });
 
@@ -322,6 +347,27 @@ const mapBid = (row: BidRow): Bid => ({
   amount: Number(row.amount),
   is_auto_bid: row.is_auto_bid,
   created_at: toIso(row.created_at),
+});
+
+const mapAutoBid = (row: AutoBidRow): AutoBidSetting => ({
+  id: Number(row.id),
+  uuid: row.uuid,
+  listing_id: Number(row.listing_id),
+  bidder_id: Number(row.bidder_id),
+  bidder_username: row.bidder_username,
+  max_amount: Number(row.max_amount),
+  is_active: row.is_active,
+  created_at: toIso(row.created_at),
+  updated_at: toIso(row.updated_at),
+});
+
+const mapAutoBidWithListing = (row: AutoBidWithListingRow): AutoBidWithListing => ({
+  ...mapAutoBid(row),
+  listingTitle: row.listing_title ?? undefined,
+  listingUuid: row.listing_uuid ?? undefined,
+  listingStatus: row.listing_status ?? undefined,
+  currentBid: optionalNumber(row.current_bid),
+  endTime: optionalIso(row.end_time),
 });
 
 const mapPayment = (row: PaymentRow): Payment => ({
@@ -534,10 +580,10 @@ const revokeAllSessionsByUserId = async (userId: number): Promise<void> => {
 
 const savePasswordResetToken = async (token: PasswordResetToken): Promise<void> => {
   await query(
-    `INSERT INTO password_reset_tokens (email, token_hash, expires_at, created_at)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (email) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = EXCLUDED.created_at`,
-    [token.email, token.tokenHash, token.expiresAt, token.createdAt],
+    `INSERT INTO password_reset_tokens (email, token_hash, expires_at, attempts, created_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (email) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, attempts = EXCLUDED.attempts, created_at = EXCLUDED.created_at`,
+    [token.email, token.tokenHash, token.expiresAt, token.attempts, token.createdAt],
   );
 };
 
@@ -892,6 +938,69 @@ const getBidsByBidder = async (bidderId: number): Promise<BidWithListing[]> => {
   return rows.map(mapBidWithListing);
 };
 
+const upsertAutoBid = async (input: NewAutoBidInput): Promise<AutoBidSetting> => {
+  const row = await firstRow<AutoBidRow>(
+    `INSERT INTO auto_bids (listing_id, bidder_id, bidder_username, max_amount, is_active)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (listing_id, bidder_id) DO UPDATE SET
+       bidder_username = EXCLUDED.bidder_username,
+       max_amount = EXCLUDED.max_amount,
+       is_active = EXCLUDED.is_active,
+       updated_at = NOW()
+     RETURNING *`,
+    [input.listing_id, input.bidder_id, input.bidder_username, input.max_amount, input.is_active],
+  );
+  if (!row) throw new Error('Failed to save auto-bid setting.');
+  return mapAutoBid(row);
+};
+
+const getAutoBidForBidder = async (listingId: number, bidderId: number): Promise<AutoBidSetting | undefined> => {
+  const row = await firstRow<AutoBidRow>(
+    'SELECT * FROM auto_bids WHERE listing_id = $1 AND bidder_id = $2 LIMIT 1',
+    [listingId, bidderId],
+  );
+  return row ? mapAutoBid(row) : undefined;
+};
+
+const listActiveAutoBidsForListing = async (listingId: number): Promise<AutoBidSetting[]> => {
+  const rows = await allRows<AutoBidRow>(
+    `SELECT * FROM auto_bids
+     WHERE listing_id = $1 AND is_active = true
+     ORDER BY max_amount DESC, updated_at ASC, id ASC`,
+    [listingId],
+  );
+  return rows.map(mapAutoBid);
+};
+
+const listAutoBidsByBidder = async (bidderId: number): Promise<AutoBidWithListing[]> => {
+  const rows = await allRows<AutoBidWithListingRow>(
+    `SELECT
+       a.*,
+       l.title AS listing_title,
+       l.uuid AS listing_uuid,
+       l.status AS listing_status,
+       l.current_bid AS current_bid,
+       l.end_time AS end_time
+     FROM auto_bids a
+     INNER JOIN listings l ON l.id = a.listing_id
+     WHERE a.bidder_id = $1
+     ORDER BY a.is_active DESC, a.updated_at DESC, a.id DESC`,
+    [bidderId],
+  );
+  return rows.map(mapAutoBidWithListing);
+};
+
+const deactivateAutoBid = async (listingId: number, bidderId: number): Promise<AutoBidSetting | undefined> => {
+  const row = await firstRow<AutoBidRow>(
+    `UPDATE auto_bids
+     SET is_active = false, updated_at = NOW()
+     WHERE listing_id = $1 AND bidder_id = $2
+     RETURNING *`,
+    [listingId, bidderId],
+  );
+  return row ? mapAutoBid(row) : undefined;
+};
+
 const withListingLock = async <T>(listingId: number, fn: () => Promise<T>): Promise<T> =>
   withTransaction(async () => {
     await query('SELECT id FROM listings WHERE id = $1 FOR UPDATE', [listingId]);
@@ -1102,7 +1211,7 @@ export const seedDemoData = async (): Promise<void> => {
     documentSha256: "testhash",
   });
   await query("UPDATE charities SET status = 'approved' WHERE id = $1", [charity.id]);
-  
+
   const campaign = await addCampaign({
     charityId: charity.id,
     name: "Winter Fundraising 2026",
@@ -1138,7 +1247,7 @@ export const seedDemoData = async (): Promise<void> => {
 };
 
 export const resetRepositoryForTests = async (): Promise<void> => {
-  await query('TRUNCATE TABLE audit_events, payments, bids, listings, campaigns, charities, sessions, pending_registrations, password_reset_tokens, users RESTART IDENTITY CASCADE');
+  await query('TRUNCATE TABLE audit_events, payments, auto_bids, bids, listings, campaigns, charities, sessions, pending_registrations, password_reset_tokens, users RESTART IDENTITY CASCADE');
   await seedDemoData();
 };
 
@@ -1195,6 +1304,11 @@ export const postgresRepository: BidForGoodRepository = {
   addBid,
   getBidsForListing,
   getBidsByBidder,
+  upsertAutoBid,
+  getAutoBidForBidder,
+  listActiveAutoBidsForListing,
+  listAutoBidsByBidder,
+  deactivateAutoBid,
   withListingLock,
 
   addDelivery,
