@@ -22,8 +22,8 @@ export type ApiResponse = {
   message: string;
   code: string;
   token?: string;
-  errors: { password: string };
-  user: { email: string };
+  errors: Record<string, string>;
+  user: Record<string, unknown> & { email: string };
   data: TestListing[];
   id: number;
   uuid: string;
