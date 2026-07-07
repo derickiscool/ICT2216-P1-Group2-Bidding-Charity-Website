@@ -74,6 +74,7 @@ export interface Listing {
   status: ListingStatus
   can_ship?: boolean
   payment_held?: boolean
+  has_shipped?: boolean
   start_time: string
   end_time: string
   winner_id?: number
@@ -173,6 +174,7 @@ export interface PaymentWithListing extends Payment {
   listing_uuid: string
   listing_title: string
   charity_name: string
+  has_shipping: boolean
 }
 
 export interface Receipt {

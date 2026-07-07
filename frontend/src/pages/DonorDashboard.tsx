@@ -82,7 +82,8 @@ export default function DonorDashboard() {
   }
 
   const shipReadyListings = listings.filter(l => l.status === 'sold' && l.can_ship)
-  const unpaidListings = listings.filter(l => l.status === 'sold' && !l.can_ship)
+  const unpaidListings = listings.filter(l => l.status === 'sold' && !l.payment_held && !l.has_shipped)
+  const shippedListings = listings.filter(l => l.status === 'sold' && l.has_shipped)
 
   if (loading) {
     return (
@@ -237,6 +238,31 @@ export default function DonorDashboard() {
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Shipped items */}
+        {shippedListings.length > 0 && (
+          <div className="rounded-2xl bg-white overflow-hidden mb-6" style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.beige }}>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4" style={{ color: C.emerald }} />
+                <h2 className="font-bold" style={{ color: C.slate }}>Shipped</h2>
+              </div>
+            </div>
+            <div className="divide-y" style={{ borderColor: C.beige }}>
+              {shippedListings.map((listing) => (
+                <div key={listing.id} className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium" style={{ color: C.slate }}>{listing.title}</p>
+                    <p className="text-xs mt-0.5" style={{ color: C.muted }}>Sold for {money(listing.current_bid)}</p>
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: C.emeraldLight, color: C.emerald }}>
+                    Shipped
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

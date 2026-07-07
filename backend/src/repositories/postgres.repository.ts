@@ -186,9 +186,10 @@ interface PaymentRow {
 }
 
 interface PaymentWithListingRow extends PaymentRow {
-  listing_uuid: string;
-  listing_title: string;
-  charity_name: string;
+  listing_title?: string;
+  listing_uuid?: string;
+  charity_name?: string;
+  has_shipping?: boolean;
 }
 
 interface AuditEventRow {
@@ -399,9 +400,10 @@ const mapDelivery = (row: DeliveryRow): Delivery => ({
 
 const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing => ({
   ...mapPayment(row),
-  listing_uuid: row.listing_uuid,
-  listing_title: row.listing_title,
-  charity_name: row.charity_name,
+  listing_uuid: row.listing_uuid ?? '',
+  listing_title: row.listing_title ?? '',
+  charity_name: row.charity_name ?? '',
+  has_shipping: row.has_shipping ?? false,
 });
 
 const mapReceipt = (row: ReceiptRow): Receipt => ({
@@ -1129,9 +1131,11 @@ const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListin
        p.*,
        l.uuid AS listing_uuid,
        l.title AS listing_title,
-       l.charity_name AS charity_name
+       l.charity_name AS charity_name,
+       (d.tracking_number IS NOT NULL) AS has_shipping
      FROM payments p
      INNER JOIN listings l ON l.id = p.listing_id
+     LEFT JOIN deliveries d ON d.listing_id = p.listing_id
      WHERE p.bidder_id = $1
      ORDER BY
        CASE p.status WHEN 'pending' THEN 0 WHEN 'successful' THEN 1 ELSE 2 END,

@@ -355,24 +355,31 @@ export const getPublicListing = async (uuid: string, isAdmin = false): Promise<L
 
 export const getPendingListings = async (): Promise<Listing[]> => listPendingListings();
 
-export const getDonorListings = async (donorId: number): Promise<{ listings: Array<Listing & { can_ship?: boolean; payment_held?: boolean }>; stats: DonorStats }> => {
+export const getDonorListings = async (donorId: number): Promise<{ listings: Array<Listing & { can_ship?: boolean; payment_held?: boolean; has_shipped?: boolean }>; stats: DonorStats }> => {
   const listings = await listListingsByDonor(donorId);
 
-  // For sold listings, check if payment is held (buyer paid)
+  // For sold listings, check if payment is held (buyer paid) and if already shipped
   const paymentPromises = listings
     .filter(l => l.status === 'sold')
     .map(async (listing) => {
       const payments = await getPaymentsForListing(listing.id);
       const heldPayment = payments.find(p => p.escrow_state === 'held');
-      return { listingId: listing.id, isHeld: !!heldPayment };
+      const delivery = await getDeliveryByListingId(listing.id);
+      return {
+        listingId: listing.id,
+        isHeld: !!heldPayment,
+        isShipped: !!(delivery?.shipped_at),
+      };
     });
   const paymentResults = await Promise.all(paymentPromises);
   const heldMap = new Map(paymentResults.map(r => [r.listingId, r.isHeld]));
+  const shippedMap = new Map(paymentResults.map(r => [r.listingId, r.isShipped]));
 
   const listingsWithPayment = listings.map(l => ({
     ...l,
-    can_ship: l.status === 'sold' && heldMap.get(l.id) === true,
+    can_ship: l.status === 'sold' && heldMap.get(l.id) === true && !shippedMap.get(l.id),
     payment_held: l.status === 'sold' && heldMap.get(l.id) === true,
+    has_shipped: l.status === 'sold' && shippedMap.get(l.id) === true,
   }));
 
   const stats: DonorStats = {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Gavel, DollarSign, Target, ExternalLink, Loader2, AlertCircle, CheckCircle, Truck, FileText } from 'lucide-react'
+import { Gavel, DollarSign, Target, ExternalLink, Loader2, AlertCircle, CheckCircle, Truck, FileText, Clock } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { AutoBid, Bid, BidderStats, ApiError } from '../types'
@@ -28,6 +28,7 @@ export default function BidderDashboard() {
     listing_title: string
     amount: number
     escrow_state: string
+    has_shipping: boolean
   }
 
   interface ReceiptItem {
@@ -40,6 +41,9 @@ export default function BidderDashboard() {
 
   const [paidItems, setPaidItems] = useState<PaidItem[]>([])
   const [receipts, setReceipts] = useState<ReceiptItem[]>([])
+
+  const shipReadyPaidItems = paidItems.filter(p => p.has_shipping)
+  const awaitingShipmentItems = paidItems.filter(p => !p.has_shipping)
 
   const handleConfirmDelivery = async (listingUuid: string) => {
     setConfirming(listingUuid)
@@ -139,17 +143,17 @@ export default function BidderDashboard() {
           </div>
         </div>
 
-        {/* Items to confirm delivery */}
-        {paidItems.length > 0 && (
+        {/* Ready to confirm delivery */}
+        {shipReadyPaidItems.length > 0 && (
           <div className="rounded-2xl bg-white overflow-hidden mb-6" style={{ border: '1px solid', borderColor: C.beige }}>
             <div className="px-6 py-4 border-b" style={{ borderColor: C.beige }}>
               <div className="flex items-center gap-2">
                 <Truck className="w-4 h-4" style={{ color: C.emerald }} />
-                <h2 className="font-bold" style={{ color: C.slate }}>Items to Confirm Delivery</h2>
+                <h2 className="font-bold" style={{ color: C.slate }}>Ready to Confirm Delivery</h2>
               </div>
             </div>
             <div className="divide-y" style={{ borderColor: C.beige }}>
-              {paidItems.map((item) => (
+              {shipReadyPaidItems.map((item) => (
                 <div key={item.uuid} className="px-6 py-4 flex items-center justify-between">
                   <div>
                     <p className="font-medium" style={{ color: C.slate }}>{item.listing_title}</p>
@@ -164,6 +168,31 @@ export default function BidderDashboard() {
                     {confirming === item.listing_uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
                     {confirming === item.listing_uuid ? 'Confirming...' : 'Confirm Delivery'}
                   </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Awaiting shipment from donor */}
+        {awaitingShipmentItems.length > 0 && (
+          <div className="rounded-2xl bg-white overflow-hidden mb-6" style={{ border: '1px solid', borderColor: C.beige }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: C.beige }}>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4" style={{ color: '#92400E' }} />
+                <h2 className="font-bold" style={{ color: C.slate }}>Awaiting Shipment</h2>
+              </div>
+            </div>
+            <div className="divide-y" style={{ borderColor: C.beige }}>
+              {awaitingShipmentItems.map((item) => (
+                <div key={item.uuid} className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium" style={{ color: C.slate }}>{item.listing_title}</p>
+                    <p className="text-xs mt-0.5" style={{ color: C.muted }}>Paid {money(item.amount)}</p>
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                    Awaiting Shipment
+                  </span>
                 </div>
               ))}
             </div>
