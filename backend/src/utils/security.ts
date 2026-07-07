@@ -81,3 +81,13 @@ export const escapeHtml = (value: string): string => {
 };
 
 export const sanitizeText = (value: unknown, maxLength: number): string => escapeHtml(safeString(value, maxLength));
+
+// Mirrors the client-side check in CreateListingPage.tsx/DonorListingsPage.tsx (SFR07).
+// That check alone only stops the UI form; a direct API call would still reach the
+// backend, so listing text must be rejected here too, not just HTML-escaped.
+// `on\w+=` is anchored to an attribute-like boundary ([\s"'<]) so it matches injected
+// event handlers (e.g. ` onerror=`, `"onload=`) without flagging ordinary prose that
+// merely contains the letters "on" mid-word — e.g. "donation = 100%" or "condition = new".
+const SCRIPT_LIKE_PATTERN = /<\s*script|javascript:|[\s"'<]on\w+\s*=|<\s*iframe/i;
+
+export const containsScriptLikeContent = (value: string): boolean => SCRIPT_LIKE_PATTERN.test(value);

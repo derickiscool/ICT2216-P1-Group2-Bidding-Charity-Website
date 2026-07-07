@@ -21,7 +21,7 @@ function inputCls(hasErr: boolean) {
 export default function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login, isLoading } = useAuthStore()
+  const { login, requestLoginOtp, verifyLoginOtp, isLoading } = useAuthStore()
 
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
@@ -29,13 +29,43 @@ export default function LoginPage() {
   const [error, setError]       = useState<string | null>(null)
   const [attempts, setAttempts] = useState(0)
 
+  // Passwordless login state
+  const [method, setMethod]     = useState<'password' | 'otp'>('password')
+  const [step, setStep]         = useState<'request' | 'verify'>('request')
+  const [otp, setOtp]           = useState('')
+  const [infoMsg, setInfoMsg]   = useState<string | null>(null)
+
   const from = (location.state as { from?: string })?.from || '/dashboard'
 
   const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setError(null)
-    if (!email.trim() || !password) { setError('Please fill in all fields.'); return }
-    try { await login(email.trim(), password); navigate(from, { replace: true }) }
-    catch (err) { const ae = err as ApiError; setAttempts(n => n + 1); setError(ae.message || 'Invalid email or password.') }
+    e.preventDefault(); setError(null); setInfoMsg(null)
+    if (method === 'password') {
+      if (!email.trim() || !password) { setError('Please fill in all fields.'); return }
+      try { await login(email.trim(), password); navigate(from, { replace: true }) }
+      catch (err) { const ae = err as ApiError; setAttempts(n => n + 1); setError(ae.message || 'Invalid email or password.') }
+    } else {
+      if (step === 'request') {
+        if (!email.trim()) { setError('Please enter your email address.'); return }
+        try {
+          const msg = await requestLoginOtp(email.trim())
+          setInfoMsg(msg || 'A login verification OTP has been sent.')
+          setStep('verify')
+        } catch (err) {
+          const ae = err as ApiError
+          setError(ae.message || 'Failed to request login code.')
+        }
+      } else {
+        if (!otp.trim()) { setError('Please enter the 6-digit OTP.'); return }
+        if (!/^\d{6}$/.test(otp.trim())) { setError('Enter a valid 6-digit OTP.'); return }
+        try {
+          await verifyLoginOtp(email.trim(), otp.trim())
+          navigate(from, { replace: true })
+        } catch (err) {
+          const ae = err as ApiError
+          setError(ae.message || 'Invalid or expired OTP.')
+        }
+      }
+    }
   }
 
   return (
@@ -95,7 +125,7 @@ export default function LoginPage() {
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: C.danger }} />
               <div>
                 <p className="text-sm font-medium" style={{ color: C.danger }}>{error}</p>
-                {attempts >= 3 && (
+                {method === 'password' && attempts >= 3 && (
                   <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>
                     {Math.max(0, 5 - attempts)} attempts remaining before lockout.
                   </p>
@@ -104,36 +134,77 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={onSubmit} noValidate className="space-y-4">
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Email address</label>
-              <input type="email" autoComplete="email" value={email}
-                onChange={e => { setEmail(e.target.value); setError(null) }}
-                placeholder="you@example.com" style={inputCls(!!error)}
-                onFocus={e => (e.target.style.borderColor = C.emerald)}
-                onBlur={e => (e.target.style.borderColor = error ? C.danger : C.beige)} />
-            </div>
-
-            {/* Password */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm font-medium" style={{ color: C.slate }}>Password</label>
-                <Link to="/forgot-password" className="text-xs font-medium" style={{ color: C.emerald }}>Forgot password?</Link>
+          {infoMsg && (
+            <div className="mb-5 flex items-start gap-3 rounded-xl px-4 py-3"
+              style={{ background: C.emeraldLight, border: '1px solid rgba(4,120,87,0.2)' }}>
+              <div>
+                <p className="text-sm font-medium text-emerald-800" style={{ color: C.emerald }}>{infoMsg}</p>
               </div>
-              <div className="relative">
-                <input type={showPwd ? 'text' : 'password'} autoComplete="current-password"
-                  value={password} onChange={e => { setPassword(e.target.value); setError(null) }}
-                  placeholder="Enter your password"
-                  style={{ ...inputCls(!!error), paddingRight: '42px' }}
+            </div>
+          )}
+
+          <form onSubmit={onSubmit} noValidate className="space-y-4">
+            {/* Email - Show unless we are in verify step */}
+            {!(method === 'otp' && step === 'verify') && (
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Email address</label>
+                <input type="email" autoComplete="email" value={email}
+                  disabled={isLoading}
+                  onChange={e => { setEmail(e.target.value); setError(null) }}
+                  placeholder="you@example.com" style={inputCls(!!error)}
                   onFocus={e => (e.target.style.borderColor = C.emerald)}
                   onBlur={e => (e.target.style.borderColor = error ? C.danger : C.beige)} />
-                <button type="button" onClick={() => setShowPwd(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
-                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
-            </div>
+            )}
+
+            {/* Password - Only for Password Login */}
+            {method === 'password' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium" style={{ color: C.slate }}>Password</label>
+                  <Link to="/forgot-password" className="text-xs font-medium" style={{ color: C.emerald }}>Forgot password?</Link>
+                </div>
+                <div className="relative">
+                  <input type={showPwd ? 'text' : 'password'} autoComplete="current-password"
+                    disabled={isLoading}
+                    value={password} onChange={e => { setPassword(e.target.value); setError(null) }}
+                    placeholder="Enter your password"
+                    style={{ ...inputCls(!!error), paddingRight: '42px' }}
+                    onFocus={e => (e.target.style.borderColor = C.emerald)}
+                    onBlur={e => (e.target.style.borderColor = error ? C.danger : C.beige)} />
+                  <button type="button" onClick={() => setShowPwd(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
+                    {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* OTP - Only for OTP login during verification step */}
+            {method === 'otp' && step === 'verify' && (
+              <div className="space-y-4">
+                <div className="text-sm rounded-xl p-3 border" style={{ background: C.linen, borderColor: C.beige }}>
+                  <p className="font-semibold" style={{ color: C.slate }}>OTP Code Sent</p>
+                  <p className="text-xs mt-1" style={{ color: C.muted }}>
+                    We sent a 6-digit OTP code to <span className="font-medium">{email}</span>.
+                    Please check your email for the code.
+                  </p>
+                  <button type="button" onClick={() => { setStep('request'); setError(null); setInfoMsg(null); setOtp('') }}
+                    className="text-xs font-semibold underline mt-2" style={{ color: C.emerald }}>
+                    Change email or resend code
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Verification Code (OTP)</label>
+                  <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+                    value={otp} disabled={isLoading}
+                    onChange={e => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(null) }}
+                    placeholder="000000" style={inputCls(!!error)}
+                    onFocus={e => (e.target.style.borderColor = C.emerald)}
+                    onBlur={e => (e.target.style.borderColor = error ? C.danger : C.beige)} />
+                </div>
+              </div>
+            )}
 
             {/* Submit */}
             <button type="submit" disabled={isLoading}
@@ -141,7 +212,15 @@ export default function LoginPage() {
               style={{ background: isLoading ? '#6ba88e' : C.emerald, cursor: isLoading ? 'not-allowed' : 'pointer' }}
               onMouseEnter={e => { if (!isLoading) (e.currentTarget.style.background = C.emeraldDark) }}
               onMouseLeave={e => { if (!isLoading) (e.currentTarget.style.background = C.emerald) }}>
-              {isLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Logging in…</> : 'Log In'}
+              {isLoading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" />Processing…</>
+              ) : method === 'password' ? (
+                'Log In'
+              ) : step === 'request' ? (
+                'Send Verification OTP'
+              ) : (
+                'Verify & Log In'
+              )}
             </button>
           </form>
 
@@ -150,6 +229,21 @@ export default function LoginPage() {
             <span className="text-xs" style={{ color: C.beige }}>or</span>
             <div className="flex-1 h-px" style={{ background: C.beige }} />
           </div>
+
+          <button type="button" onClick={() => {
+            setMethod(m => m === 'password' ? 'otp' : 'password')
+            setStep('request')
+            setError(null)
+            setInfoMsg(null)
+            setOtp('')
+          }}
+            disabled={isLoading}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold border flex items-center justify-center gap-2 mb-6 transition-all"
+            style={{ borderColor: C.beige, color: C.slate, background: 'transparent', cursor: isLoading ? 'not-allowed' : 'pointer' }}
+            onMouseEnter={e => { if (!isLoading) (e.currentTarget.style.background = C.linen) }}
+            onMouseLeave={e => { if (!isLoading) (e.currentTarget.style.background = 'transparent') }}>
+            {method === 'password' ? 'Sign In with Email OTP' : 'Sign In with Password'}
+          </button>
 
           <div className="space-y-2 text-sm text-center" style={{ color: C.muted }}>
             <p>

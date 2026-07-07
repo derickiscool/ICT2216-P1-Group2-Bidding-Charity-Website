@@ -165,11 +165,8 @@ export default function RegisterPage() {
           <CheckCircle2 className="w-7 h-7" style={{ color: C.emerald }} />
         </div>
         <h2 className="text-xl font-bold text-center mb-2" style={{ color: C.slate }}>Verify your email</h2>
-        <p className="text-sm text-center mb-2" style={{ color: C.muted }}>
+        <p className="text-sm text-center mb-6" style={{ color: C.muted }}>
           Enter the 6-digit OTP sent to <span className="font-medium" style={{ color: C.slate }}>{form.email}</span>.
-        </p>
-        <p className="text-xs text-center mb-6" style={{ color: C.beige }}>
-          For local development, the OTP is printed in the backend console.
         </p>
 
         {notice && <div className="mb-4 rounded-xl px-4 py-3 text-xs" style={{ background: C.emeraldLight, color: '#065F46' }}>{notice}</div>}

@@ -46,7 +46,11 @@ export default function AuctionCard({ auction }: { auction: AuctionLike }) {
     <div className="group relative rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-y-1"
          style={{ background: '#FFFFFF', border: '1px solid var(--bfg-beige)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
       <div className="relative h-48 bg-slate-100 flex items-center justify-center overflow-hidden border-b" style={{ borderColor: 'var(--bfg-beige)' }}>
-        <span className="text-slate-400 text-sm font-medium">{auction.category} Image</span>
+        {isListing(auction) && auction.images?.[0] ? (
+          <img src={auction.images[0]} alt={auction.title} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-slate-400 text-sm font-medium">{auction.category} Image</span>
+        )}
         <div className="absolute top-3 left-3 flex gap-2">
           {urgent && (
             <div className="flex items-center gap-1.5 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm" style={{ background: 'var(--bfg-danger)' }}>
@@ -85,7 +89,7 @@ export default function AuctionCard({ auction }: { auction: AuctionLike }) {
           </div>
         </div>
         <Link to={`/auctions/${routeId}`} className="block w-full py-2.5 text-white text-sm font-semibold rounded-xl text-center transition-colors" style={{ background: 'var(--bfg-emerald)' }}>
-          Place Bid
+          View Auction
         </Link>
       </div>
     </div>

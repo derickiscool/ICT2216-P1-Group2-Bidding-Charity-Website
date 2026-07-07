@@ -6,9 +6,13 @@ import type { SessionRecord, User } from '../types/domain';
 import { randomToken, sha256 } from '../utils/security';
 import { unauthorised } from '../utils/errors';
 
-const ISSUER = 'bidforgood';
-const AUDIENCE = 'bidforgood-web';
-const SESSION_MINUTES = 15;
+export const SESSION_JWT_ISSUER = 'bidforgood';
+export const SESSION_JWT_AUDIENCE = 'bidforgood-web';
+export const SESSION_JWT_ALGORITHM = 'HS256' as const;
+export const SESSION_IDLE_TIMEOUT_MINUTES = 15;
+export const SESSION_IDLE_TIMEOUT_MS = SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000;
+export const SESSION_ABSOLUTE_TIMEOUT_HOURS = 8;
+const JWT_CLOCK_TOLERANCE_SECONDS = 2;
 const devJwtSecret = crypto.randomBytes(32).toString('hex');
 
 export interface CreatedSession {
@@ -37,24 +41,40 @@ export const getJwtSecret = (): string => {
   return secret;
 };
 
+const isNumericDate = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+export const assertJwtLifetimeWithinIdleLimit = (decoded: JwtPayload): void => {
+  if (!isNumericDate(decoded.iat) || !isNumericDate(decoded.exp)) {
+    throw unauthorised('Authentication required');
+  }
+
+  const lifetimeSeconds = decoded.exp - decoded.iat;
+  const idleLimitSeconds = SESSION_IDLE_TIMEOUT_MS / 1000;
+  if (lifetimeSeconds <= 0 || lifetimeSeconds > idleLimitSeconds + JWT_CLOCK_TOLERANCE_SECONDS) {
+    throw unauthorised('Authentication required');
+  }
+};
+
 export const createSession = async (user: Omit<User, 'passwordHash'>): Promise<CreatedSession> => {
   const secret = getJwtSecret();
   const sid = crypto.randomUUID();
   const jti = randomToken(32);
   const csrfToken = randomToken(32);
-  const expiresAt = new Date(Date.now() + SESSION_MINUTES * 60 * 1000);
+  const expiresAt = new Date(Date.now() + SESSION_IDLE_TIMEOUT_MS);
+  const absoluteExpiresAt = new Date(Date.now() + SESSION_ABSOLUTE_TIMEOUT_HOURS * 60 * 60 * 1000);
   const record: SessionRecord = {
     sid,
     userId: user.id,
     jtiHash: sha256(jti),
     csrfTokenHash: sha256(csrfToken),
     expiresAt,
+    absoluteExpiresAt,
     createdAt: new Date(),
     lastSeenAt: new Date()
   };
   await addSession(record);
   const token = jwt.sign({ sub: String(user.id), sid, role: user.roles[0], roles: user.roles, jti }, secret, {
-    algorithm: 'HS256', issuer: ISSUER, audience: AUDIENCE, expiresIn: `${SESSION_MINUTES}m`
+    algorithm: SESSION_JWT_ALGORITHM, issuer: SESSION_JWT_ISSUER, audience: SESSION_JWT_AUDIENCE, expiresIn: `${SESSION_IDLE_TIMEOUT_MINUTES}m`
   });
   return { token, csrfToken, sid };
 };
@@ -66,7 +86,7 @@ export const setSessionCookie = (res: Response, token: string): void => {
     secure,
     sameSite: 'strict',
     path: '/',
-    maxAge: SESSION_MINUTES * 60 * 1000
+    maxAge: SESSION_IDLE_TIMEOUT_MS
   });
 };
 
@@ -78,16 +98,18 @@ export const verifySessionToken = async (token: string): Promise<VerifiedSession
   const secret = getJwtSecret();
   let decoded: JwtPayload;
   try {
-    decoded = jwt.verify(token, secret, { issuer: ISSUER, audience: AUDIENCE, algorithms: ['HS256'] }) as JwtPayload;
+    decoded = jwt.verify(token, secret, { issuer: SESSION_JWT_ISSUER, audience: SESSION_JWT_AUDIENCE, algorithms: [SESSION_JWT_ALGORITHM] }) as JwtPayload;
   } catch {
     throw unauthorised('Authentication required');
   }
+  assertJwtLifetimeWithinIdleLimit(decoded);
   if (!decoded.sid || !decoded.jti || !decoded.sub) throw unauthorised('Authentication required');
   const record = await getSession(String(decoded.sid));
-  if (!record || record.revokedAt || record.expiresAt.getTime() <= Date.now()) throw unauthorised('Authentication required');
+  const now = Date.now();
+  if (!record || record.revokedAt || record.expiresAt.getTime() <= now || record.absoluteExpiresAt.getTime() <= now) throw unauthorised('Authentication required');
   if (record.jtiHash !== sha256(String(decoded.jti))) throw unauthorised('Authentication required');
   record.lastSeenAt = new Date();
-  record.expiresAt = new Date(Date.now() + SESSION_MINUTES * 60 * 1000);
+  record.expiresAt = new Date(Math.min(now + SESSION_IDLE_TIMEOUT_MS, record.absoluteExpiresAt.getTime()));
   await updateSession(record);
   return { userId: Number(decoded.sub), sid: String(decoded.sid), jti: String(decoded.jti), csrfTokenHash: record.csrfTokenHash };
 };

@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler } from 'express';
+import { MulterError } from 'multer';
 import { AppError } from '../utils/errors';
 import { audit } from '../services/audit.service';
 
@@ -12,6 +13,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       void audit(req, 'INPUT_REJECTED', { path: req.originalUrl, code: err.code, message: err.message });
     }
     res.status(err.statusCode).json({ message: err.message, code: err.code, errors: err.details });
+    return;
+  }
+  if (err instanceof MulterError) {
+    res.status(400).json({ message: err.message, code: err.code });
     return;
   }
   console.error('[UnhandledError]', err);

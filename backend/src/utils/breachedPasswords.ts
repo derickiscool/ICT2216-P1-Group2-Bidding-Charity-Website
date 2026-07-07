@@ -8,27 +8,72 @@ const BUILT_IN_BREACHED = new Set([
   'charity123', 'iloveyou', 'monkey', 'abc123', 'passw0rd', 'p@ssw0rd', 'password!'
 ]);
 
+const BUILT_IN_DICTIONARY_WORDS = new Set([
+  'administrator', 'auction', 'baseball', 'bidder', 'charity', 'computer', 'donation',
+  'dragon', 'football', 'letmein', 'monkey', 'password', 'princess', 'qwerty',
+  'singapore', 'student', 'sunshine', 'welcome'
+]);
+
 let externalBreachedPasswords: Set<string> | null = null;
+let externalDictionaryWords: Set<string> | null = null;
+
+const loadLineSet = (fileName: string, normalise: (line: string) => string): Set<string> => {
+  const values = new Set<string>();
+  const filePath = path.resolve(__dirname, '../../data', fileName);
+  if (!fs.existsSync(filePath)) return values;
+  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const value = normalise(trimmed);
+    if (value) values.add(value);
+  }
+  return values;
+};
 
 function loadExternalBreachedPasswords(): Set<string> {
   if (externalBreachedPasswords) return externalBreachedPasswords;
-  externalBreachedPasswords = new Set();
-  const filePath = path.resolve(__dirname, '../../data/breached-passwords.txt');
-  if (fs.existsSync(filePath)) {
-    for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-      const trimmed = line.trim().toLowerCase();
-      if (trimmed && !trimmed.startsWith('#')) externalBreachedPasswords.add(trimmed);
-    }
-  }
+  externalBreachedPasswords = loadLineSet('breached-passwords.txt', line => line.toLowerCase());
   return externalBreachedPasswords;
 }
 
+function loadExternalDictionaryWords(): Set<string> {
+  if (externalDictionaryWords) return externalDictionaryWords;
+  externalDictionaryWords = loadLineSet('dictionary-words.txt', normaliseDictionaryWord);
+  return externalDictionaryWords;
+}
+
+const normaliseDictionaryWord = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/0/g, 'o')
+    .replace(/1/g, 'i')
+    .replace(/3/g, 'e')
+    .replace(/4/g, 'a')
+    .replace(/5/g, 's')
+    .replace(/7/g, 't')
+    .replace(/[^a-z]/g, '');
+
+const dictionaryWords = (): Set<string> =>
+  new Set([...BUILT_IN_DICTIONARY_WORDS, ...loadExternalDictionaryWords()]);
+
 export const isBreachedPassword = (password: string): boolean => {
   const normalized = password.trim().toLowerCase();
-  return BUILT_IN_BREACHED.has(normalized) || loadExternalBreachedPasswords().has(normalized);
+  return (
+    BUILT_IN_BREACHED.has(normalized) ||
+    loadExternalBreachedPasswords().has(normalized)
+  );
+};
+
+export const isDictionaryPassword = (password: string): boolean => {
+  const lettersOnly = password.trim().toLowerCase().replace(/[^a-z]/g, '');
+  const normalisedWord = normaliseDictionaryWord(password);
+  if (!lettersOnly && !normalisedWord) return false;
+  const words = dictionaryWords();
+  return words.has(lettersOnly) || words.has(normalisedWord);
 };
 
 export const isStrongPassword = (password: string): boolean => {
   if (password.length < 8 || password.length > 128) return false;
-  return !isBreachedPassword(password);
+  return !isBreachedPassword(password) && !isDictionaryPassword(password);
 };

@@ -70,6 +70,9 @@ web_modules/
 .env.*
 !.env.example
 
+# DKIM private key — never commit; reference it via DKIM_PRIVATE_KEY_PATH instead
+*.pem
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
@@ -147,3 +150,6 @@ vite.config.ts.timestamp-*
 
 # vscode settings
 .vscode/
+
+# Design documents
+proposal.md

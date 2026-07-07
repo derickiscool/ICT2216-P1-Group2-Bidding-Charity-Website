@@ -6,6 +6,8 @@ import {
   request,
   postJson,
   loginAs,
+  registerVerifiedUser,
+  createActiveListing,
 } from '../helpers/setup';
 
 beforeAll(startServer);
@@ -56,23 +58,15 @@ describe('SFR10 — Bid Validation & Flood Protection', () => {
   });
 
   test('serialises concurrent same-listing bids and rejects automated bid flooding', async () => {
-    const admin = await loginAs('admin@bidforgood.test');
+    const donor = await loginAs('donor@bidforgood.test');
     const bidder = await loginAs('bidder@bidforgood.test');
 
-    const concurrentListing = await postJson(
-      '/api/listings',
-      {
-        title: 'Concurrent Bid Test',
-        description: 'Listing used to prove same-amount concurrent bids cannot both win.',
-        category: 'Art',
-        charityName: 'Valid Charity',
-        starting_price: 500,
-        min_increment: 25,
-        durationHours: 24,
-      },
-      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
-    );
-    assert.equal(concurrentListing.response.status, 201);
+    const concurrentListing = { body: await createActiveListing(donor, {
+      title: 'Concurrent Bid Test',
+      description: 'Listing used to prove same-amount concurrent bids cannot both win.',
+      starting_price: 500,
+      min_increment: 25,
+    }) };
 
     const concurrentAmount =
       concurrentListing.body.current_bid + concurrentListing.body.min_increment;
@@ -93,20 +87,12 @@ describe('SFR10 — Bid Validation & Flood Protection', () => {
       [201, 400],
     );
 
-    const floodListing = await postJson(
-      '/api/listings',
-      {
-        title: 'Bid Flood Test',
-        description: 'Listing used to prove automated bid flooding is rejected.',
-        category: 'Art',
-        charityName: 'Valid Charity',
-        starting_price: 1000,
-        min_increment: 10,
-        durationHours: 24,
-      },
-      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
-    );
-    assert.equal(floodListing.response.status, 201);
+    const floodListing = { body: await createActiveListing(donor, {
+      title: 'Bid Flood Test',
+      description: 'Listing used to prove automated bid flooding is rejected.',
+      starting_price: 1000,
+      min_increment: 10,
+    }) };
 
     let amount = floodListing.body.current_bid;
     for (let index = 0; index < 10; index += 1) {
@@ -125,5 +111,58 @@ describe('SFR10 — Bid Validation & Flood Protection', () => {
     );
     assert.equal(flooded.response.status, 429);
     assert.equal(flooded.body.code, 'BID_FLOOD_REJECTED');
+  });
+});
+
+
+describe('FR12 — Auto-Bidding', () => {
+  test('keeps maximum auto-bid private and automatically responds when outbid', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const bidderOne = await loginAs('bidder@bidforgood.test');
+
+    await registerVerifiedUser({
+      email: 'autobidder2@bidforgood.test',
+      username: 'autobidder2',
+      full_name: 'Auto Bidder Two',
+      password: 'S3cure!Pass2026',
+      roles: ['bidder'],
+    });
+    const bidderTwo = await loginAs('autobidder2@bidforgood.test');
+
+    const listing = { body: await createActiveListing(donor, {
+      title: 'FR12 Auto-Bid Test',
+      description: 'Listing used to prove proxy bidding and private max limits.',
+      starting_price: 100,
+      min_increment: 10,
+    }) };
+
+    const autoBid = await postJson(
+      '/api/bids/auto-bids',
+      { listing_id: listing.body.id, max_amount: 200 },
+      { cookie: bidderOne.cookie, 'x-csrf-token': bidderOne.csrf },
+    );
+    assert.equal(autoBid.response.status, 201);
+    const autoBidBody = autoBid.body as unknown as { autoBid: { max_amount: number }; result: { currentBid: number } };
+    assert.equal(autoBidBody.autoBid.max_amount, 200);
+    assert.equal(autoBidBody.result.currentBid, 110);
+
+    const manualBid = await postJson(
+      '/api/bids',
+      { listing_id: listing.body.id, amount: 150 },
+      { cookie: bidderTwo.cookie, 'x-csrf-token': bidderTwo.csrf },
+    );
+    assert.equal(manualBid.response.status, 201);
+    const manualBidBody = manualBid.body as unknown as {
+      currentBid: number;
+      bids: Array<{ is_auto_bid: boolean }>;
+    };
+
+    assert.equal(manualBidBody.currentBid, 160);
+    assert.equal(manualBidBody.bids.some(bid => bid.is_auto_bid), true);
+
+    const publicBids = await request(`/api/bids/listings/${listing.body.id}`);
+    assert.equal(publicBids.response.status, 200);
+    assert.equal(publicBids.body.data, undefined);
+    assert.equal(JSON.stringify(publicBids.body).includes('max_amount'), false);
   });
 });

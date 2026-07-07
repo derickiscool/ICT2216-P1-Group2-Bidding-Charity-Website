@@ -7,6 +7,8 @@ export interface User {
   username: string;
   full_name: string;
   roles: UserRole[];
+  // Staff accounts created with a temporary password must change it on first login.
+  mustChangePassword: boolean;
   passwordHash: string;
   is_verified: boolean;
   is_active: boolean;
@@ -31,6 +33,58 @@ export interface PendingRegistration {
   createdAt: Date;
 }
 
+export interface LoginOtp {
+  user_id: number;
+  email: string;
+  otpHash: string;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
+export interface EmailChangeRequest {
+  user_id: number;
+  newEmail: string;
+  oldEmail: string;
+  oldEmailOtpHash: string;
+  newEmailOtpHash: string | null;
+  oldEmailConfirmed: boolean;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
+export interface Campaign {
+  id: number;
+  uuid: string;
+  charity_id: number;
+  name: string;
+  description: string;
+  status: 'active' | 'closed';
+  end_date?: string;
+  hasImage: boolean;
+  total_raised: number;
+  active_auctions: number;
+  created_at: string;
+}
+
+export type NewCampaignInput = {
+  charityId: number;
+  name: string;
+  description: string;
+  endDate?: string;
+  imageData?: Buffer;
+  imageMime?: string;
+};
+
+export type UpdateCampaignInput = {
+  name: string;
+  description: string;
+  endDate?: string;
+  imageData?: Buffer | null;
+  imageMime?: string | null;
+};
+
 export type CharityStatus = 'pending' | 'approved' | 'rejected';
 export interface CharityOrganisation {
   id: number;
@@ -41,14 +95,16 @@ export interface CharityOrganisation {
   documentName: string;
   documentMime: 'application/pdf' | 'image/png' | 'image/jpeg';
   documentSha256: string;
+  documentData?: Buffer | null;
   status: CharityStatus;
   reviewedBy?: number;
   reviewedAt?: string;
   rejectionReason?: string;
   created_at: string;
+  ownerEmail?: string;
 }
 
-export type ListingStatus = 'draft' | 'pending' | 'active' | 'sold' | 'expired' | 'cancelled' | 'rejected';
+export type ListingStatus = 'draft' | 'pending' | 'changes_requested' | 'charity_review' | 'active' | 'sold' | 'shipped' | 'delivered' | 'expired' | 'cancelled' | 'rejected';
 export interface Listing {
   id: number;
   uuid: string;
@@ -70,7 +126,44 @@ export interface Listing {
   winner_id?: number;
   charityName: string;
   min_increment: number;
+  // SFR09: reviewer note (admin reject / request-changes reason) surfaced to the donor.
+  review_note?: string;
+  // SFR09: which review stage produced the latest note — 'admin' (stage 1) or 'charity' (stage 2).
+  // Lets the donor-facing copy attribute a rejection to the right party.
+  review_stage?: 'admin' | 'charity';
   created_at: string;
+}
+
+export interface DonorListingStatusSummary {
+  total: number;
+  draft: number;
+  pending: number;
+  changes_requested: number;
+  charity_review: number;
+  active: number;
+  sold: number;
+  shipped: number;
+  delivered: number;
+  expired: number;
+  cancelled: number;
+  rejected: number;
+}
+
+export interface DonorListingTrackingItem extends Listing {
+  // Backend-owned user interface hints for FR10. The frontend can display these
+  // directly without reimplementing auction status rules in the browser.
+  statusLabel: string;
+  statusMessage: string;
+  timelineLabel: string;
+  canEdit: boolean;
+  canDelete: boolean;
+  finalBidAmount?: number;
+}
+
+export interface DonorListingTrackingDashboard {
+  generatedAt: string;
+  summary: DonorListingStatusSummary;
+  listings: DonorListingTrackingItem[];
 }
 
 export interface Bid {
@@ -84,12 +177,105 @@ export interface Bid {
   created_at: string;
 }
 
+
+export interface AutoBidSetting {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  bidder_username: string;
+  max_amount: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutoBidWithListing extends AutoBidSetting {
+  listingTitle?: string;
+  listingUuid?: string;
+  listingStatus?: ListingStatus;
+  currentBid?: number;
+  endTime?: string;
+}
+
+export interface BidWithListing extends Bid {
+  listingTitle?: string;
+  listingUuid?: string;
+  currentBid?: number;
+  winnerId?: number;
+  endTime?: string;
+  listingStatus?: ListingStatus;
+}
+
+export interface Delivery {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  tracking_number?: string;
+  courier?: string;
+  shipped_at?: string;
+  confirmed_at?: string;
+  created_at: string;
+}
+
+export interface Receipt {
+  id: number;
+  uuid: string;
+  payment_id: number;
+  listing_id: number;
+  bidder_id: number;
+  item_title: string;
+  amount: number;
+  charity_name: string;
+  receipt_ref: string;
+  integrity_hash: string;
+  generated_at: string;
+}
+
+export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired';
+export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded';
+
+export interface Payment {
+  id: number;
+  uuid: string;
+  listing_id: number;
+  bidder_id: number;
+  amount: number;
+  payment_ref: string;
+  escrow_state: EscrowState;
+  status: PaymentStatus;
+  payment_deadline: string;
+  offered_at: string;
+  paid_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Response shape used by bidder-facing payment pages. Keeping this as a separate
+// type prevents the backend from accidentally exposing unnecessary listing/user data.
+export interface PaymentWithListing extends Payment {
+  listing_uuid: string;
+  listing_title: string;
+  charity_name: string;
+  has_shipping: boolean;
+  listing_image?: string;
+}
+
+export interface PasswordResetToken {
+  email: string;
+  tokenHash: string;
+  expiresAt: Date;
+  attempts: number;
+  createdAt: Date;
+}
+
 export interface SessionRecord {
   sid: string;
   userId: number;
   jtiHash: string;
   csrfTokenHash: string;
   expiresAt: Date;
+  absoluteExpiresAt: Date;
   revokedAt?: Date;
   createdAt: Date;
   lastSeenAt: Date;

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Heart, HeartHandshake, Settings, ShieldCheck, Menu, X, Users } from 'lucide-react'
+import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Settings, Menu, X } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 // ─── Avatar dropdown ─────────────────────────────────────────────────────────
@@ -36,10 +36,10 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold text-white"
             style={{ background: '#047857' }}>
-            {user?.username?.charAt(0).toUpperCase()}
+            {(user?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold truncate" style={{ color: '#2D3A3A' }}>{user?.full_name || user?.username}</p>
+            <p className="text-sm font-semibold truncate" style={{ color: '#2D3A3A' }}>{user?.full_name || user?.email}</p>
             <div className="flex flex-wrap gap-1 mt-0.5">
               {user?.roles?.map(r => (
                 <span key={r} className="text-[10px] font-medium px-1.5 py-0.5 rounded"
@@ -51,48 +51,18 @@ function AvatarDropdown({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="p-1.5">
-        {[
-          { icon: LayoutDashboard, label: 'My Dashboard', to: '/dashboard' },
-          { icon: Heart, label: 'Watchlist', to: '/dashboard?tab=watchlist' },
-          { icon: Settings, label: 'Settings', to: '/profile' },
-        ].map(item => (
-          <Link key={item.label} to={item.to} onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
-            style={{ color: '#2D3A3A' }}>
-            <item.icon className="w-4 h-4" style={{ color: '#5C6E6E' }} />
-            {item.label}
-          </Link>
-        ))}
-        {(user?.roles?.includes('charity') || user?.roles?.includes('admin')) && (
-          <Link
-            to="/charity/staff"
-            onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
-            style={{ color: '#2D3A3A' }}
-          >
-            <Users className="w-4 h-4" style={{ color: '#047857' }} />
-            Staff Management
-          </Link>
-        )}
-        {(user?.roles?.includes('charity') || user?.roles?.includes('charity_staff') || user?.roles?.includes('admin')) && (
-          <Link
-            to="/charity/campaigns"
-            onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
-            style={{ color: '#2D3A3A' }}
-          >
-            <HeartHandshake className="w-4 h-4" style={{ color: '#047857' }} />
-            Campaign Management
-          </Link>
-        )}
-        {user?.roles?.includes('admin') && (
-          <Link to="/admin" onClick={onClose}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
-            style={{ color: '#2D3A3A' }}>
-            <ShieldCheck className="w-4 h-4" style={{ color: '#047857' }} />
-            Admin Panel
-          </Link>
-        )}
+        <Link to="/dashboard" onClick={onClose}
+          className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+          style={{ color: '#2D3A3A' }}>
+          <LayoutDashboard className="w-4 h-4" style={{ color: '#5C6E6E' }} />
+          My Dashboard
+        </Link>
+        <Link to="/profile" onClick={onClose}
+          className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-colors hover:bg-[#F7F5F0]"
+          style={{ color: '#2D3A3A' }}>
+          <Settings className="w-4 h-4" style={{ color: '#5C6E6E' }} />
+          Settings
+        </Link>
       </div>
 
       <div className="border-t p-1.5" style={{ borderColor: '#BBB09B' }}>
@@ -188,7 +158,7 @@ export default function Navbar() {
                   className="flex items-center gap-2 px-2 py-1.5 rounded-xl transition-opacity hover:opacity-80">
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
                     style={{ background: '#047857' }}>
-                    {user.username?.charAt(0).toUpperCase()}
+                    {(user.full_name || user.email || 'U').charAt(0).toUpperCase()}
                   </div>
                   <ChevronDown className="w-3.5 h-3.5" style={{ color: linkColor }} />
                 </button>

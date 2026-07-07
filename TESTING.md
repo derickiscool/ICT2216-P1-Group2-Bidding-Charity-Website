@@ -162,6 +162,169 @@ SFR12/SFR13 — Search & Filter Security
 
 ---
 
+### FSR-14 — Password Reset Flow
+
+> Users can reset their forgotten password via a 6-digit OTP delivered to their registered email. Admin accounts are explicitly excluded from this self-service flow.
+
+**Test file:** `backend/src/__tests__/routes/auth.routes.test.ts`
+
+```
+Password Reset Flow
+  ✓ always returns the generic message for an unknown email (user enumeration protection)
+  ✓ suppresses OTP for admin accounts — admin cannot reset password via this flow
+  ✓ generates a 6-digit OTP for a valid non-admin account
+  ✓ rejects reset with a wrong OTP but keeps the token for retry
+  ✓ locks out after 5 consecutive wrong OTP attempts
+  ✓ rejects reset with an expired OTP
+  ✓ resets password successfully, old password rejected, all sessions revoked
+```
+
+| Test case | What it verifies |
+|---|---|
+| unknown email | Returns the same generic 200 response regardless of whether the email exists — prevents user enumeration |
+| admin account suppressed | `POST /forgot-password` with an admin email returns 200 but no OTP is generated and no token is stored — admins cannot self-service reset |
+| OTP generated for non-admin | A valid, active, verified non-admin account receives a 6-digit numeric OTP in the dev outbox |
+| wrong OTP — token persists | An incorrect token returns 400 `RESET_OTP_INVALID` but the token remains valid so the user can retry; the correct OTP still succeeds on the next attempt |
+| 5-attempt lockout | After 5 consecutive wrong OTP submissions the token is removed; the correct OTP then also fails with 400 `RESET_OTP_INVALID` |
+| expired OTP | Token is backdated in the DB; the correct OTP is still rejected with 400 `RESET_OTP_INVALID` and the token is cleaned up |
+| successful reset + session revocation | Valid OTP resets the password; the pre-existing session receives 401 on `/me`, old password login returns 401, new password login returns 200 |
+
+---
+
+### SFR14 — Digital Donation Receipt
+
+> The application shall generate a digital donation receipt, but must strictly reject any attempts by Users to modify the amount, beneficiary, or item details after receipt generation.
+
+**Test file:** `backend/src/__tests__/routes/payment.routes.test.ts`
+
+```
+SFR14 — Digital Donation Receipt
+  ✓ receipt is automatically generated when payment is completed
+  ✓ receipt captures the correct amount, item title, and beneficiary
+  ✓ receipt is not accessible to a different bidder — 403
+  ✓ no PUT or PATCH route exists for receipts — 404
+  ✓ completing the same payment a second time is rejected — immutability guard
+```
+
+| Test case | What it verifies |
+|---|---|
+| auto-generation | A `receipts` row is inserted atomically inside `completePayment`; the UUID is retrievable immediately after |
+| correct fields | `itemTitle` matches the listing title, `beneficiaryName` matches `charityName`, `amount` is a positive number, `generatedAt` is a timestamp |
+| access control | A non-bidder (admin) session receives 403 from `requireRole('bidder')` on `GET /api/payments/receipts/:uuid` |
+| no mutation endpoints | `PUT` and `PATCH` on the receipt URL return 404 — no such routes are registered |
+| double-complete rejected | Calling `POST /:uuid/complete` on an already-completed payment returns 400 `PAYMENT_NOT_PENDING`, preventing a second receipt from being generated |
+
+---
+
+### SFR15 — Shipping Verification & Delivery Confirmation
+
+> Upon payment confirmation from the Winning Bidder, the system shall require the Donor to provide shipping verification details before updating the listing status to "Shipped" and enabling the Bidder to confirm when they have received the item, but must sanitize the input to prevent XSS and reject any attempts to manually force the listing into a "Delivered" state.
+
+**Test file:** `backend/src/__tests__/routes/payment.routes.test.ts`
+
+```
+SFR15 — Shipping Verification & Delivery Confirmation
+  ✓ donor cannot confirm shipping when listing is not yet sold — status guard
+  ✓ non-donor role cannot submit shipping details — 403
+  ✓ XSS payloads in shipping fields are sanitized before storage
+  ✓ valid shipping confirmation transitions listing status to shipped
+  ✓ bidder cannot confirm delivery when listing is not yet shipped — forced delivery rejected
+  ✓ non-winner bidder cannot confirm delivery — 403
+  ✓ winning bidder confirming delivery transitions listing to delivered and releases escrow
+```
+
+| Test case | What it verifies |
+|---|---|
+| status guard on ship | `POST /:uuid/ship` on an active (not yet sold) listing returns 400 `INVALID_LISTING_STATUS` — shipping cannot be confirmed before payment |
+| role guard on ship | A bidder session on `POST /:uuid/ship` returns 403 — only donors may confirm shipping |
+| XSS sanitization | `<script>alert(1)</script>` in `trackingNumber`, `carrier`, and `notes` is HTML-escaped by `sanitizeText` before storage; the raw tag never reaches the DB |
+| ship transitions status | After `POST /:uuid/ship` returns 200, the DB row shows `status = 'shipped'` |
+| forced delivery rejected | `POST /:uuid/deliver` on a `sold` (not yet `shipped`) listing returns 400 `INVALID_LISTING_STATUS` — the `delivered` state cannot be reached without passing through `shipped` |
+| non-winner delivery blocked | A non-bidder session (admin) on `POST /:uuid/deliver` returns 403 |
+| full delivery flow | After a valid `POST /:uuid/deliver`, the listing status is `delivered` and the payment `escrow_state` is `released` |
+
+---
+
+### SFR16 — Admin Session Enforcement
+
+> The system shall provide an Admin dashboard to manage all entities, but must reject all access attempts or administrative actions from HTTP requests that lack a verified, unexpired Administrator-level session token.
+
+**Test file:** `backend/src/__tests__/routes/admin.routes.test.ts`
+
+```
+SFR16 — Admin Session Enforcement
+  ✓ rejects requests with no session cookie
+  ✓ rejects requests with a tampered JWT signature
+  ✓ rejects requests from a valid bidder session (role mismatch)
+  ✓ allows requests from a valid admin session
+  ✓ rejects requests after the absolute session lifetime is exceeded
+```
+
+| Test case | What it verifies |
+|---|---|
+| no session cookie | Unauthenticated requests receive 401 — the endpoint is never accessible without a session |
+| tampered JWT signature | Signature verification rejects a cookie whose last 4 signature chars have been flipped — forged tokens cannot reach the admin handler |
+| bidder session (role mismatch) | A valid but non-admin session receives 403 — authentication alone is not sufficient |
+| valid admin session | A correctly authenticated admin session receives 200 — the happy path works |
+| absolute session lifetime exceeded | When `absolute_expires_at` is wound back to the past in the DB, the same cookie now receives 401 — sliding session refresh cannot extend beyond the hard ceiling set at login |
+
+---
+
+### NFSR04 — WORM Enforcement on Audit Log
+
+> The audit logs shall be append-only and tamper-evident, implemented using Write-Once-Read-Many (WORM) storage, preventing any modification even by database admins.
+
+**Test file:** `backend/src/__tests__/routes/audit-log.test.ts`
+
+```
+NFSR04 — WORM enforcement on audit_events
+  ✓ UPDATE on an existing audit_events row is rejected at the database level
+  ✓ DELETE of a row younger than 365 days is rejected at the database level (NFSR10)
+```
+
+| Test case | What it verifies |
+|---|---|
+| UPDATE blocked | A direct `UPDATE audit_events SET action = 'TAMPERED'` via the DB connection raises an exception matching `/WORM violation/i` — the trigger fires even for privileged connections |
+| DELETE blocked within 365 days | A direct `DELETE FROM audit_events` on a freshly-inserted row raises an exception matching `/Retention policy violation/i` — rows cannot be purged before the compliance window elapses |
+
+**Implementation:** Two PostgreSQL row-level triggers in `schema.sql`:
+- `audit_events_no_update` — fires `BEFORE UPDATE`, always raises; implemented by `audit_events_block_update()`
+- `audit_events_retention` — fires `BEFORE DELETE`, raises if `OLD.timestamp > NOW() - INTERVAL '365 days'`; implemented by `audit_events_retention_check()`
+
+`TRUNCATE` (used only by the test-reset helper) bypasses row-level triggers by design and is not a production operation.
+
+---
+
+### NFSR10 — Centralized Security Event Log with 365-Day Retention
+
+> All security-relevant events (logins, bids, payments, admin actions, role changes) shall be logged in a centralized, immutable log server, and retained for a minimum compliance period of 365 days.
+
+**Test file:** `backend/src/__tests__/routes/audit-log.test.ts`
+
+```
+FSR16 — Immutable Audit Log
+  ✓ logs security-relevant events for bids, payments, and admin actions (NFSR10)
+```
+
+| Test case | What it verifies |
+|---|---|
+| NFSR10 event taxonomy | `AUTH_LOGIN_SUCCESS` is present; all auth events carry a non-null timestamp; the audit table is the single centralized store |
+
+**Covered event categories:**
+
+| Category | Actions logged |
+|---|---|
+| Logins / logouts / lockouts | `AUTH_LOGIN_SUCCESS`, `AUTH_LOGIN_FAILED`, `AUTH_LOGIN_LOCKED`, `AUTH_LOGOUT` |
+| Bids | `BID_ACCEPTED`, `BID_REJECTED_MIN_INCREMENT`, `AUTO_BID_CREATED`, `AUTO_BID_CANCELLED` |
+| Payments | `PAYMENT_OFFER_CREATED`, `PAYMENT_OFFER_REASSIGNED`, `PAYMENT_COMPLETED`, `PAYMENT_DEADLINE_MISSED`, `PAYMENT_ACCESS_DENIED`, `ESCROW_RELEASED` |
+| Admin actions | `USER_ACTIVATED`, `USER_DEACTIVATED`, `CHARITY_REVIEWED`, `LISTING_APPROVED`, `LISTING_REJECTED`, `LISTING_CHANGES_REQUESTED` |
+| Role changes | `CHARITY_STAFF_CREATED`, `CHARITY_STAFF_DEACTIVATED`, `CHARITY_STAFF_REACTIVATED` |
+| Session / access | `AUTH_SESSION_MISSING`, `AUTH_SESSION_INVALID`, `ACCESS_DENIED` |
+
+**Retention:** Enforced by the `audit_events_retention` trigger (see NFSR04 above). Rows younger than 365 days cannot be deleted even by a DBA.
+
+---
+
 ### FSR16 — Immutable Audit Log
 
 **Requirement:** The system shall generate an immutable, time-stamped log record for:
