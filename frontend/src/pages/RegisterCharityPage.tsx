@@ -118,7 +118,10 @@ export default function RegisterCharityPage() {
     try {
       // 1. Create User Account
       const emailPrefix = form.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
-      const generatedUsername = (emailPrefix.length < 3 ? (emailPrefix + 'user') : emailPrefix).slice(0, 30) + Math.floor(1000 + Math.random() * 9000);
+      const randomArray = new Uint32Array(1);
+      window.crypto.getRandomValues(randomArray);
+      const randomSuffix = 1000 + (randomArray[0] % 9000);
+      const generatedUsername = (emailPrefix.length < 3 ? (emailPrefix + 'user') : emailPrefix).slice(0, 30) + randomSuffix;
       const message = await register({ 
         full_name: form.full_name, 
         email: form.email, 
