@@ -64,26 +64,48 @@ export const sendPasswordResetOtp = async (email: string, otp: string): Promise<
 
 // SFR03 — OTP sent to the NEW address to prove the user controls it.
 export const sendEmailChangeOtp = async (newEmail: string, otp: string): Promise<void> => {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'production') {
+    await sendMail({
+      to: newEmail,
+      subject: 'BidForGood — Verify your new email address',
+      body: `Hello,\n\nYou requested to change the email address on your BidForGood account.\n\nYour verification code for your new email address is:\n\n    ${otp}\n\nThis code expires in 15 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
+  } else {
     devEmailChangeOtpOutbox.set(newEmail, otp);
     console.log('========================================');
     console.log('  EMAIL CHANGE OTP (new address)');
     console.log(`  email : ${newEmail}`);
     console.log(`  otp   : ${otp}`);
     console.log('========================================');
+    await sendMail({
+      to: newEmail,
+      subject: 'BidForGood — Verify your new email address',
+      body: `Hello,\n\nYou requested to change the email address on your BidForGood account.\n\nYour verification code for your new email address is:\n\n    ${otp}\n\nThis code expires in 15 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
   }
 };
 
 // SFR03 — OTP sent to the CURRENT address; doubles as the change notification so the
 // legitimate owner can catch an unexpected change before it takes effect.
 export const sendEmailChangeConfirmOtp = async (oldEmail: string, otp: string): Promise<void> => {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'production') {
+    await sendMail({
+      to: oldEmail,
+      subject: 'BidForGood — Confirm your email change',
+      body: `Hello,\n\nA request was made to change the email address on your BidForGood account.\n\nTo confirm this change, enter the verification code below:\n\n    ${otp}\n\nThis code expires in 15 minutes.\n\nIf you did not request this, please ignore this message and consider changing your password, as someone may be trying to access your account.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
+  } else {
     devEmailChangeOtpOutbox.set(oldEmail, otp);
     console.log('========================================');
     console.log('  EMAIL CHANGE OTP (current address)');
     console.log(`  email : ${oldEmail}`);
     console.log(`  otp   : ${otp}`);
     console.log('========================================');
+    await sendMail({
+      to: oldEmail,
+      subject: 'BidForGood — Confirm your email change',
+      body: `Hello,\n\nA request was made to change the email address on your BidForGood account.\n\nTo confirm this change, enter the verification code below:\n\n    ${otp}\n\nThis code expires in 15 minutes.\n\nIf you did not request this, please ignore this message and consider changing your password, as someone may be trying to access your account.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    });
   }
 };
 
