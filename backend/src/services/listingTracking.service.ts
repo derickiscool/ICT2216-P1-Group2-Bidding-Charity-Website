@@ -106,7 +106,7 @@ const statusCopy = (listing: Listing, nowMs: number): Pick<DonorListingTrackingI
       return {
         statusLabel: 'Changes Requested',
         statusMessage: listing.review_note
-          ? `The administrator asked for changes: "${listing.review_note}". Edit the listing to resubmit it for review.`
+          ? 'The administrator asked for changes before this listing can proceed. Review the note below, update the listing, and resubmit it for review.'
           : 'The administrator asked for changes before this listing can proceed. Edit the listing to resubmit it for review.',
       };
     case 'charity_review':
@@ -152,8 +152,8 @@ const statusCopy = (listing: Listing, nowMs: number): Pick<DonorListingTrackingI
           : listing.review_stage === 'admin' ? 'Rejected by Admin'
           : 'Rejected',
         statusMessage: listing.review_note
-          ? `This listing was rejected by ${rejectedBy}: "${listing.review_note}". This decision is final; to try again, submit a new listing.`
-          : `This listing was rejected by ${rejectedBy}. This decision is final; to try again, submit a new listing.`,
+          ? `This listing was rejected by ${rejectedBy}. Review the reason below, update the listing, and resubmit it for review.`
+          : `This listing was rejected by ${rejectedBy}. Update the listing and resubmit it for review.`,
       };
     }
     case 'cancelled':

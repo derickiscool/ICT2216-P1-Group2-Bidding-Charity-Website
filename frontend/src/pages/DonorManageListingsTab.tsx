@@ -63,6 +63,22 @@ function statusStyle(listing: DonorListingTrackingItem) {
   }
 }
 
+function editActionLabel(listing: DonorListingTrackingItem): string {
+  if (listing.status === 'rejected') return 'Resubmit'
+  if (listing.status === 'changes_requested') return 'Edit & Resubmit'
+  return 'Edit'
+}
+
+function editActionTitle(listing: DonorListingTrackingItem): string {
+  if (listing.status === 'rejected') return 'Update this rejected listing and resubmit it for review'
+  if (listing.status === 'changes_requested') return 'Update the requested changes and resubmit for review'
+  return listing.canEdit ? 'Edit listing' : 'Only pending, changes-requested, or rejected listings can be edited'
+}
+
+function isResubmissionStatus(status?: DonorListingTrackingItem['status']): boolean {
+  return status === 'rejected' || status === 'changes_requested'
+}
+
 function inputSt(hasErr: boolean, extra?: React.CSSProperties): React.CSSProperties {
   return {
     width: '100%', padding: '10px 14px', borderRadius: '8px',
@@ -212,7 +228,9 @@ export default function DonorManageListingsTab() {
     setSuccessMsg('')
     try {
       await api.patch(`/listings/${editing.uuid}`, payload)
-      setSuccessMsg('Listing updated successfully.')
+      setSuccessMsg(isResubmissionStatus(editing.status)
+        ? 'Listing resubmitted for administrator review.'
+        : 'Listing updated successfully.')
       setEditing(null)
       await fetchDashboard()
     } catch (err) {
@@ -318,6 +336,14 @@ export default function DonorManageListingsTab() {
                       </div>
                     </div>
                   </div>
+                  {isResubmissionStatus(listing.status) && listing.review_note && (
+                    <div className="rounded-xl p-3 mb-4" style={{ background: C.dangerLight, border: `1px solid ${C.dangerBorder}` }}>
+                      <p className="text-xs uppercase font-semibold" style={{ color: C.danger }}>
+                        {listing.status === 'rejected' ? 'Rejection Reason' : 'Requested Changes'}
+                      </p>
+                      <p className="text-sm mt-1 leading-relaxed" style={{ color: C.slate }}>{listing.review_note}</p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3 text-sm mb-4 mt-auto">
                     <div><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Starting Price</p><p className="font-black" style={{ color: C.emerald }}>${money(listing.starting_price)}</p></div>
                     <div><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>{listing.status === 'sold' ? 'Final Bid' : 'Current Bid'}</p><p className="font-black" style={{ color: C.slate }}>${money(listing.finalBidAmount ?? listing.current_bid)}</p></div>
@@ -330,8 +356,8 @@ export default function DonorManageListingsTab() {
                     <button type="button" disabled={!listing.canEdit} onClick={() => openEdit(listing)}
                       className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ borderColor: C.beige, color: C.slate, background: C.white }}
-                      title={listing.canEdit ? 'Edit listing' : 'Only pending or changes-requested listings can be edited'}>
-                      <Pencil className="w-4 h-4" /> Edit
+                      title={editActionTitle(listing)}>
+                      <Pencil className="w-4 h-4" /> {editActionLabel(listing)}
                     </button>
                     <button type="button" disabled={!listing.canDelete} onClick={() => setDeleting(listing)}
                       className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
@@ -353,12 +379,24 @@ export default function DonorManageListingsTab() {
           <div className="max-w-2xl mx-auto rounded-2xl shadow-xl" style={{ background: C.white }}>
             <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: C.beige }}>
               <div>
-                <h2 className="text-xl font-bold" style={{ color: C.slate }}>Edit Listing</h2>
-                <p className="text-xs mt-1" style={{ color: C.muted }}>Only pending or changes-requested listings can be edited.</p>
+                <h2 className="text-xl font-bold" style={{ color: C.slate }}>{isResubmissionStatus(editing.status) ? 'Resubmit Listing' : 'Edit Listing'}</h2>
+                <p className="text-xs mt-1" style={{ color: C.muted }}>
+                  {isResubmissionStatus(editing.status)
+                    ? 'Update the listing details below. Submitting will send it back to admin review.'
+                    : 'Only pending listings can be edited before review continues.'}
+                </p>
               </div>
               <button type="button" onClick={() => setEditing(null)} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-5 space-y-4">
+              {isResubmissionStatus(editing.status) && editing.review_note && (
+                <div className="rounded-xl px-4 py-3" style={{ background: C.dangerLight, border: `1px solid ${C.dangerBorder}` }}>
+                  <p className="text-xs uppercase font-bold" style={{ color: C.danger }}>
+                    {editing.status === 'rejected' ? 'Rejection Reason' : 'Requested Changes'}
+                  </p>
+                  <p className="text-sm mt-1 leading-relaxed" style={{ color: C.slate }}>{editing.review_note}</p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Title</label>
                 <input value={editForm.title} onChange={setField('title')} style={inputSt(!!editErrors.title)} />
@@ -418,7 +456,7 @@ export default function DonorManageListingsTab() {
             <div className="flex justify-end gap-3 p-5 border-t" style={{ borderColor: C.beige }}>
               <button type="button" onClick={() => setEditing(null)} className="px-4 py-2 rounded-xl text-sm font-semibold border" style={{ color: C.slate, borderColor: C.beige }}>Cancel</button>
               <button type="button" onClick={saveEdit} disabled={submitting} className="px-4 py-2 rounded-xl text-sm font-bold text-white inline-flex items-center gap-2 disabled:opacity-60" style={{ background: C.emerald }}>
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} {isResubmissionStatus(editing.status) ? 'Resubmit Listing' : 'Save Changes'}
               </button>
             </div>
           </div>
