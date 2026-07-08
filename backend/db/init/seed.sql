@@ -199,7 +199,8 @@ SELECT (SELECT id FROM listings WHERE title = 'Antique Pocket Watch'),
        'pending',
        NOW() + INTERVAL '24 hours',
        NOW()
-WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-POCKET-WATCH-001');
+WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-POCKET-WATCH-001')
+  AND NOT EXISTS (SELECT 1 FROM payments WHERE listing_id = (SELECT id FROM listings WHERE title = 'Antique Pocket Watch') AND status = 'pending');
 
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at)
 SELECT (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase'),
@@ -210,6 +211,7 @@ SELECT (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase'),
        'pending',
        NOW() + INTERVAL '48 hours',
        NOW()
-WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-CERAMIC-VASE-001');
+WHERE NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'DEMO-CERAMIC-VASE-001')
+  AND NOT EXISTS (SELECT 1 FROM payments WHERE listing_id = (SELECT id FROM listings WHERE title = 'Handcrafted Ceramic Vase') AND status = 'pending');
 
 COMMIT;
