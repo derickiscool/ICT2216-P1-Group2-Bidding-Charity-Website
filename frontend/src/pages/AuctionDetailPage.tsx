@@ -398,7 +398,7 @@ export default function AuctionDetailPage() {
               {/* ── Admin preview banner ───────────────────────────── */}
               {user?.roles?.includes('admin') && listing.status !== 'active' && (
                 <div className="mb-5 px-5 py-3 rounded-xl flex items-center gap-3"
-                  style={{ background: '#FEF9C3', border: '1px solid #CA8A04', color: '#713F12' }}>
+                  style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', color: '#92400E' }}>
                   <Shield className="w-4 h-4 flex-shrink-0" />
                   <div>
                     <p className="text-sm font-bold">Preview — {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)} Review</p>

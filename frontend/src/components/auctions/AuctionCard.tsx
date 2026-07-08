@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Flame, Clock } from 'lucide-react'
+import { Heart, Flame, Clock } from 'lucide-react'
 import type { Listing } from '../../types'
 
 export interface AuctionDummy {
@@ -20,13 +20,14 @@ const isListing = (auction: AuctionLike): auction is Listing => 'current_bid' in
 const timeLeft = (endTime: string, now: number): string => {
   const diff = new Date(endTime).getTime() - now
   if (diff <= 0) return 'Ended'
-  const days = Math.floor(diff / 86_400_000)
-  const hours = Math.floor((diff % 86_400_000) / 3_600_000)
+  const hours = Math.floor(diff / 3_600_000)
   const minutes = Math.floor((diff % 3_600_000) / 60_000)
-  return `${days}d ${hours}h ${minutes}m`
+  const seconds = Math.floor((diff % 60_000) / 1000)
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 export default function AuctionCard({ auction }: { auction: AuctionLike }) {
+  const [saved, setSaved] = useState(false)
   const [now, setNow] = useState(0)
   const urgent = isListing(auction) ? now > 0 && new Date(auction.end_time).getTime() - now < 3 * 60 * 60 * 1000 : auction.urgent
   const currentBid = isListing(auction) ? auction.current_bid : auction.bid
@@ -57,6 +58,13 @@ export default function AuctionCard({ auction }: { auction: AuctionLike }) {
             </div>
           )}
         </div>
+        <button
+          onClick={(e) => { e.preventDefault(); setSaved(v => !v) }}
+          className="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm hover:scale-110 transition-transform"
+          style={{ border: '1px solid var(--bfg-beige)' }}
+        >
+          <Heart className={`w-4 h-4 ${saved ? 'fill-current text-rose-500' : 'text-slate-400'}`} />
+        </button>
       </div>
 
       <div className="p-5">

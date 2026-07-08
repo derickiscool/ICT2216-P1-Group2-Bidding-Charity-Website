@@ -47,11 +47,6 @@ export default function AuctionsPage() {
         const res = await api.get<{ data: Listing[] }>('/listings', { params })
         let data = res.data.data
 
-        // Filter by category (client-side: match category against selected categories)
-        if (categories.length > 0) {
-          data = data.filter(l => categories.map(c => c.toLowerCase()).includes(l.category.toLowerCase()))
-        }
-
         // Filter by charity (client-side: match charityName against selected organisations)
         if (charityFilter.length > 0) {
           data = data.filter(l => charityFilter.includes(l.charityName ?? ''))
@@ -214,7 +209,7 @@ export default function AuctionsPage() {
                 <button onClick={clearAll}
                   className="w-full py-2.5 rounded-xl text-sm font-black uppercase tracking-widest text-white transition-opacity hover:opacity-90"
                   style={{ background: 'var(--bfg-emerald)' }}>
-                  Reset Filters
+                  Apply Filters
                 </button>
               )}
             </div>

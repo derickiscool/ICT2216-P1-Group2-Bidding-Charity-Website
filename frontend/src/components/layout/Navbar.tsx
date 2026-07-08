@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { ChevronDown, LogOut, LayoutDashboard, Settings, Menu, X } from 'lucide-react'
+import { Bell, Search, ChevronDown, LogOut, LayoutDashboard, Settings, Menu, X } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 // ─── Avatar dropdown ─────────────────────────────────────────────────────────
@@ -82,9 +82,16 @@ export default function Navbar() {
   const { user, isAuthenticated } = useAuthStore()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const navigate = useNavigate()
   const location = useLocation()
 
   const isHome = location.pathname === '/'
+
+  const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const q = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value
+    if (q.trim()) navigate(`/auctions?q=${encodeURIComponent(q)}`)
+  }
 
   const navStyle = isHome
     ? { background: 'rgba(45,58,58,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }
@@ -104,6 +111,25 @@ export default function Navbar() {
           BidForGood
         </Link>
 
+        {/* Search bar */}
+        <div className="flex-1 max-w-sm mx-auto hidden md:block">
+          <form onSubmit={handleSearch}>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#BBB09B' }} />
+              <input
+                type="text" name="q"
+                placeholder="Search auctions, charities..."
+                className="w-full pl-9 pr-4 py-2 rounded-xl text-sm outline-none transition-all"
+                style={{
+                  background: isHome ? 'rgba(255,255,255,0.1)' : '#F7F5F0',
+                  border: `1px solid ${isHome ? 'rgba(255,255,255,0.15)' : '#BBB09B'}`,
+                  color: isHome ? '#fff' : '#2D3A3A',
+                }}
+              />
+            </div>
+          </form>
+        </div>
+
         {/* Right nav */}
         <nav className="flex items-center gap-1 ml-auto flex-shrink-0">
           {['Browse', 'Charities'].map((label) => (
@@ -117,6 +143,15 @@ export default function Navbar() {
 
           {isAuthenticated && user ? (
             <>
+              {/* Notification bell */}
+              <Link to="/dashboard?tab=notifications"
+                className="relative w-9 h-9 flex items-center justify-center rounded-xl transition-colors"
+                style={{ color: linkColor }}>
+                <Bell className="w-4.5 h-4.5" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2"
+                  style={{ background: '#047857', borderColor: isHome ? '#2D3A3A' : '#fff' }} />
+              </Link>
+
               {/* Avatar */}
               <div className="relative ml-1">
                 <button onClick={() => setDropdownOpen(v => !v)}

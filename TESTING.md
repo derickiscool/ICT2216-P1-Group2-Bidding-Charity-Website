@@ -85,30 +85,30 @@ SFR16 — Admin Session Enforcement
 
 ### FSR-14 — Password Reset Flow
 
-> Users can reset their forgotten password via a 6-digit OTP delivered to their registered email. Admin accounts are explicitly excluded from this self-service flow.
+> Users can reset their forgotten password via a 256-bit single-use reset token delivered to their registered email. Admin accounts are explicitly excluded from this self-service flow.
 
 **Test file:** `backend/src/__tests__/routes/auth.routes.test.ts`
 
 ```
 Password Reset Flow
   ✓ always returns the generic message for an unknown email (user enumeration protection)
-  ✓ suppresses OTP for admin accounts — admin cannot reset password via this flow
-  ✓ generates a 6-digit OTP for a valid non-admin account
-  ✓ rejects reset with a wrong OTP but keeps the token for retry
-  ✓ locks out after 5 consecutive wrong OTP attempts
-  ✓ rejects reset with an expired OTP
+  ✓ suppresses reset tokens for admin accounts — admin cannot reset password via this flow
+  ✓ generates a 256-bit reset token for a valid non-admin account
+  ✓ rejects reset with a wrong token but keeps the token for retry
+  ✓ locks out after 5 consecutive wrong token attempts
+  ✓ rejects reset with an expired token
   ✓ resets password successfully, old password rejected, all sessions revoked
 ```
 
 | Test case | What it verifies |
 |---|---|
 | unknown email | Returns the same generic 200 response regardless of whether the email exists — prevents user enumeration |
-| admin account suppressed | `POST /forgot-password` with an admin email returns 200 but no OTP is generated and no token is stored — admins cannot self-service reset |
-| OTP generated for non-admin | A valid, active, verified non-admin account receives a 6-digit numeric OTP in the dev outbox |
-| wrong OTP — token persists | An incorrect token returns 400 `RESET_OTP_INVALID` but the token remains valid so the user can retry; the correct OTP still succeeds on the next attempt |
-| 5-attempt lockout | After 5 consecutive wrong OTP submissions the token is removed; the correct OTP then also fails with 400 `RESET_OTP_INVALID` |
-| expired OTP | Token is backdated in the DB; the correct OTP is still rejected with 400 `RESET_OTP_INVALID` and the token is cleaned up |
-| successful reset + session revocation | Valid OTP resets the password; the pre-existing session receives 401 on `/me`, old password login returns 401, new password login returns 200 |
+| admin account suppressed | `POST /forgot-password` with an admin email returns 200 but no reset token is generated or stored — admins cannot self-service reset |
+| token generated for non-admin | A valid, active, verified non-admin account receives a 43-character base64url reset token in the dev outbox |
+| wrong token - token persists | An incorrect token returns 400 `RESET_OTP_INVALID` but the token remains valid so the user can retry; the correct token still succeeds on the next attempt |
+| 5-attempt lockout | After 5 consecutive wrong token submissions the token is removed; the correct token then also fails with 400 `RESET_OTP_INVALID` |
+| expired token | Token is backdated in the DB; the correct token is still rejected with 400 `RESET_OTP_INVALID` and the token is cleaned up |
+| successful reset + session revocation | Valid token resets the password; the pre-existing session receives 401 on `/me`, old password login returns 401, new password login returns 200 |
 
 ---
 

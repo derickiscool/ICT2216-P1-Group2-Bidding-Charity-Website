@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
-import type { Listing, CharityStats, ApiError, Campaign, CharityOrganisation } from '../types'
+import type { Listing, CharityStats, ApiError, Campaign } from '../types'
 
 // Listing enriched with payment flags from backend
 interface SoldListingWithPayment extends Listing {
@@ -584,7 +584,6 @@ export default function CharityDashboard() {
   const [canManageCampaigns, setCanManageCampaigns] = useState(false)
   const [staff, setStaff] = useState<StaffAccount[]>([])
   const [notRegistered, setNotRegistered] = useState(false)
-  const [charityDetails, setCharityDetails] = useState<CharityOrganisation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [listingsFilter, setListingsFilter] = useState<string>('all')
@@ -601,7 +600,7 @@ export default function CharityDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const dashRes = api.get<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }>('/charities/dashboard')
+      const dashRes = api.get<{ charity: Record<string, unknown> | null; listings: Listing[]; stats: CharityStats }>('/charities/dashboard')
       const campRes = api.get<CampaignListResponse>('/charities/campaigns').catch(() => ({ data: { campaigns: [] as Campaign[], canManageCampaigns: false } }))
       const staffRes = isOwner
         ? api.get<{ staff: StaffAccount[] }>('/charities/staff').catch(() => ({ data: { staff: [] as StaffAccount[] } }))
@@ -609,11 +608,7 @@ export default function CharityDashboard() {
 
       const [dash, camps, staffData] = await Promise.all([dashRes, campRes, staffRes])
 
-      if (!dash.data.charity) {
-        setNotRegistered(true)
-      } else {
-        setCharityDetails(dash.data.charity)
-      }
+      if (!dash.data.charity) setNotRegistered(true)
       setListings(dash.data.listings)
       setStats(dash.data.stats)
       setCampaigns(camps.data.campaigns ?? [])
@@ -848,48 +843,6 @@ export default function CharityDashboard() {
             className="inline-block px-6 py-3 rounded-xl text-white font-semibold"
             style={{ background: C.emerald }}>
             Register Charity →
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  if (charityDetails && charityDetails.status === 'pending') {
-    return (
-      <div className="min-h-[calc(100vh-64px)] flex items-center justify-center" style={{ background: C.linen }}>
-        <div className="text-center max-w-md mx-auto p-8 rounded-2xl bg-white shadow-sm border" style={{ borderColor: C.beige }}>
-          <Clock className="w-12 h-12 mx-auto mb-4 animate-pulse" style={{ color: '#92400E' }} />
-          <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>Registration Pending Review</h2>
-          <p className="text-sm mb-4" style={{ color: C.muted }}>
-            Your charity registration for <span className="font-bold text-slate-800">{charityDetails.organisationName}</span> is currently pending administrator review.
-          </p>
-          <p className="text-xs" style={{ color: C.muted }}>
-            We are reviewing your application and supporting document. Please check back later.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  if (charityDetails && charityDetails.status === 'rejected') {
-    return (
-      <div className="min-h-[calc(100vh-64px)] flex items-center justify-center" style={{ background: C.linen }}>
-        <div className="text-center max-w-lg mx-auto p-8 rounded-2xl bg-white shadow-sm border" style={{ borderColor: C.dangerBorder }}>
-          <AlertCircle className="w-12 h-12 mx-auto mb-4" style={{ color: C.danger }} />
-          <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>Charity Registration Rejected</h2>
-          <p className="text-sm mb-4" style={{ color: C.muted }}>
-            Your registration for <span className="font-bold text-slate-800">{charityDetails.organisationName}</span> was rejected by the administrator.
-          </p>
-          {charityDetails.rejectionReason && (
-            <div className="mb-6 p-4 rounded-xl text-left border" style={{ background: C.dangerLight, borderColor: C.dangerBorder, color: C.danger }}>
-              <p className="text-xs font-black uppercase tracking-wider mb-1">Rejection Reason:</p>
-              <p className="text-sm leading-relaxed">{charityDetails.rejectionReason}</p>
-            </div>
-          )}
-          <Link to="/register/charity"
-            className="inline-block px-6 py-3 rounded-xl text-white font-semibold transition-opacity hover:opacity-90"
-            style={{ background: C.emerald }}>
-            Reapply for Registration
           </Link>
         </div>
       </div>

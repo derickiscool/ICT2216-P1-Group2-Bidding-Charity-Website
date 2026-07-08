@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Eye, EyeOff, AlertCircle, Loader2, Building2, ShieldCheck, UploadCloud, FileText, X } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api from '../services/api'
-import type { ApiError, CharityOrganisation } from '../types'
+import type { ApiError } from '../types'
 
 // Claude's Updated Palette
 const C = {
@@ -32,7 +32,7 @@ function pwdStrength(p: string) {
 
 
 export default function RegisterCharityPage() {
-  const { register, verifyRegistration, login, isLoading, user } = useAuthStore()
+  const { register, verifyRegistration, login, isLoading } = useAuthStore()
 
   const [form, setForm] = useState({
     org_name: '', description: '',
@@ -53,24 +53,7 @@ export default function RegisterCharityPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  useEffect(() => {
-    if (user) {
-      api.get<{ charity: CharityOrganisation | null }>('/charities/dashboard')
-        .then(res => {
-          const charity = res.data.charity
-          if (charity) {
-            setForm(prev => ({
-              ...prev,
-              org_name: charity.organisationName || '',
-              description: charity.description || ''
-            }))
-          }
-        })
-        .catch(console.error)
-    }
-  }, [user])
-
-  const set = (f: 'org_name' | 'description' | 'full_name' | 'email' | 'password' | 'confirm') => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setForm(prev => ({ ...prev, [f]: e.target.value }))
     setErrors(prev => ({ ...prev, [f]: '' }))
   }
@@ -130,36 +113,6 @@ export default function RegisterCharityPage() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setGlobalErr(null); setNotice(null)
-    if (user) {
-      const errs: Record<string, string> = {}
-      if (!form.org_name.trim()) errs.org_name = 'Organization name is required.'
-      else if (form.org_name.length < 2) errs.org_name = 'Must be at least 2 characters.'
-      if (!form.description.trim()) errs.description = 'Description is required.'
-      else if (form.description.length < 10) errs.description = 'Description must be at least 10 characters.'
-      if (!file) errs.file = 'Supporting document is required.'
-      setErrors(errs);
-      if (Object.keys(errs).length > 0) return;
-
-      setIsSubmitting(true)
-      try {
-        const formData = new FormData()
-        formData.append('organisationName', form.org_name)
-        formData.append('description', form.description)
-        if (file) formData.append('supportingDocument', file)
-
-        await api.post('/charities/register', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        })
-        setStep('complete')
-      } catch (err) {
-        const ae = err as ApiError
-        setGlobalErr(ae.message || 'Charity application failed. Please try again.')
-      } finally {
-        setIsSubmitting(false)
-      }
-      return;
-    }
-
     if (!validate()) return
 
     try {
@@ -361,65 +314,61 @@ export default function RegisterCharityPage() {
             </div>
 
             {/* Representative Details Section */}
-            {!user && (
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b pb-2" style={{ color: C.slate, borderColor: C.beige }}>Representative Account</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Full Name</label>
-                    <input type="text" value={form.full_name} onChange={set('full_name')} style={inputSt(!!errors.full_name)} />
-                    {errors.full_name && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.full_name}</p>}
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b pb-2" style={{ color: C.slate, borderColor: C.beige }}>Representative Account</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Full Name</label>
+                  <input type="text" value={form.full_name} onChange={set('full_name')} style={inputSt(!!errors.full_name)} />
+                  {errors.full_name && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.full_name}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Work Email</label>
+                  <input type="email" value={form.email} onChange={set('email')} style={inputSt(!!errors.email)} />
+                  {errors.email && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.email}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Password</label>
+                  <div className="relative">
+                    <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={set('password')} style={inputSt(!!errors.password, { paddingRight: '42px' })} />
+                    <button type="button" onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
+                      {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Work Email</label>
-                    <input type="email" value={form.email} onChange={set('email')} style={inputSt(!!errors.email)} />
-                    {errors.email && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.email}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Password</label>
-                    <div className="relative">
-                      <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={set('password')} style={inputSt(!!errors.password, { paddingRight: '42px' })} />
-                      <button type="button" onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
-                        {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    {form.password && (
-                      <div className="mt-2">
-                        <div className="flex gap-1 mb-1">
-                          {[1, 2, 3, 4].map(i => (
-                            <div key={i} className="h-1 flex-1 rounded-full transition-colors"
-                              style={{ background: i <= strength.score ? strength.color : '#E5E7EB' }} />
-                          ))}
-                        </div>
-                        <p className="text-xs font-medium" style={{ color: strength.color }}>{strength.label}</p>
+                  {form.password && (
+                    <div className="mt-2">
+                      <div className="flex gap-1 mb-1">
+                        {[1, 2, 3, 4].map(i => (
+                          <div key={i} className="h-1 flex-1 rounded-full transition-colors"
+                            style={{ background: i <= strength.score ? strength.color : '#E5E7EB' }} />
+                        ))}
                       </div>
-                    )}
-                    {errors.password && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.password}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Confirm Password</label>
-                    <div className="relative">
-                      <input type={showCfm ? 'text' : 'password'} value={form.confirm} onChange={set('confirm')} style={inputSt(!!errors.confirm, { paddingRight: '42px' })} />
-                      <button type="button" onClick={() => setShowCfm(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
-                        {showCfm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                      <p className="text-xs font-medium" style={{ color: strength.color }}>{strength.label}</p>
                     </div>
-                    {errors.confirm && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.confirm}</p>}
+                  )}
+                  {errors.password && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.password}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Confirm Password</label>
+                  <div className="relative">
+                    <input type={showCfm ? 'text' : 'password'} value={form.confirm} onChange={set('confirm')} style={inputSt(!!errors.confirm, { paddingRight: '42px' })} />
+                    <button type="button" onClick={() => setShowCfm(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: C.beige }}>
+                      {showCfm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
+                  {errors.confirm && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.confirm}</p>}
                 </div>
               </div>
-            )}
+            </div>
 
-            <button type="submit" disabled={isLoading || isSubmitting} className="w-full py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all mt-4" style={{ background: (isLoading || isSubmitting) ? '#6ba88e' : C.emerald, cursor: (isLoading || isSubmitting) ? 'not-allowed' : 'pointer' }}>
-              {isSubmitting || isLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting Application...</> : user ? 'Submit Application' : 'Continue to Verification'}
+            <button type="submit" disabled={isLoading} className="w-full py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all mt-4" style={{ background: isLoading ? '#6ba88e' : C.emerald, cursor: isLoading ? 'not-allowed' : 'pointer' }}>
+              {isLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Starting Application...</> : 'Continue to Verification'}
             </button>
           </form>
 
-          {!user && (
-            <p className="text-center text-sm mt-6" style={{ color: C.muted }}>
-              Are you a bidder or donor? <Link to="/register" className="font-semibold" style={{ color: C.emerald }}>Register here</Link>
-            </p>
-          )}
+          <p className="text-center text-sm mt-6" style={{ color: C.muted }}>
+            Are you a bidder or donor? <Link to="/register" className="font-semibold" style={{ color: C.emerald }}>Register here</Link>
+          </p>
         </div>
       </div>
     </div>

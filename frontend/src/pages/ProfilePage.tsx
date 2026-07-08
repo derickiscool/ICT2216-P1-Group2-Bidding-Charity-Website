@@ -18,8 +18,12 @@ type ProfileForm = { full_name: string; username: string; email: string; contact
 type EditableProfileField = 'full_name' | 'username' | 'contact_number'
 type PasswordForm = { currentPassword: string; newPassword: string; confirmPassword: string; verificationCode: string }
 type PasswordField = keyof PasswordForm
+type EmailChangeForm = { currentPassword: string; newEmail: string; currentCode: string; newCode: string }
+type EmailChangeField = keyof EmailChangeForm
+type EmailChangeStep = 'idle' | 'current_sent' | 'new_sent'
 
 const emptyPwd: PasswordForm = { currentPassword: '', newPassword: '', confirmPassword: '', verificationCode: '' }
+const emptyEmailChange: EmailChangeForm = { currentPassword: '', newEmail: '', currentCode: '', newCode: '' }
 
 function inputSt(hasErr: boolean, extra?: CSSProperties): CSSProperties {
   return {
@@ -89,17 +93,25 @@ export default function ProfilePage() {
 
   const [profileEdits, setProfileEdits] = useState<Partial<ProfileForm>>({})
   const [passwords, setPasswords] = useState<PasswordForm>(emptyPwd)
+  const [emailChange, setEmailChange] = useState<EmailChangeForm>(emptyEmailChange)
   const [profileErrs, setProfileErrs] = useState<Record<string, string>>({})
   const [pwdErrs, setPwdErrs] = useState<Record<string, string>>({})
+  const [emailErrs, setEmailErrs] = useState<Record<string, string>>({})
   const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [emailMsg, setEmailMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [emailStep, setEmailStep] = useState<EmailChangeStep>('idle')
 
   const [savingProfile, setSavingProfile] = useState(false)
   const [requestingCode, setRequestingCode] = useState(false)
   const [savingPwd, setSavingPwd] = useState(false)
+  const [requestingEmailChange, setRequestingEmailChange] = useState(false)
+  const [verifyingCurrentEmail, setVerifyingCurrentEmail] = useState(false)
+  const [savingEmailChange, setSavingEmailChange] = useState(false)
   const [showCur, setShowCur] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showCfm, setShowCfm] = useState(false)
+  const [showEmailPassword, setShowEmailPassword] = useState(false)
 
   const original = useMemo(() => toForm(user), [user])
   const profile = useMemo<ProfileForm>(() => ({ ...original, ...profileEdits }), [original, profileEdits])
@@ -149,6 +161,13 @@ export default function ProfilePage() {
     })
 
     setPwdMsg(null)
+  }
+
+  const setEmailField = (key: EmailChangeField) => (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setEmailChange(prev => ({ ...prev, [key]: key === 'newEmail' ? value.trim() : value }))
+    setEmailErrs(prev => ({ ...prev, [key]: '' }))
+    setEmailMsg(null)
   }
 
   function validateProfile() {
@@ -291,6 +310,79 @@ export default function ProfilePage() {
     }
   }
 
+  async function requestEmailChange(e: FormEvent) {
+    e.preventDefault()
+    setEmailMsg(null)
+    const errors: Record<string, string> = {}
+    const newEmail = emailChange.newEmail.trim()
+    if (!emailChange.currentPassword) errors.currentPassword = 'Current password is required.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) errors.newEmail = 'Enter a valid email address.'
+    if (newEmail.toLowerCase() === profile.email.toLowerCase()) errors.newEmail = 'New email must be different from your current email.'
+    setEmailErrs(errors)
+    if (Object.keys(errors).length > 0) return
+
+    try {
+      setRequestingEmailChange(true)
+      await api.post('/users/profile/email/request', {
+        currentPassword: emailChange.currentPassword,
+        newEmail,
+      })
+      setEmailStep('current_sent')
+      setEmailMsg({ type: 'success', text: 'Code sent to your current email address.' })
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setEmailErrs(ae.errors)
+      else setEmailMsg({ type: 'error', text: errMsg(err, 'Unable to start email change right now. Please try again later.') })
+    } finally {
+      setRequestingEmailChange(false)
+    }
+  }
+
+  async function verifyCurrentEmailCode() {
+    setEmailMsg(null)
+    if (!/^\d{6}$/.test(emailChange.currentCode.trim())) {
+      setEmailErrs(prev => ({ ...prev, currentCode: 'Enter the 6-digit code from your current email.' }))
+      return
+    }
+
+    try {
+      setVerifyingCurrentEmail(true)
+      await api.post('/users/profile/email/verify-current', { verificationCode: emailChange.currentCode.trim() })
+      setEmailStep('new_sent')
+      setEmailMsg({ type: 'success', text: 'Code sent to your new email address.' })
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setEmailErrs(ae.errors)
+      else setEmailMsg({ type: 'error', text: errMsg(err, 'Unable to verify current email code. Please try again later.') })
+    } finally {
+      setVerifyingCurrentEmail(false)
+    }
+  }
+
+  async function saveEmailChange() {
+    setEmailMsg(null)
+    if (!/^\d{6}$/.test(emailChange.newCode.trim())) {
+      setEmailErrs(prev => ({ ...prev, newCode: 'Enter the 6-digit code from your new email.' }))
+      return
+    }
+
+    try {
+      setSavingEmailChange(true)
+      await api.put('/users/profile/email', { verificationCode: emailChange.newCode.trim() })
+      await fetchMe()
+      setEmailChange(emptyEmailChange)
+      setEmailErrs({})
+      setEmailStep('idle')
+      setEmailMsg({ type: 'success', text: 'Email updated successfully.' })
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setEmailErrs(ae.errors)
+      else setEmailMsg({ type: 'error', text: errMsg(err, 'Unable to update email right now. Please try again later.') })
+    } finally {
+      setSavingEmailChange(false)
+    }
+  }
+
   return (
     <div className="min-h-[calc(100vh-64px)] px-6 py-10" style={{ background: C.linen }}>
       <div className="max-w-5xl mx-auto">
@@ -310,7 +402,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
-                  <IconInput label="Email address" icon={<Mail className="w-4 h-4" />} value={profile.email} disabled note="Email cannot be changed from the profile page." />
+                  <IconInput label="Email address" icon={<Mail className="w-4 h-4" />} value={profile.email} disabled note="Use the secure email change flow below." />
                   <IconInput label="Contact number" icon={<Phone className="w-4 h-4" />} value={profile.contact_number} error={profileErrs.contact_number} onChange={setProfileField('contact_number')} autoComplete="tel" placeholder="+65 9123 4567" maxLength={13} inputMode="tel" />
                 </div>
 
@@ -321,6 +413,55 @@ export default function ProfilePage() {
                     {savingProfile ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : <><Save className="w-4 h-4" />Save changes</>}
                   </button>
                 </div>
+              </form>
+            </Card>
+
+            <Card icon={<Mail className="w-5 h-5" />} title="Change email address" desc="Confirm your password, then verify both email addresses." accent="mauve">
+              <form onSubmit={requestEmailChange} noValidate className="space-y-5">
+                <Alert msg={emailMsg} />
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <PasswordInput label="Current password" value={emailChange.currentPassword} error={emailErrs.currentPassword} show={showEmailPassword} setShow={setShowEmailPassword} onChange={setEmailField('currentPassword')} autoComplete="current-password" />
+                  <TextInput label="New email address" value={emailChange.newEmail} error={emailErrs.newEmail} onChange={setEmailField('newEmail')} autoComplete="email" maxLength={254} />
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button type="submit" disabled={requestingEmailChange}
+                    className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+                    style={{ background: requestingEmailChange ? '#6ba88e' : C.emerald, cursor: requestingEmailChange ? 'not-allowed' : 'pointer' }}>
+                    {requestingEmailChange ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send current-email code</>}
+                  </button>
+                </div>
+
+                {emailStep !== 'idle' && (
+                  <div className="grid md:grid-cols-2 gap-4 pt-2">
+                    <div>
+                      <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Current email code</label>
+                      <div className="grid sm:grid-cols-[1fr_auto] gap-3">
+                        <input type="text" value={emailChange.currentCode} onChange={setEmailField('currentCode')} autoComplete="one-time-code" inputMode="numeric" maxLength={6} placeholder="6-digit code" style={inputSt(!!emailErrs.currentCode)} />
+                        <button type="button" onClick={() => { void verifyCurrentEmailCode() }} disabled={verifyingCurrentEmail || emailStep === 'new_sent'}
+                          className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+                          style={{ background: verifyingCurrentEmail || emailStep === 'new_sent' ? '#6ba88e' : C.emerald, cursor: verifyingCurrentEmail || emailStep === 'new_sent' ? 'not-allowed' : 'pointer' }}>
+                          {verifyingCurrentEmail ? <><Loader2 className="w-4 h-4 animate-spin" />Checking…</> : 'Verify'}
+                        </button>
+                      </div>
+                      {emailErrs.currentCode && <p className="text-xs mt-1" style={{ color: C.danger }}>{emailErrs.currentCode}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>New email code</label>
+                      <div className="grid sm:grid-cols-[1fr_auto] gap-3">
+                        <input type="text" value={emailChange.newCode} onChange={setEmailField('newCode')} autoComplete="one-time-code" inputMode="numeric" maxLength={6} placeholder="6-digit code" disabled={emailStep !== 'new_sent'} style={inputSt(!!emailErrs.newCode, { background: emailStep !== 'new_sent' ? C.linen : '#fff' })} />
+                        <button type="button" onClick={() => { void saveEmailChange() }} disabled={savingEmailChange || emailStep !== 'new_sent'}
+                          className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+                          style={{ background: savingEmailChange || emailStep !== 'new_sent' ? '#6ba88e' : C.emerald, cursor: savingEmailChange || emailStep !== 'new_sent' ? 'not-allowed' : 'pointer' }}>
+                          {savingEmailChange ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : 'Update'}
+                        </button>
+                      </div>
+                      {emailErrs.newCode && <p className="text-xs mt-1" style={{ color: C.danger }}>{emailErrs.newCode}</p>}
+                    </div>
+                  </div>
+                )}
               </form>
             </Card>
 
