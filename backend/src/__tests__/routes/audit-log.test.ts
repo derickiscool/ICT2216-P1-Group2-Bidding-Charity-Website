@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, test } from '@jest/globals';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { startServer, stopServer, postJson } from '../helpers/setup';
+import { startServer, stopServer, postJson, request } from '../helpers/setup';
 import { getAuditEvents } from '../../services/audit.service';
 import { query } from '../../utils/db';
 
@@ -115,6 +115,77 @@ describe('NFSR04 — WORM enforcement on audit_events', () => {
         assert.match(err.message, /Retention policy violation/i, 'DB trigger must reject premature DELETE with retention message');
         return true;
       },
+    );
+  });
+});
+
+describe('FSR16 — Audit coverage for access-control violations', () => {
+  test('writes CSRF_VALIDATION_FAILED when a mutation is sent with a wrong CSRF token', async () => {
+    // Login to obtain a valid session (so the route is reached and CSRF is checked)
+    const login = await postJson('/api/auth/login', {
+      email: 'bidder@bidforgood.test',
+      password: 'S3cure!Pass2026',
+    });
+    assert.equal(login.response.status, 200);
+    const cookie = login.setCookie!.split(';')[0];
+
+    const before = await getAuditEvents();
+
+    // Send a state-changing request with a deliberately wrong CSRF token
+    const res = await request('/api/users/profile', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        cookie,
+        'x-csrf-token': 'deliberate-wrong-csrf-token',
+      },
+      body: JSON.stringify({ full_name: 'Test' }),
+    });
+    assert.equal(res.response.status, 403);
+    assert.equal(res.body.code, 'CSRF_FAILED');
+
+    const after = await getAuditEvents();
+    const newEvents = after.slice(before.length);
+    assert.ok(
+      newEvents.some(e => e.action === 'CSRF_VALIDATION_FAILED'),
+      'CSRF_VALIDATION_FAILED must be written to audit_events',
+    );
+  });
+
+  test('writes AUTH_SESSION_INVALID when an expired/tampered token is sent to an optional-auth route', async () => {
+    const before = await getAuditEvents();
+
+    // GET /api/listings/:uuid uses authenticateOptional — a tampered JWT must
+    // cause verifySessionToken to throw and write AUTH_SESSION_INVALID before next().
+    await request('/api/listings/00000000-0000-0000-0000-000000000000', {
+      headers: { cookie: 'bfg_session=tampered.jwt.token' },
+    });
+
+    const after = await getAuditEvents();
+    const newEvents = after.slice(before.length);
+    assert.ok(
+      newEvents.some(e => e.action === 'AUTH_SESSION_INVALID'),
+      'AUTH_SESSION_INVALID must be written to audit_events even on optional-auth routes',
+    );
+  });
+
+  test('writes INPUT_REJECTED for every 400 AppError', async () => {
+    const before = await getAuditEvents();
+
+    // SQL-injection-like search query triggers 400 UNSAFE_SEARCH_QUERY without needing auth or state
+    const res = await request("/api/listings?q=' OR 1=1--");
+    assert.equal(res.response.status, 400);
+    assert.equal(res.body.code, 'UNSAFE_SEARCH_QUERY');
+
+    // error.middleware uses `void audit(...)` (fire-and-forget) so the DB write
+    // may complete slightly after the HTTP response. Wait briefly before checking.
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const after = await getAuditEvents();
+    const newEvents = after.slice(before.length);
+    assert.ok(
+      newEvents.some(e => e.action === 'INPUT_REJECTED'),
+      'INPUT_REJECTED must be written to audit_events for every 400 AppError',
     );
   });
 });

@@ -424,3 +424,69 @@ describe('Password Reset Flow', () => {
     assert.equal(newLogin.response.status, 200);
   });
 });
+
+describe('FSR15 — Passwordless Authentication', () => {
+  test('non-admin user can request a passwordless OTP and log in with it', async () => {
+    const email = 'fsr15-passwordless@example.com';
+    const password = 'correcthorsebatterystaple8';
+    await registerVerifiedUser({
+      email,
+      username: 'fsr15passwordless',
+      full_name: 'FSR15 Passwordless',
+      password,
+      roles: ['bidder'],
+    });
+
+    // Step 1: request OTP — returns 202 regardless of whether the email exists (anti-enumeration)
+    const requested = await postJson('/api/auth/login/passwordless/request', { email });
+    assert.equal(requested.response.status, 202);
+    assert.match(requested.body.message, /if the email matches/i);
+
+    const otp = readDevOtpForTest(email);
+    assert.match(String(otp), /^\d{6}$/, 'OTP must be a 6-digit code');
+
+    // Step 2: verify OTP — issues a session cookie identical to password login
+    const verified = await postJson('/api/auth/login/passwordless/verify', { email, otp });
+    assert.equal(verified.response.status, 200);
+    assert.ok(verified.setCookie?.includes('HttpOnly'), 'session cookie must be HttpOnly');
+    assert.ok(verified.setCookie?.includes('SameSite=Strict'), 'session cookie must be SameSite=Strict');
+    assert.ok(verified.csrf, 'CSRF token must be issued alongside the session cookie');
+    assert.equal(verified.body.token, undefined, 'raw token must not appear in the response body');
+  });
+
+  test('passwordless OTP is rejected after three wrong attempts', async () => {
+    const email = 'fsr15-lockout@example.com';
+    const password = 'correcthorsebatterystaple9';
+    await registerVerifiedUser({
+      email,
+      username: 'fsr15lockout',
+      full_name: 'FSR15 Lockout',
+      password,
+      roles: ['bidder'],
+    });
+
+    await postJson('/api/auth/login/passwordless/request', { email });
+    const otp = readDevOtpForTest(email);
+    assert.match(String(otp), /^\d{6}$/);
+
+    // First two wrong OTPs return 401; the third hits MAX_OTP_ATTEMPTS and returns 429
+    for (let i = 0; i < 2; i++) {
+      const wrong = await postJson('/api/auth/login/passwordless/verify', { email, otp: '000000' });
+      assert.equal(wrong.response.status, 401);
+    }
+    const maxed = await postJson('/api/auth/login/passwordless/verify', { email, otp: '000000' });
+    assert.equal(maxed.response.status, 429);
+
+    // OTP has been removed — the correct code now also fails (missing OTP)
+    const correct = await postJson('/api/auth/login/passwordless/verify', { email, otp });
+    assert.equal(correct.response.status, 401);
+  });
+
+  test('anti-enumeration: unknown email returns the same 202 generic response', async () => {
+    const res = await postJson('/api/auth/login/passwordless/request', {
+      email: 'nobody-fsr15@example.com',
+    });
+    assert.equal(res.response.status, 202);
+    assert.match(res.body.message, /if the email matches/i);
+  });
+});

@@ -381,3 +381,145 @@ Written by morgan on every request. Append-only, timestamped, human-readable. Ea
 | `RATE_LIMITED` | Any route → 429 |
 
 A dedicated `logs/bid-audit.log` additionally captures every bid/payment endpoint hit with the bid amount included.
+
+---
+
+### SFR03 / FSR12 — XSS Rejection in Profile Fields (F-006)
+
+**Requirement:** The system shall reject user-supplied profile data that contains script-like or event-handler payloads, preventing stored XSS attacks via the `full_name` field.
+
+**Test file:** `backend/src/__tests__/routes/profile.routes.test.ts`
+
+```
+SFR03 / FSR12 — script injection rejected in profile fields (F-006)
+  ✓ rejects <script>, event-handler, and iframe payloads in full_name
+```
+
+| Test case | What is asserted |
+|---|---|
+| rejects script payloads in full_name | Four XSS payloads (`<script>alert(1)</script>`, `"onmouseover="alert(1)`, `<iframe src=evil.com>`, `javascript:alert(1)`) each return 400 with `errors.full_name` matching `/invalid character/i`; a legitimate name `Danial Irfan` is accepted with 200 |
+
+**Implementation:** `containsScriptLikeContent()` in `backend/src/utils/security.ts` is called inside `updateProfile()` in `profile.service.ts`. Any match throws `badRequest` before the DB write.
+
+---
+
+### SFR04 — PDF Magic-Byte Strict Check (F-007)
+
+**Requirement:** Supporting documents claiming to be PDFs must be verified by the full 5-byte magic sequence `%PDF-` (not just the 4-byte `%PDF` prefix), so crafted binary files with a bare `%PDF` header are rejected.
+
+**Test file:** `backend/src/__tests__/routes/charity.routes.test.ts`
+
+```
+SFR04/SFR05 — Charity Document Upload & Admin Review
+  ✓ rejects a file whose first 4 bytes spell %PDF but lacks the mandatory version dash (F-007)
+```
+
+| Test case | What is asserted |
+|---|---|
+| truncated PDF magic bytes | A buffer starting with `%PDFmalicious…` (no version dash) returns 400 `UNSUPPORTED_DOCUMENT` — the 5-byte check distinguishes crafted files from real PDFs |
+
+**Implementation:** `detectMime()` in `backend/src/services/charity.service.ts` compares `buffer.subarray(0, 5).toString('ascii')` against `'%PDF-'`.
+
+---
+
+### SFR16 — Admin Self-Lockout Guard (F-005)
+
+**Requirement:** An administrator must not be able to deactivate their own account through the admin user-status endpoint, preventing accidental or malicious self-lockout from the system.
+
+**Test file:** `backend/src/__tests__/routes/admin.routes.test.ts`
+
+```
+SFR16 — Admin Self-Lockout Guard (F-005)
+  ✓ rejects an administrator attempting to disable their own account
+  ✓ allows an administrator to change the status of a different account
+```
+
+| Test case | What is asserted |
+|---|---|
+| self-disable rejected | Admin fetches their own UUID via `/api/auth/me`, sends `PATCH /api/admin/users/:uuid/status` with `{ is_active: false }` — receives 400 `SELF_ACTION_FORBIDDEN` |
+| other-user status change allowed | Admin deactivates a bidder account (200, `is_active: false`), then reactivates it (200, `is_active: true`) — the guard only blocks self-targeting |
+
+**Implementation:** `toggleUserStatus()` in `backend/src/controllers/admin.controller.ts` compares the path UUID against `req.user?.uuid` and throws `badRequest` on a match.
+
+---
+
+### FSR15 — Passwordless Authentication (Email OTP Login)
+
+**Requirement:** Non-admin users may authenticate using a one-time passcode sent to their email. The OTP must be single-use, expire after the defined window, and lock the account after a fixed number of failed attempts. The request-OTP endpoint must respond identically for both registered and unregistered emails to prevent user enumeration.
+
+**Test file:** `backend/src/__tests__/routes/auth.routes.test.ts`
+
+```
+FSR15 — Passwordless Authentication
+  ✓ issues an HttpOnly SameSite=Strict session cookie on correct OTP
+  ✓ locks out after three wrong OTPs and rejects the correct one afterwards
+  ✓ returns the same 202 response for an unknown email (anti-enumeration)
+```
+
+| Test case | What is asserted |
+|---|---|
+| correct OTP flow | `POST /api/auth/otp/request` returns 202; `POST /api/auth/otp/verify` with the dev-outbox OTP returns 200 with an `HttpOnly; SameSite=Strict` session cookie and no token in the body |
+| lockout after 3 wrong OTPs | First 2 wrong OTPs → 401 each; 3rd wrong OTP → 429 (OTP removed); correct OTP submitted after lockout → 401 (OTP is gone) |
+| unknown email | `POST /api/auth/otp/request` with a non-existent email still returns 202 with the same generic message — prevents enumeration |
+
+---
+
+### FSR16 — Audit Coverage for Access-Control Violations
+
+**Requirement:** The immutable audit log must capture CSRF validation failures and invalid/expired session usage even on optional-auth routes — not only on routes that require a fully authenticated session.
+
+**Test file:** `backend/src/__tests__/routes/audit-log.test.ts`
+
+```
+FSR16 — Audit coverage for access-control violations
+  ✓ writes CSRF_VALIDATION_FAILED when a mutation is sent with a wrong CSRF token
+  ✓ writes AUTH_SESSION_INVALID when an expired/tampered token is sent to an optional-auth route
+  ✓ writes INPUT_REJECTED for every 400 AppError
+```
+
+| Test case | What is asserted |
+|---|---|
+| CSRF violation audited | `PUT /api/users/profile` with a deliberate wrong CSRF token → 403 `CSRF_FAILED`; a new `CSRF_VALIDATION_FAILED` row appears in `audit_events` |
+| Optional-auth session invalid audited | `GET /api/listings/:uuid` with a tampered `bfg_session` cookie → `AUTH_SESSION_INVALID` is written to `audit_events` before the handler processes the (unauthenticated) request |
+| 400 AppError audited | `GET /api/listings?q=' OR 1=1--` → 400 `UNSAFE_SEARCH_QUERY`; a new `INPUT_REJECTED` row appears in `audit_events` (after a 200 ms flush window, since `error.middleware` uses `void audit(...)`) |
+
+**Implementation sources:**
+- `CSRF_VALIDATION_FAILED` → `backend/src/middleware/csrf.middleware.ts` (before throwing 403)
+- `AUTH_SESSION_INVALID` (optional-auth) → inner `try/catch` in `authenticateOptional()` (`auth.middleware.ts`)
+- `INPUT_REJECTED` → `errorHandler` in `backend/src/middleware/error.middleware.ts` (catch-all for 400 AppErrors)
+
+---
+
+### FSR12 — Path Parameter Validation (F-002, F-003, F-004)
+
+**Requirement:** URL path parameters that map to database identifiers must be validated for correct type and format before any database query is executed, preventing PostgreSQL cast errors and SQL injection via the URL path.
+
+**Test file:** `backend/src/__tests__/routes/input-validation.routes.test.ts`
+
+```
+FSR12 — Path parameter validation: listing bids (F-002)
+  ✓ rejects non-numeric, negative, and float listingId values
+  ✓ accepts a valid positive integer listingId
+
+FSR12 — Path parameter validation: receipts (F-003)
+  ✓ rejects non-UUID identifiers on the receipt endpoints
+  ✓ accepts a valid UUID format on receipt endpoints (returns 404 for unknown, not 500)
+
+FSR12 — Path parameter validation: campaign image (unauthenticated, F-004)
+  ✓ rejects non-UUID campaign UUIDs on the public image endpoint
+  ✓ accepts a valid UUID on the campaign image endpoint (returns 404 when no image, not 500)
+```
+
+| Test case | What is asserted |
+|---|---|
+| Invalid listingId (F-002) | `abc`, `-1`, `1.5`, `0` each return 400 `INVALID_PARAM` from `GET /api/bids/listings/:listingId` |
+| Valid listingId (F-002) | `99999` returns 200 or 404 — never 400 or 500 |
+| Non-UUID receipt ID (F-003) | `not-a-uuid`, SQL injection string, `123`, `../traversal` each return 400 `INVALID_PARAM` from `GET /api/receipts/:uuid` and `GET /api/receipts/by-payment/:uuid` (requires bidder auth) |
+| Valid UUID receipt (F-003) | `00000000-0000-0000-0000-000000000000` returns neither 400 nor 500 |
+| Non-UUID campaign image (F-004) | `not-a-uuid`, `1'OR'1'='1`, `abc`, `<script>` each return 400 `INVALID_PARAM` from `GET /api/charities/campaigns/:uuid/image` (public, no auth needed) |
+| Valid UUID campaign image (F-004) | `00000000-0000-0000-0000-000000000000` returns neither 400 nor 500 |
+
+**Implementation:**
+- **F-002** — `listListingBids()` in `bid.controller.ts`: `Number.isFinite` + `Number.isInteger` + positive check before querying
+- **F-003** — `assertUuid()` helper in `receipt.controller.ts`: regex `/^[0-9a-f]{8}-…-[0-9a-f]{12}$/i` applied in both `viewReceipt` and `viewReceiptByPayment`
+- **F-004** — `getCampaignImage()` in `campaign.controller.ts`: same UUID regex check before calling the service
