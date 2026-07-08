@@ -636,7 +636,7 @@ export default function CharityDashboard() {
   const [newCampaignForm, setNewCampaignForm] = useState<CampaignForm>(emptyCampaignForm)
   const [newCampaignErrors, setNewCampaignErrors] = useState<CampaignFormErrors>({})
   const [creatingCampaign, setCreatingCampaign] = useState(false)
-  const [staffForm, setStaffForm] = useState({ full_name: '', email: '', temporary_password: '' })
+  const [staffForm, setStaffForm] = useState({ full_name: '', email: '', temporaryPassword: '' })
   const [staffFormErrors, setStaffFormErrors] = useState<Record<string, string>>({})
   const [creatingStaff, setCreatingStaff] = useState(false)
 
@@ -728,8 +728,8 @@ export default function CharityDashboard() {
     else if (staffForm.full_name.trim().length < 2) errors.full_name = 'Full name must be at least 2 characters.'
     if (!staffForm.email.trim()) errors.email = 'Work email is required.'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(staffForm.email.trim())) errors.email = 'Enter a valid email address.'
-    if (!staffForm.temporary_password) errors.temporary_password = 'Temporary password is required.'
-    else if (staffForm.temporary_password.length < 8) errors.temporary_password = 'Temporary password must be at least 8 characters.'
+    if (!staffForm.temporaryPassword) errors.temporaryPassword = 'Temporary password is required.'
+    else if (staffForm.temporaryPassword.length < 8) errors.temporaryPassword = 'Temporary password must be at least 8 characters.'
     setStaffFormErrors(errors)
     if (Object.keys(errors).length > 0) return
 
@@ -738,10 +738,10 @@ export default function CharityDashboard() {
       const res = await api.post('/charities/staff', {
         full_name: staffForm.full_name.trim(),
         email: staffForm.email.trim(),
-        temporary_password: staffForm.temporary_password,
+        temporaryPassword: staffForm.temporaryPassword,
       })
       setStaff(prev => [res.data, ...prev])
-      setStaffForm({ full_name: '', email: '', temporary_password: '' })
+      setStaffForm({ full_name: '', email: '', temporaryPassword: '' })
       setStaffFormErrors({})
       setActiveTab('staff')
     } catch (err) {
@@ -1327,7 +1327,7 @@ export default function CharityDashboard() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>Add Staff Account</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>Create a new staff account for your charity organisation</p>
                 </div>
-                <button type="button" onClick={() => { setStaffForm({ full_name: '', email: '', temporary_password: '' }); setStaffFormErrors({}); setActiveTab('staff') }}
+                <button type="button" onClick={() => { setStaffForm({ full_name: '', email: '', temporaryPassword: '' }); setStaffFormErrors({}); setActiveTab('staff') }}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
                   style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
                   Back to Staff
@@ -1349,9 +1349,9 @@ export default function CharityDashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Temporary Password *</label>
-                  <input type="password" value={staffForm.temporary_password} onChange={e => setStaffForm(p => ({ ...p, temporary_password: e.target.value }))}
-                    placeholder="Set an initial password (min 8 characters)" style={dashboardInputStyle(!!staffFormErrors.temporary_password)} />
-                  {staffFormErrors.temporary_password && <p className="text-xs mt-1" style={{ color: C.danger }}>{staffFormErrors.temporary_password}</p>}
+                  <input type="password" value={staffForm.temporaryPassword} onChange={e => setStaffForm(p => ({ ...p, temporaryPassword: e.target.value }))}
+                    placeholder="Set an initial password (min 8 characters)" style={dashboardInputStyle(!!staffFormErrors.temporaryPassword)} />
+                  {staffFormErrors.temporaryPassword && <p className="text-xs mt-1" style={{ color: C.danger }}>{staffFormErrors.temporaryPassword}</p>}
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="submit" disabled={creatingStaff}
@@ -1359,7 +1359,7 @@ export default function CharityDashboard() {
                     style={{ background: C.emerald }}>
                     {creatingStaff ? 'Creating…' : 'Create Staff Account'}
                   </button>
-                  <button type="button" onClick={() => { setStaffForm({ full_name: '', email: '', temporary_password: '' }); setStaffFormErrors({}); setActiveTab('staff') }}
+                  <button type="button" onClick={() => { setStaffForm({ full_name: '', email: '', temporaryPassword: '' }); setStaffFormErrors({}); setActiveTab('staff') }}
                     className="px-6 py-2.5 rounded-xl text-sm font-bold"
                     style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
                     Cancel

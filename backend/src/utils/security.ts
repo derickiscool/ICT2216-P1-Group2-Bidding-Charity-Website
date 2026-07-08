@@ -67,7 +67,7 @@ export const escapeHtml = (value: string): string => {
   return escaped.trim();
 };
 
-export const sanitizeText = (value: unknown, maxLength: number): string => escapeHtml(safeString(value, maxLength));
+export const sanitizeText = (value: unknown, maxLength: number): string => safeString(value, maxLength);
 
 // Mirrors the client-side check in CreateListingPage.tsx/DonorListingsPage.tsx (SFR07).
 // That check alone only stops the UI form; a direct API call would still reach the
