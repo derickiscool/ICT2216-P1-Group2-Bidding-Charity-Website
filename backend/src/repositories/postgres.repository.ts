@@ -24,6 +24,7 @@ import type {
   UserRole,
 } from '../types/domain';
 import { query, withTransaction } from '../utils/db';
+import { decryptBuffer, decryptText, encryptBuffer, encryptText } from '../utils/dataEncryption';
 import { sha256 } from '../utils/security';
 import type {
   BidForGoodRepository,
@@ -362,7 +363,7 @@ const mapCharity = (row: CharityRow): CharityOrganisation => ({
   documentName: row.document_name,
   documentMime: row.document_mime,
   documentSha256: row.document_sha256,
-  documentData: row.document_data,
+  documentData: row.document_data ? decryptBuffer(row.document_data) : row.document_data,
   status: row.status,
   reviewedBy: optionalNumber(row.reviewed_by),
   reviewedAt: optionalIso(row.reviewed_at),
@@ -380,7 +381,7 @@ const mapListing = (row: ListingRow): Listing => ({
   description: row.description,
   condition: row.condition,
   category: row.category,
-  images: Array.isArray(row.images) ? row.images : [],
+  images: Array.isArray(row.images) ? row.images.map(decryptText) : [],
   starting_price: Number(row.starting_price),
   current_bid: Number(row.current_bid),
   bid_count: Number(row.bid_count),
@@ -739,7 +740,7 @@ const addCharity = async (input: NewCharityInput): Promise<CharityOrganisation> 
       input.documentName,
       input.documentMime,
       input.documentSha256,
-      input.documentData ?? null,
+      input.documentData ? encryptBuffer(input.documentData) : null,
     ],
   );
   if (!row) throw new Error('Failed to create charity registration.');
@@ -781,7 +782,7 @@ const updateCharity = async (record: CharityOrganisation): Promise<void> => {
       record.documentName,
       record.documentMime,
       record.documentSha256,
-      record.documentData ?? null,
+      record.documentData ? encryptBuffer(record.documentData) : null,
       record.status,
       record.reviewedBy ?? null,
       record.reviewedAt ?? null,
@@ -859,7 +860,7 @@ const addCampaign = async (input: NewCampaignInput): Promise<Campaign> => {
             0::numeric AS total_raised, 0::bigint AS active_auctions,
             i.created_at
      FROM inserted i`,
-    [input.charityId, input.name, input.description, input.endDate ?? null, input.imageData ?? null, input.imageMime ?? null],
+    [input.charityId, input.name, input.description, input.endDate ?? null, input.imageData ? encryptBuffer(input.imageData) : null, input.imageMime ?? null],
   );
   if (!row) throw new Error('Failed to create campaign.');
   return mapCampaign(row);
@@ -879,7 +880,7 @@ const getCampaignImage = async (uuid: string): Promise<{ data: Buffer; mime: str
     [uuid],
   );
   if (!row || !row.image_data || !row.image_mime) return undefined;
-  return { data: row.image_data, mime: row.image_mime };
+  return { data: decryptBuffer(row.image_data), mime: row.image_mime };
 };
 
 const listCampaignsByCharity = async (charityId: number): Promise<Campaign[]> => {
@@ -910,7 +911,7 @@ const updateCampaign = async (uuid: string, input: UpdateCampaignInput): Promise
     : '';
   const params: unknown[] = [uuid, input.name, input.description, input.endDate ?? null];
   if (input.imageData !== undefined) {
-    params.push(input.imageData ?? null, input.imageMime ?? null);
+    params.push(input.imageData ? encryptBuffer(input.imageData) : null, input.imageMime ?? null);
   }
   const row = await firstRow<CampaignListRow>(
     `WITH updated AS (
@@ -964,7 +965,7 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
       input.description,
       input.condition,
       input.category,
-      input.images,
+      input.images.map(encryptText),
       input.starting_price,
       input.status,
       input.start_time,
@@ -1006,7 +1007,7 @@ const updateListing = async (listing: Listing): Promise<void> => {
       listing.description,
       listing.condition,
       listing.category,
-      listing.images,
+      listing.images.map(encryptText),
       listing.starting_price,
       listing.current_bid,
       listing.bid_count,
