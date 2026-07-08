@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Package, Loader2, AlertCircle, Info,
+  Package, Loader2, AlertCircle,
   CheckCircle, Clock, Plus, ExternalLink, RefreshCw, X, Edit3, Upload,
   HeartHandshake, Users, DollarSign, ListOrdered,
   CalendarDays, Target, Eye, Flag, ImageIcon, ChevronLeft, ChevronRight,
@@ -583,7 +583,6 @@ export default function CharityDashboard() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [canManageCampaigns, setCanManageCampaigns] = useState(false)
   const [staff, setStaff] = useState<StaffAccount[]>([])
-  const [notRegistered, setNotRegistered] = useState(false)
   const [charityDetails, setCharityDetails] = useState<CharityOrganisation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -618,7 +617,9 @@ export default function CharityDashboard() {
       const [dash, camps, staffData] = await Promise.all([dashRes, campRes, staffRes])
 
       if (!dash.data.charity) {
-        setNotRegistered(true)
+        // A charity role account without a linked organisation should not happen
+        // in normal registration flow — fall through to the pending-status checks.
+        setCharityDetails(null)
       } else {
         setCharityDetails(dash.data.charity)
       }
@@ -904,26 +905,6 @@ export default function CharityDashboard() {
         <div className="text-center">
           <AlertCircle className="w-12 h-12 mx-auto mb-4" style={{ color: C.danger }} />
           <p style={{ color: C.danger }}>{error}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (notRegistered) {
-    return (
-      <div className="min-h-[calc(100vh-64px)] flex items-center justify-center" style={{ background: C.linen }}>
-        <div className="text-center max-w-md mx-auto p-8">
-          <Info className="w-12 h-12 mx-auto mb-4" style={{ color: '#92400E' }} />
-          <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>No Charity Organisation Registered</h2>
-          <p className="text-sm mb-6" style={{ color: C.muted }}>
-            Your account hasn't been linked to a charity organisation yet.
-            Register your charity first to start viewing donations and auction items.
-          </p>
-          <Link to="/register/charity"
-            className="inline-block px-6 py-3 rounded-xl text-white font-semibold"
-            style={{ background: C.emerald }}>
-            Register Charity →
-          </Link>
         </div>
       </div>
     )
