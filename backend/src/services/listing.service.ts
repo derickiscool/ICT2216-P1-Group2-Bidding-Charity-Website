@@ -496,15 +496,21 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   return { data, total, page, pageSize, totalPages };
 };
 
-export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
+export const getPublicListing = async (
+  uuid: string,
+  isAdmin = false,
+  viewerUserId?: number,
+): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
 
-  // Allow viewing of resolved listing statuses (sold, shipped, delivered, expired)
-  // so that bidders can see their won/ended auctions. Active listings still require
-  // the time window check (future auctions remain hidden until they start).
+  // The listing detail route is used by public browsing, admin review, and donor dashboards.
+  // Public users may only see currently biddable or terminal listings. Admins and the donor
+  // who created the listing may still open pending/charity_review/rejected listings for review
+  // or tracking without accidentally publishing them to everyone else.
   const terminalStatuses = new Set<Listing['status']>(['sold', 'shipped', 'delivered', 'expired']);
-  if (!isAdmin && !terminalStatuses.has(listing.status) && !isPubliclyBiddableNow(listing)) {
+  const isOwner = viewerUserId !== undefined && listing.donor_id === viewerUserId;
+  if (!isAdmin && !isOwner && !terminalStatuses.has(listing.status) && !isPubliclyBiddableNow(listing)) {
     throw notFound('Listing not found');
   }
 
