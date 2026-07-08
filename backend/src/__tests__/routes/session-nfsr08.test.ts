@@ -86,6 +86,43 @@ describe('NFSR08 — session JWT signing, expiry, and invalidation', () => {
     assert.equal(res.response.status, 401);
   });
 
+  test('a token in the first half of its window is not needlessly reissued', async () => {
+    const { cookie } = await loginAs('bidder@bidforgood.test');
+    const res = await me(cookie);
+    assert.equal(res.response.status, 200);
+    assert.equal(res.setCookie, undefined, 'a fresh token must not trigger a refresh');
+  });
+
+  test('an aging token is transparently replaced, sliding the inactivity window', async () => {
+    const login = await postJson('/api/auth/login', { email: 'bidder@bidforgood.test', password: 'S3cure!Pass2026' });
+    const cookie = sessionCookieFromLogin(login.setCookie!);
+    const original = jwt.decode(cookie.split('=').slice(1).join('=')) as jwt.JwtPayload;
+
+    // Re-sign the same session claims as a 10-minute-old token — still valid, but
+    // past the half-window refresh threshold.
+    const agedIat = Math.floor(Date.now() / 1000) - 10 * 60;
+    const aged = jwt.sign(
+      { sub: original.sub, sid: original.sid, jti: original.jti, role: original.role, roles: original.roles, iat: agedIat, exp: agedIat + 15 * 60 },
+      process.env.JWT_SECRET!,
+      { algorithm: 'HS256', issuer: SESSION_JWT_ISSUER, audience: SESSION_JWT_AUDIENCE },
+    );
+
+    const res = await me(`bfg_session=${aged}`);
+    assert.equal(res.response.status, 200);
+    assert.ok(res.setCookie?.startsWith('bfg_session='), 'an aged token must be replaced with a fresh cookie');
+
+    const refreshedCookie = sessionCookieFromLogin(res.setCookie!);
+    const refreshed = jwt.decode(refreshedCookie.split('=').slice(1).join('=')) as jwt.JwtPayload;
+    assert.equal(refreshed.sid, original.sid, 'refresh must stay on the same session');
+    assert.equal(refreshed.jti, original.jti, 'refresh must keep the jti so in-flight requests stay valid');
+    assert.ok((refreshed.iat ?? 0) >= Math.floor(Date.now() / 1000) - 5, 'refreshed token must be newly issued');
+    assert.ok((refreshed.exp ?? 0) - (refreshed.iat ?? 0) <= 15 * 60, 'refreshed lifetime must not exceed 15 minutes');
+
+    // The replacement cookie must be immediately usable.
+    const followUp = await me(refreshedCookie);
+    assert.equal(followUp.response.status, 200);
+  });
+
   test('logout invalidates the session immediately', async () => {
     const { cookie, csrf } = await loginAs('bidder@bidforgood.test');
 
