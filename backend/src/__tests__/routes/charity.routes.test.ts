@@ -128,6 +128,16 @@ describe('SFR04/SFR05 — Charity Document Upload & Admin Review', () => {
     assert.equal(pngRes.response.status, 201);
     assert.equal(pngRes.body.status, 'pending');
 
+    // Only one registration may be pending per user, so the admin must review
+    // the PNG registration before the same user can submit the JPEG one.
+    const admin = await loginAs('admin@bidforgood.test');
+    const pngReview = await postJson(
+      `/api/charities/${pngRes.body.uuid}/review`,
+      { decision: 'approved' },
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(pngReview.response.status, 200);
+
     const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, ...Buffer.from('fake jpeg body')]);
     const jpegForm = new FormData();
     jpegForm.set('organisationName', 'JPEG Proof Charity');
@@ -140,6 +150,15 @@ describe('SFR04/SFR05 — Charity Document Upload & Admin Review', () => {
     });
     assert.equal(jpegRes.response.status, 201);
     assert.equal(jpegRes.body.status, 'pending');
+
+    // Clear the pending JPEG registration so later tests hit the document
+    // validation instead of the one-pending-registration guard.
+    const jpegReview = await postJson(
+      `/api/charities/${jpegRes.body.uuid}/review`,
+      { decision: 'approved' },
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(jpegReview.response.status, 200);
   });
 
   test('rejects a document whose declared MIME type does not match its actual signature', async () => {
