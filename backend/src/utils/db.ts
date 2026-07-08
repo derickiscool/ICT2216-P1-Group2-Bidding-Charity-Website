@@ -5,12 +5,25 @@ import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+const dbUser = process.env.DB_USER || 'postgres';
+if (process.env.NODE_ENV === 'production') {
+  if (dbUser === 'postgres' && process.env.ALLOW_SUPERUSER_DB !== 'true') {
+    throw new Error('Production must use a least-privilege DB_USER, not postgres.');
+  }
+  if (!process.env.DB_PASSWORD) {
+    throw new Error('Production DB_PASSWORD must be configured through the environment.');
+  }
+}
+
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME || 'bidforgood',
-  user: process.env.DB_USER || 'postgres',
+  user: dbUser,
   password: process.env.DB_PASSWORD,
+  ssl: process.env.DB_SSL === 'true'
+    ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
+    : undefined,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
@@ -56,8 +69,7 @@ export const testConnection = async (): Promise<{ success: boolean; message: str
     const latency = Date.now() - start;
     return { success: true, message: 'Database connected successfully', latency };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, message: `Database connection failed: ${errorMessage}` };
+    return { success: false, message: 'Database connection failed' };
   }
 };
 

@@ -13,7 +13,9 @@
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
     "seed:admin": "node scripts/seed-admin.js",
-    "seed:production": "node scripts/seed-production.js"
+    "seed:production": "node scripts/seed-production.js",
+    "backup:db": "node scripts/backup-db.js",
+    "restore:db": "node scripts/restore-db.js"
   },
   "dependencies": {
     "argon2": "^0.44.0",
@@ -30,6 +32,7 @@
     "validator": "^13.11.0"
   },
   "devDependencies": {
+    "@jest/globals": "^30.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/express-session": "^1.17.10",

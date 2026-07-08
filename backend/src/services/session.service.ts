@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import type { Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { addSession, getSession, revokeSession, updateSession } from '../repositories';
+import { addSession, getSession, purgeExpiredSessions as purgeExpiredSessionsRepo, revokeSession, updateSession } from '../repositories';
 import type { SessionRecord, User } from '../types/domain';
 import { randomToken, sha256 } from '../utils/security';
 import { unauthorised } from '../utils/errors';
@@ -106,7 +106,10 @@ export const verifySessionToken = async (token: string): Promise<VerifiedSession
   if (!decoded.sid || !decoded.jti || !decoded.sub) throw unauthorised('Authentication required');
   const record = await getSession(String(decoded.sid));
   const now = Date.now();
-  if (!record || record.revokedAt || record.expiresAt.getTime() <= now || record.absoluteExpiresAt.getTime() <= now) throw unauthorised('Authentication required');
+  if (!record || record.revokedAt || record.expiresAt.getTime() <= now || record.absoluteExpiresAt.getTime() <= now) {
+    await purgeExpiredSessionsRepo(new Date(now));
+    throw unauthorised('Authentication required');
+  }
   if (record.jtiHash !== sha256(String(decoded.jti))) throw unauthorised('Authentication required');
   record.lastSeenAt = new Date();
   record.expiresAt = new Date(Math.min(now + SESSION_IDLE_TIMEOUT_MS, record.absoluteExpiresAt.getTime()));
@@ -115,3 +118,5 @@ export const verifySessionToken = async (token: string): Promise<VerifiedSession
 };
 
 export const revokeBySid = async (sid: string): Promise<void> => revokeSession(sid);
+
+export const purgeExpiredSessions = async (): Promise<number> => purgeExpiredSessionsRepo();

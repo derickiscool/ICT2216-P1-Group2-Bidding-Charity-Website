@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Express } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
@@ -13,22 +13,27 @@ import receiptRoutes from './routes/receipt.routes';
 import profileRoutes from './routes/profile.routes';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { securityHeaders } from './middleware/securityHeaders.middleware';
+import { requireHttpsInProduction } from './middleware/httpsOnly.middleware';
+import { rateLimitHandler } from './middleware/rateLimit.middleware';
 
-export const createApp = () => {
+export const createApp = (): Express => {
   const app = express();
   app.set('trust proxy', 1);
   app.use(securityHeaders);
+  app.use(requireHttpsInProduction);
   app.use(cors({ origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173', credentials: true }));
   app.use(express.json({ limit: '100kb' }));
   app.use(morgan('dev'));
   if (process.env.NODE_ENV !== 'test') {
-    app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
+    app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false, handler: rateLimitHandler('RATE_LIMIT_GLOBAL') }));
   }
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', message: 'BidForGood API is running' }));
-  app.get('/api/db-test', async (_req, res, next) => {
-    try { res.json(await testConnection()); } catch (err) { next(err); }
-  });
+  if (process.env.NODE_ENV !== 'production') {
+    app.get('/api/db-test', async (_req, res, next) => {
+      try { res.json(await testConnection()); } catch (err) { next(err); }
+    });
+  }
   app.use('/api/auth', authRoutes);
   app.use('/api/users', profileRoutes);
   app.use('/api/listings', listingRoutes);

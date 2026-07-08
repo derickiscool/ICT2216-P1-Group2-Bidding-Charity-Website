@@ -229,12 +229,15 @@ CREATE TABLE IF NOT EXISTS payments (
   payment_ref TEXT NOT NULL UNIQUE,
   escrow_state TEXT NOT NULL DEFAULT 'not_held' CHECK (escrow_state IN ('not_held', 'held', 'released')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'successful', 'expired')),
+  escrow_release_hash TEXT,
   payment_deadline TIMESTAMPTZ NOT NULL,
   offered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   paid_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS escrow_release_hash TEXT;
 
 CREATE INDEX IF NOT EXISTS payments_listing_status_idx ON payments (listing_id, status, payment_deadline);
 CREATE INDEX IF NOT EXISTS payments_bidder_status_idx ON payments (bidder_id, status, payment_deadline);

@@ -5,7 +5,7 @@ import { requireCsrf } from '../middleware/csrf.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 import { adminStats, listAudit, listUsersController, toggleUserStatus } from '../controllers/admin.controller';
 
-const router = Router();
+const router: Router = Router();
 router.get('/audit-events', asyncHandler(authenticate), requireRole('admin'), asyncHandler(listAudit));
 router.get('/stats', asyncHandler(authenticate), requireRole('admin'), asyncHandler(adminStats));
 router.get('/users', asyncHandler(authenticate), requireRole('admin'), asyncHandler(listUsersController));

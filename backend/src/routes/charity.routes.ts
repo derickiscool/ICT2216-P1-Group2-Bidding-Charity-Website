@@ -28,7 +28,7 @@ const handleImgUpload = (req: Request, res: Response, next: NextFunction): void 
   });
 };
 
-const router = Router();
+const router: Router = Router();
 router.get('/dashboard', asyncHandler(authenticate), requireRole('charity', 'charity_staff', 'admin'), asyncHandler(charityDashboard));
 router.post('/register', asyncHandler(authenticate), requireCsrf, requireRole('charity', 'admin'), handleDocUpload, asyncHandler(createCharityRegistration));
 // Public: all active campaigns — used by donors on the listing creation form.

@@ -206,6 +206,7 @@ interface PaymentRow {
   payment_ref: string;
   escrow_state: 'not_held' | 'held' | 'released';
   status: 'pending' | 'successful' | 'expired';
+  escrow_release_hash: string | null;
   payment_deadline: DbDate;
   offered_at: DbDate;
   paid_at: DbDate | null;
@@ -437,6 +438,7 @@ const mapPayment = (row: PaymentRow): Payment => ({
   payment_ref: row.payment_ref,
   escrow_state: row.escrow_state,
   status: row.status,
+  escrow_release_hash: row.escrow_release_hash ?? undefined,
   payment_deadline: toIso(row.payment_deadline),
   offered_at: toIso(row.offered_at),
   paid_at: optionalIso(row.paid_at),
@@ -706,6 +708,17 @@ const revokeSession = async (sid: string): Promise<void> => {
 
 const revokeAllSessionsByUserId = async (userId: number): Promise<void> => {
   await query('UPDATE sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+};
+
+const purgeExpiredSessions = async (now = new Date()): Promise<number> => {
+  const result = await query(
+    `DELETE FROM sessions
+     WHERE revoked_at IS NOT NULL
+        OR expires_at <= $1
+        OR absolute_expires_at <= $1`,
+    [now],
+  );
+  return result.rowCount ?? 0;
 };
 
 const savePasswordResetToken = async (token: PasswordResetToken): Promise<void> => {
@@ -1252,8 +1265,8 @@ const getReceiptsByBidder = async (bidderId: number): Promise<Receipt[]> => {
 const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
   const row = await firstRow<PaymentRow>(
     `INSERT INTO payments
-       (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (listing_id, bidder_id, amount, payment_ref, escrow_state, status, escrow_release_hash, payment_deadline, offered_at, paid_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       input.listing_id,
@@ -1262,6 +1275,7 @@ const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
       input.payment_ref,
       input.escrow_state,
       input.status,
+      input.escrow_release_hash ?? null,
       input.payment_deadline,
       input.offered_at,
       input.paid_at ?? null,
@@ -1275,7 +1289,7 @@ const updatePayment = async (payment: Payment): Promise<void> => {
   await query(
     `UPDATE payments
      SET listing_id = $2, bidder_id = $3, amount = $4, payment_ref = $5, escrow_state = $6,
-         status = $7, payment_deadline = $8, offered_at = $9, paid_at = $10, updated_at = NOW()
+         status = $7, escrow_release_hash = $8, payment_deadline = $9, offered_at = $10, paid_at = $11, updated_at = NOW()
      WHERE id = $1`,
     [
       payment.id,
@@ -1285,6 +1299,7 @@ const updatePayment = async (payment: Payment): Promise<void> => {
       payment.payment_ref,
       payment.escrow_state,
       payment.status,
+      payment.escrow_release_hash ?? null,
       payment.payment_deadline,
       payment.offered_at,
       payment.paid_at ?? null,
@@ -1382,7 +1397,11 @@ export const seedDemoData = async (): Promise<void> => {
   const existing = await firstRow<{ count: string }>('SELECT COUNT(*)::text AS count FROM users');
   if (existing && Number(existing.count) > 0) return;
 
-  const passwordHash = await argon2.hash('S3cure!Pass2026', { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 });
+  const demoPassword = process.env.SEED_DEMO_PASSWORD;
+  if (!demoPassword) {
+    throw new Error('SEED_DEMO_PASSWORD must be set before seeding demo users.');
+  }
+  const passwordHash = await argon2.hash(demoPassword, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 });
   const demoUsers: Array<Pick<User, 'email' | 'username' | 'full_name' | 'roles'>> = [
     { email: 'admin@bidforgood.test', username: 'admin', full_name: 'Demo Admin', roles: ['admin'] },
     { email: 'donor@bidforgood.test', username: 'donor', full_name: 'Demo Donor', roles: ['donor'] },
@@ -1472,6 +1491,7 @@ export const postgresRepository: BidForGoodRepository = {
   updateSession,
   revokeSession,
   revokeAllSessionsByUserId,
+  purgeExpiredSessions,
 
   savePasswordResetToken,
   getPasswordResetTokenByEmail,

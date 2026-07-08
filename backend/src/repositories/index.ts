@@ -25,6 +25,7 @@ export const {
   updateSession,
   revokeSession,
   revokeAllSessionsByUserId,
+  purgeExpiredSessions,
   savePasswordResetToken,
   getPasswordResetTokenByEmail,
   removePasswordResetToken,

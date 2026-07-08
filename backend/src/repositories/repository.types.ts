@@ -62,6 +62,7 @@ export interface BidForGoodRepository {
   updateSession(record: SessionRecord): Promise<void>;
   revokeSession(sid: string): Promise<void>;
   revokeAllSessionsByUserId(userId: number): Promise<void>;
+  purgeExpiredSessions(now?: Date): Promise<number>;
 
   savePasswordResetToken(token: PasswordResetToken): Promise<void>;
   getPasswordResetTokenByEmail(email: string): Promise<PasswordResetToken | undefined>;

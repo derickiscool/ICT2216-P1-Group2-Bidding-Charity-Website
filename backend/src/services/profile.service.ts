@@ -2,20 +2,24 @@ import crypto from 'crypto';
 import argon2 from 'argon2';
 import type { Request } from 'express';
 import {
+  findUserByEmail,
   findUserById,
   findUserByUsername,
+  getEmailChangeRequest,
   getPasswordResetTokenByEmail,
+  removeEmailChangeRequest,
   removePasswordResetToken,
+  saveEmailChangeRequest,
   savePasswordResetToken,
   toPublicUser,
   updateUser,
 } from '../repositories';
 import type { PublicUser } from '../repositories';
 import { badRequest, notFound, tooManyRequests } from '../utils/errors';
-import { sha256 } from '../utils/security';
+import { isValidEmail, normalizeEmail, sha256 } from '../utils/security';
 import { isStrongPassword } from '../utils/breachedPasswords';
 import { audit } from './audit.service';
-import { sendPasswordChangeVerificationOtp } from './otpDelivery.service';
+import { sendEmailChangeConfirmOtp, sendEmailChangeOtp, sendPasswordChangeVerificationOtp } from './otpDelivery.service';
 
 const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 } as const;
 const PROFILE_NAME_MAX = 80;
@@ -23,6 +27,8 @@ const USERNAME_MAX = 30;
 const CONTACT_INPUT_MAX = 13; // longest allowed UI format is "+65 9123 4567".
 const PASSWORD_CHANGE_OTP_TTL_MS = 15 * 60 * 1000;
 const MAX_PASSWORD_CHANGE_OTP_ATTEMPTS = 5;
+const EMAIL_CHANGE_OTP_TTL_MS = 15 * 60 * 1000;
+const MAX_EMAIL_CHANGE_OTP_ATTEMPTS = 5;
 const PASSWORD_POLICY_MESSAGE = 'Password must be 8-128 characters and must not match known breached, common, or dictionary passwords.';
 
 export interface UpdateProfileInput {
@@ -42,6 +48,15 @@ export interface RequestPasswordChangeVerificationInput {
 export interface ChangePasswordInput {
   currentPassword?: unknown;
   newPassword?: unknown;
+  verificationCode?: unknown;
+}
+
+export interface RequestEmailChangeInput {
+  currentPassword?: unknown;
+  newEmail?: unknown;
+}
+
+export interface ConfirmEmailChangeInput {
   verificationCode?: unknown;
 }
 
@@ -121,6 +136,139 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
     updated: usernameEditable ? { full_name: fullName, username, contactNumber } : { full_name: fullName, contactNumber },
   }, 'user', user.uuid, user.id);
 
+  return toPublicUser(user);
+};
+
+const assertEmailChangeRecord = async (userId: number) => {
+  const record = await getEmailChangeRequest(userId);
+  if (!record) throw badRequest('Email change verification failed.', 'EMAIL_CHANGE_INVALID');
+  if (record.expiresAt.getTime() <= Date.now()) {
+    await removeEmailChangeRequest(userId);
+    throw badRequest('Email change verification failed.', 'EMAIL_CHANGE_INVALID');
+  }
+  if (record.attempts >= MAX_EMAIL_CHANGE_OTP_ATTEMPTS) {
+    await removeEmailChangeRequest(userId);
+    throw tooManyRequests('Too many verification attempts. Please restart the email change flow.');
+  }
+  return record;
+};
+
+export const requestEmailChange = async (
+  userId: number,
+  input: RequestEmailChangeInput,
+  req?: Request,
+): Promise<{ message: string; nextStep: 'confirm_current_email' }> => {
+  const user = await findUserById(userId);
+  if (!user) throw notFound('User not found.');
+
+  const currentPassword = String(input.currentPassword ?? '');
+  const newEmail = normalizeEmail(String(input.newEmail ?? ''));
+  const errors: Record<string, string> = {};
+  if (!currentPassword) errors.currentPassword = 'Current password is required.';
+  if (!isValidEmail(newEmail)) errors.newEmail = 'Enter a valid email address.';
+  if (newEmail === normalizeEmail(user.email)) errors.newEmail = 'New email must be different from your current email.';
+  if (Object.keys(errors).length > 0) throw badRequest('Email change validation failed.', 'VALIDATION_ERROR', errors);
+
+  const currentOk = await argon2.verify(user.passwordHash, currentPassword);
+  if (!currentOk) {
+    await audit(req, 'EMAIL_CHANGE_REAUTH_FAILED', {}, 'user', user.uuid, user.id);
+    throw badRequest('Email change validation failed.', 'VALIDATION_ERROR', { currentPassword: 'Current password is incorrect.' });
+  }
+
+  const existing = await findUserByEmail(newEmail);
+  if (existing && existing.id !== user.id) {
+    throw badRequest('Email change validation failed.', 'VALIDATION_ERROR', { newEmail: 'Email address is already in use.' });
+  }
+
+  const oldEmailOtp = crypto.randomInt(100000, 1000000).toString();
+  await saveEmailChangeRequest({
+    user_id: user.id,
+    oldEmail: user.email,
+    newEmail,
+    oldEmailOtpHash: sha256(oldEmailOtp),
+    newEmailOtpHash: null,
+    oldEmailConfirmed: false,
+    expiresAt: new Date(Date.now() + EMAIL_CHANGE_OTP_TTL_MS),
+    attempts: 0,
+    createdAt: new Date(),
+  });
+
+  await sendEmailChangeConfirmOtp(user.email, oldEmailOtp);
+  await audit(req, 'EMAIL_CHANGE_CURRENT_OTP_SENT', { newEmail }, 'user', user.uuid, user.id);
+  return { message: 'A verification code has been sent to your current email address.', nextStep: 'confirm_current_email' };
+};
+
+export const confirmCurrentEmailForChange = async (
+  userId: number,
+  input: ConfirmEmailChangeInput,
+  req?: Request,
+): Promise<{ message: string; nextStep: 'confirm_new_email' }> => {
+  const user = await findUserById(userId);
+  if (!user) throw notFound('User not found.');
+  const record = await assertEmailChangeRecord(user.id);
+  const verificationCode = String(input.verificationCode ?? '').trim();
+  if (!/^\d{6}$/.test(verificationCode)) {
+    throw badRequest('Email change verification failed.', 'VALIDATION_ERROR', { verificationCode: 'Verification code must be 6 digits.' });
+  }
+
+  if (record.oldEmailOtpHash !== sha256(verificationCode)) {
+    record.attempts += 1;
+    if (record.attempts >= MAX_EMAIL_CHANGE_OTP_ATTEMPTS) {
+      await removeEmailChangeRequest(user.id);
+      throw tooManyRequests('Too many verification attempts. Please restart the email change flow.');
+    }
+    await saveEmailChangeRequest(record);
+    throw badRequest('Email change verification failed.', 'EMAIL_CHANGE_INVALID');
+  }
+
+  const newEmailOtp = crypto.randomInt(100000, 1000000).toString();
+  record.oldEmailConfirmed = true;
+  record.newEmailOtpHash = sha256(newEmailOtp);
+  record.attempts = 0;
+  record.expiresAt = new Date(Date.now() + EMAIL_CHANGE_OTP_TTL_MS);
+  await saveEmailChangeRequest(record);
+  await sendEmailChangeOtp(record.newEmail, newEmailOtp);
+  await audit(req, 'EMAIL_CHANGE_NEW_OTP_SENT', { newEmail: record.newEmail }, 'user', user.uuid, user.id);
+  return { message: 'A verification code has been sent to your new email address.', nextStep: 'confirm_new_email' };
+};
+
+export const confirmNewEmailChange = async (
+  userId: number,
+  input: ConfirmEmailChangeInput,
+  req?: Request,
+): Promise<PublicUser> => {
+  const user = await findUserById(userId);
+  if (!user) throw notFound('User not found.');
+  const record = await assertEmailChangeRecord(user.id);
+  const verificationCode = String(input.verificationCode ?? '').trim();
+  if (!record.oldEmailConfirmed || !record.newEmailOtpHash) {
+    throw badRequest('Confirm your current email address before verifying the new email.', 'EMAIL_CHANGE_CURRENT_NOT_CONFIRMED');
+  }
+  if (!/^\d{6}$/.test(verificationCode)) {
+    throw badRequest('Email change verification failed.', 'VALIDATION_ERROR', { verificationCode: 'Verification code must be 6 digits.' });
+  }
+
+  if (record.newEmailOtpHash !== sha256(verificationCode)) {
+    record.attempts += 1;
+    if (record.attempts >= MAX_EMAIL_CHANGE_OTP_ATTEMPTS) {
+      await removeEmailChangeRequest(user.id);
+      throw tooManyRequests('Too many verification attempts. Please restart the email change flow.');
+    }
+    await saveEmailChangeRequest(record);
+    throw badRequest('Email change verification failed.', 'EMAIL_CHANGE_INVALID');
+  }
+
+  const existing = await findUserByEmail(record.newEmail);
+  if (existing && existing.id !== user.id) {
+    await removeEmailChangeRequest(user.id);
+    throw badRequest('Email address is already in use.', 'EMAIL_ALREADY_USED');
+  }
+
+  const previousEmail = user.email;
+  user.email = record.newEmail;
+  await updateUser(user);
+  await removeEmailChangeRequest(user.id);
+  await audit(req, 'EMAIL_CHANGED', { previousEmail, newEmail: user.email }, 'user', user.uuid, user.id);
   return toPublicUser(user);
 };
 

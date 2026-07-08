@@ -2,7 +2,7 @@ import type { Request } from 'express';
 import type { CharityOrganisation, Listing, Payment } from '../types/domain';
 import { addCharity, getCharityByUuid, getPaymentsForListing, listCharities, listListings, updateCharity } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
-import { sanitizeText, sha256 } from '../utils/security';
+import { containsScriptLikeContent, safeString, sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';
 
 const ALLOWED_MIME = new Set(['application/pdf', 'image/png', 'image/jpeg']);
@@ -17,8 +17,12 @@ const detectMime = (buffer: Buffer): 'application/pdf' | 'image/png' | 'image/jp
 export const registerCharity = async (req: Request): Promise<CharityOrganisation> => {
   if (!req.user) throw badRequest('Authentication required');
   const file = req.file;
-  const organisationName = sanitizeText(req.body.organisationName ?? req.body.name, 160);
-  const description = sanitizeText(req.body.description, 1000);
+  const rawOrganisationName = safeString(req.body.organisationName ?? req.body.name, 160);
+  const rawDescription = safeString(req.body.description, 1000);
+  if (containsScriptLikeContent(rawOrganisationName)) throw badRequest('Organisation name cannot contain script-like content.', 'UNSAFE_TEXT_CONTENT', { organisationName: 'Please remove script-like content.' });
+  if (containsScriptLikeContent(rawDescription)) throw badRequest('Description cannot contain script-like content.', 'UNSAFE_TEXT_CONTENT', { description: 'Please remove script-like content.' });
+  const organisationName = sanitizeText(rawOrganisationName, 160);
+  const description = sanitizeText(rawDescription, 1000);
   if (organisationName.length < 2) throw badRequest('Organisation name is required.', 'VALIDATION_ERROR', { organisationName: 'Organisation name is required.' });
   if (description.length < 10) throw badRequest('Description must be at least 10 characters.', 'VALIDATION_ERROR', { description: 'Description must be at least 10 characters.' });
   if (!file || !file.buffer) throw badRequest('Supporting document is required.', 'DOCUMENT_REQUIRED');

@@ -277,9 +277,20 @@ export const releaseEscrowForListing = async (listingId: number, req: Request): 
   if (!heldPayment) return;
 
   heldPayment.escrow_state = 'released';
+  heldPayment.escrow_release_hash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      payment_id: heldPayment.id,
+      listing_id: heldPayment.listing_id,
+      bidder_id: heldPayment.bidder_id,
+      amount: heldPayment.amount,
+      payment_ref: heldPayment.payment_ref,
+      released_at: new Date().toISOString(),
+    }))
+    .digest('hex');
   await updPayment(heldPayment);
 
-  await audit(req, 'ESCROW_RELEASED', { listingId, amount: heldPayment.amount }, 'payment', heldPayment.uuid, req.user?.id);
+  await audit(req, 'ESCROW_RELEASED', { listingId, amount: heldPayment.amount, escrowReleaseHash: heldPayment.escrow_release_hash }, 'payment', heldPayment.uuid, req.user?.id);
 };
 
 export const regenerateReceipt = async (paymentUuid: string, req: Request): Promise<{ message: string }> => {

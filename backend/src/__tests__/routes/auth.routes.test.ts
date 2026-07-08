@@ -19,6 +19,8 @@ import {
 } from '../../services/otpDelivery.service';
 import { query } from '../../utils/db';
 
+const RESET_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+
 beforeAll(startServer);
 afterAll(stopServer);
 
@@ -89,6 +91,28 @@ describe('SFR02 — Authentication & Session Management', () => {
 });
 
 describe('SFR01 — Registration & Email Verification', () => {
+  test('rejects privileged roles during public registration', async () => {
+    const admin = await postJson('/api/auth/register', {
+      email: 'selfadmin@example.com',
+      username: 'selfadmin',
+      full_name: 'Self Admin',
+      password: 'correcthorsebatterystaple9',
+      roles: ['admin'],
+    });
+    assert.equal(admin.response.status, 400);
+    assert.match(admin.body.errors.roles, /cannot be selected/i);
+
+    const staff = await postJson('/api/auth/register', {
+      email: 'selfstaff@example.com',
+      username: 'selfstaff',
+      full_name: 'Self Staff',
+      password: 'correcthorsebatterystaple10',
+      roles: ['charity_staff'],
+    });
+    assert.equal(staff.response.status, 400);
+    assert.match(staff.body.errors.roles, /cannot be selected/i);
+  });
+
   test('blocks registration with breached, common, or dictionary passwords', async () => {
     const weak = await postJson('/api/auth/register', {
       email: 'weak@example.com',
@@ -234,11 +258,11 @@ describe('Password Reset Flow', () => {
     assert.equal(readDevResetTokenForTest('admin@bidforgood.test'), undefined);
   });
 
-  test('generates a 6-digit OTP for a valid non-admin account', async () => {
+  test('generates a 256-bit reset token for a valid non-admin account', async () => {
     clearDevResetTokenForTest(email);
     const res = await postJson('/api/auth/forgot-password', { email });
     assert.equal(res.response.status, 200);
-    assert.match(String(readDevResetTokenForTest(email)), /^\d{6}$/);
+    assert.match(String(readDevResetTokenForTest(email)), RESET_TOKEN_RE);
   });
 
   test('rejects reset with a wrong OTP but keeps the token for retry', async () => {
@@ -273,7 +297,7 @@ describe('Password Reset Flow', () => {
     clearDevResetTokenForTest(email);
     await postJson('/api/auth/forgot-password', { email });
     const otp = readDevResetTokenForTest(email);
-    assert.match(String(otp), /^\d{6}$/);
+    assert.match(String(otp), RESET_TOKEN_RE);
 
     for (let i = 0; i < 5; i++) {
       const res = await postJson('/api/auth/reset-password', {
@@ -319,7 +343,7 @@ describe('Password Reset Flow', () => {
     clearDevResetTokenForTest(email);
     await postJson('/api/auth/forgot-password', { email });
     const otp = readDevResetTokenForTest(email);
-    assert.match(String(otp), /^\d{6}$/);
+    assert.match(String(otp), RESET_TOKEN_RE);
 
     const reset = await postJson('/api/auth/reset-password', {
       email,

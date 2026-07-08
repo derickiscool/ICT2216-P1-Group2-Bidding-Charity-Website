@@ -52,17 +52,17 @@ export const sendPasswordResetOtp = async (email: string, otp: string): Promise<
   if (!shouldSendRealEmail()) {
     devResetTokenOutbox.set(email, otp);
     console.log('========================================');
-    console.log('  PASSWORD RESET OTP');
+    console.log('  PASSWORD RESET TOKEN');
     console.log(`  email : ${email}`);
-    console.log(`  otp   : ${otp}`);
+    console.log(`  token : ${otp}`);
     console.log('========================================');
     return;
   }
 
   await sendMail({
     to: email,
-    subject: 'BidForGood — Your password reset code',
-    body: `Hello,\n\nYour BidForGood password reset code is:\n\n    ${otp}\n\nThis code expires in 3 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n— The BidForGood Team\nnoreply@bidforgood.xyz`,
+    subject: 'BidForGood - Your password reset token',
+    body: `Hello,\n\nYour BidForGood password reset token is:\n\n    ${otp}\n\nThis single-use token expires in 3 minutes.\n\nIf you did not request this, you can safely ignore this message.\n\n- The BidForGood Team\nnoreply@bidforgood.xyz`,
   });
 };
 

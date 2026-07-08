@@ -24,7 +24,7 @@ import {
 } from '../controllers/listing.controller';
 import { listCharityReviewListings, reviewCharityListing } from '../controllers/listingReview.controller';
 
-const router = Router();
+const router: Router = Router();
 
 // Public auction browsing endpoint
 router.get('/', asyncHandler(listActive));
