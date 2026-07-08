@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { findUserById, toPublicUser } from '../repositories';
 import { parseCookieHeader } from '../utils/security';
-import { getSessionCookieName, verifySessionToken } from '../services/session.service';
+import { getSessionCookieName, issueRefreshedSessionToken, setSessionCookie, verifySessionToken } from '../services/session.service';
 import { forbidden, unauthorised } from '../utils/errors';
 
 
@@ -22,7 +22,7 @@ const getTokenFromRequest = (req: Request): string | undefined => {
   return cookies[getSessionCookieName()];
 };
 
-export const authenticate = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const token = getTokenFromRequest(req);
     if (!token) throw unauthorised();
@@ -32,6 +32,10 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
     req.user = toPublicUser(user);
     req.csrfToken = verified.csrfTokenHash;
     req.sessionId = verified.sid;
+    // NFSR08 sliding inactivity window: replace an aging token so activity keeps
+    // the session alive, up to the absolute expiry.
+    const refreshed = issueRefreshedSessionToken(verified, user.roles);
+    if (refreshed) setSessionCookie(res, refreshed);
     assertPasswordChangeGate(req);
     next();
   } catch (err) {
@@ -39,7 +43,7 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
   }
 };
 
-export const authenticateOptional = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+export const authenticateOptional = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const token = getTokenFromRequest(req);
     if (!token) { next(); return; }
@@ -49,6 +53,8 @@ export const authenticateOptional = async (req: Request, _res: Response, next: N
     req.user = toPublicUser(user);
     req.csrfToken = verified.csrfTokenHash;
     req.sessionId = verified.sid;
+    const refreshed = issueRefreshedSessionToken(verified, user.roles);
+    if (refreshed) setSessionCookie(res, refreshed);
     assertPasswordChangeGate(req);
     next();
   } catch {

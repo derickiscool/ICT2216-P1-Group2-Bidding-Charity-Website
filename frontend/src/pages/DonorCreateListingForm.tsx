@@ -283,7 +283,7 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
 
   const removeImage = (index: number) => setImages(prev => prev.filter((_, i) => i !== index))
 
-  const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|[\s"'<]on\w+\s*=|<\s*iframe/i.test(value)
+  const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|[\s"'</]on\w+\s*=|<\s*iframe/i.test(value)
 
   const validate = () => {
     const e: Record<string, string> = {}

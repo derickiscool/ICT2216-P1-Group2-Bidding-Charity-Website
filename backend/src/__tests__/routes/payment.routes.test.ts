@@ -422,4 +422,49 @@ describe('FR17 — Shipping & Delivery', () => {
     );
     assert.equal(paymentsRow.rows[0]?.escrow_state, 'released');
   });
+
+  test('no alternate route can force a listing straight to Delivered, bypassing shipment', async () => {
+    const { listing, donor, bidder, admin } = await setupPaidAuction();
+
+    // Attempt to smuggle a status field through the general listing PATCH route
+    // (available to admins even on non-donor-editable statuses) before any
+    // shipment has been arranged.
+    const patchAttempt = await request(`/api/listings/${listing.uuid as string}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+      body: JSON.stringify({ status: 'delivered' }),
+    });
+    // The PATCH route has no `status` field in its whitelist, so it either
+    // succeeds while leaving status untouched, or is rejected outright —
+    // either way the listing must not become "delivered".
+    if (patchAttempt.response.status === 200) {
+      assert.notEqual((patchAttempt.body as Rec).status, 'delivered');
+    }
+
+    const afterAdminPatch = await query(`SELECT status FROM listings WHERE id = $1`, [listing.id]);
+    assert.notEqual(afterAdminPatch.rows[0].status, 'delivered');
+
+    // The donor themselves cannot even reach the PATCH route on a sold listing
+    // (not in DONOR_EDITABLE_STATUSES), but confirm the attempt is rejected and
+    // does not leak a status change either.
+    const donorPatch = await request(`/api/listings/${listing.uuid as string}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: donor.cookie, 'x-csrf-token': donor.csrf },
+      body: JSON.stringify({ status: 'delivered' }),
+    });
+    assert.equal(donorPatch.response.status, 403);
+
+    // Confirming delivery still requires a prior shipment — there is no way to
+    // jump directly from "sold" to "delivered".
+    const prematureConfirm = await postJson(
+      `/api/listings/${listing.uuid as string}/confirm-delivery`,
+      {},
+      { cookie: bidder.cookie, 'x-csrf-token': bidder.csrf },
+    );
+    assert.equal(prematureConfirm.response.status, 400);
+    assert.equal(prematureConfirm.body.code, 'SHIPPING_NOT_ARRANGED');
+
+    const finalStatus = await query(`SELECT status FROM listings WHERE id = $1`, [listing.id]);
+    assert.notEqual(finalStatus.rows[0].status, 'delivered');
+  });
 });

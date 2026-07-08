@@ -11,7 +11,8 @@ export const SESSION_JWT_AUDIENCE = 'bidforgood-web';
 export const SESSION_JWT_ALGORITHM = 'HS256' as const;
 export const SESSION_IDLE_TIMEOUT_MINUTES = 15;
 export const SESSION_IDLE_TIMEOUT_MS = SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000;
-export const SESSION_ABSOLUTE_TIMEOUT_HOURS = 8;
+export const SESSION_ABSOLUTE_TIMEOUT_MINUTES = 30;
+export const SESSION_ABSOLUTE_TIMEOUT_MS = SESSION_ABSOLUTE_TIMEOUT_MINUTES * 60 * 1000;
 const JWT_CLOCK_TOLERANCE_SECONDS = 2;
 const devJwtSecret = crypto.randomBytes(32).toString('hex');
 
@@ -26,6 +27,8 @@ export interface VerifiedSession {
   sid: string;
   jti: string;
   csrfTokenHash: string;
+  issuedAtMs: number;
+  absoluteExpiresAtMs: number;
 }
 
 export const getSessionCookieName = (): string => process.env.NODE_ENV === 'production' ? '__Host-bfg_session' : 'bfg_session';
@@ -61,7 +64,7 @@ export const createSession = async (user: Omit<User, 'passwordHash'>): Promise<C
   const jti = randomToken(32);
   const csrfToken = randomToken(32);
   const expiresAt = new Date(Date.now() + SESSION_IDLE_TIMEOUT_MS);
-  const absoluteExpiresAt = new Date(Date.now() + SESSION_ABSOLUTE_TIMEOUT_HOURS * 60 * 60 * 1000);
+  const absoluteExpiresAt = new Date(Date.now() + SESSION_ABSOLUTE_TIMEOUT_MS);
   const record: SessionRecord = {
     sid,
     userId: user.id,
@@ -111,7 +114,35 @@ export const verifySessionToken = async (token: string): Promise<VerifiedSession
   record.lastSeenAt = new Date();
   record.expiresAt = new Date(Math.min(now + SESSION_IDLE_TIMEOUT_MS, record.absoluteExpiresAt.getTime()));
   await updateSession(record);
-  return { userId: Number(decoded.sub), sid: String(decoded.sid), jti: String(decoded.jti), csrfTokenHash: record.csrfTokenHash };
+  return {
+    userId: Number(decoded.sub),
+    sid: String(decoded.sid),
+    jti: String(decoded.jti),
+    csrfTokenHash: record.csrfTokenHash,
+    issuedAtMs: (decoded.iat as number) * 1000,
+    absoluteExpiresAtMs: record.absoluteExpiresAt.getTime(),
+  };
+};
+
+export const SESSION_REFRESH_THRESHOLD_MS = SESSION_IDLE_TIMEOUT_MS / 2;
+
+// NFSR08: the idle timeout is a *sliding* window. verifySessionToken already slides
+// the server-side record, but the JWT's own exp is fixed at signing, so without a
+// refresh an active user would still be logged out 15 minutes after login. Once a
+// token is past half its window, mint a replacement for the same sid/jti (keeping
+// the jti means in-flight requests carrying the old token stay valid until its
+// original exp), bounded by the session's absolute expiry.
+export const issueRefreshedSessionToken = (session: VerifiedSession, roles: readonly string[]): string | undefined => {
+  const now = Date.now();
+  if (now - session.issuedAtMs < SESSION_REFRESH_THRESHOLD_MS) return undefined;
+  const remainingAbsoluteSeconds = Math.floor((session.absoluteExpiresAtMs - now) / 1000);
+  if (remainingAbsoluteSeconds <= 0) return undefined;
+  const expiresInSeconds = Math.min(SESSION_IDLE_TIMEOUT_MS / 1000, remainingAbsoluteSeconds);
+  return jwt.sign(
+    { sub: String(session.userId), sid: session.sid, role: roles[0], roles, jti: session.jti },
+    getJwtSecret(),
+    { algorithm: SESSION_JWT_ALGORITHM, issuer: SESSION_JWT_ISSUER, audience: SESSION_JWT_AUDIENCE, expiresIn: expiresInSeconds },
+  );
 };
 
 export const revokeBySid = async (sid: string): Promise<void> => revokeSession(sid);

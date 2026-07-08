@@ -35,13 +35,20 @@ export const evaluateRoleAccess = (
 export const requireRole = (...roles: UserRole[]) => async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   const decision = evaluateRoleAccess(req.user?.roles, roles);
   if (!decision.allowed) {
-    await audit(req, 'ACCESS_DENIED', {
-      requiredRoles: decision.requiredRoles,
-      actualRoles: decision.actualRoles,
-      path: req.originalUrl,
-      decisionMs: Number(decision.decisionMs.toFixed(3)),
-      withinBudget: decision.withinBudget,
-    }, 'route');
+    // The denial must reach the client even if the audit insert fails — an uncaught
+    // rejection here would leave the request hanging (Express 4 does not catch
+    // async middleware rejections).
+    try {
+      await audit(req, 'ACCESS_DENIED', {
+        requiredRoles: decision.requiredRoles,
+        actualRoles: decision.actualRoles,
+        path: req.originalUrl,
+        decisionMs: Number(decision.decisionMs.toFixed(3)),
+        withinBudget: decision.withinBudget,
+      }, 'route');
+    } catch (err) {
+      console.error('[rbac] failed to write ACCESS_DENIED audit event', err);
+    }
     return next(forbidden('Access denied'));
   }
   return next();
