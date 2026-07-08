@@ -21,6 +21,9 @@ services:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Consumed by init/zz-app-user.sh to create the backend's least-privilege role.
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
 
   redis:
     image: redis:7-alpine

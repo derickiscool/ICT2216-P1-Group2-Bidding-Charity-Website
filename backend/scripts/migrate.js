@@ -7,8 +7,9 @@ const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
   database: process.env.DB_NAME || 'bidforgood',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
+  // DDL needs the admin role; DB_USER now points at the least-privilege app role.
+  user: process.env.DB_ADMIN_USER || process.env.DB_USER || 'postgres',
+  password: process.env.DB_ADMIN_PASSWORD || process.env.DB_PASSWORD,
 });
 
 const run = async () => {

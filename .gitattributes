@@ -1,0 +1,2 @@
+# Shell scripts must keep LF endings — CRLF breaks bash inside the Postgres container.
+*.sh text eol=lf
