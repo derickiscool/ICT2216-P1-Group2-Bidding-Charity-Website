@@ -16,6 +16,7 @@ import { securityHeaders } from './middleware/securityHeaders.middleware';
 
 export const createApp = () => {
   const app = express();
+  app.disable('x-powered-by');
   app.set('trust proxy', 1);
   app.use(securityHeaders);
   app.use(cors({ origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173', credentials: true }));
@@ -26,9 +27,11 @@ export const createApp = () => {
   }
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', message: 'BidForGood API is running' }));
-  app.get('/api/db-test', async (_req, res, next) => {
-    try { res.json(await testConnection()); } catch (err) { next(err); }
-  });
+  if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_DB_TEST_ENDPOINT === 'true') {
+    app.get('/api/db-test', async (_req, res, next) => {
+      try { res.json(await testConnection()); } catch (err) { next(err); }
+    });
+  }
   app.use('/api/auth', authRoutes);
   app.use('/api/users', profileRoutes);
   app.use('/api/listings', listingRoutes);
