@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { CharityOrganisation, Listing, Payment } from '../types/domain';
-import { addCharity, getCharityByUuid, getPaymentsForListing, listCharities, listListings, updateCharity } from '../repositories';
+import { addCharity, getCharityByUuid, getPaymentsForListing, listCharities, listListings, updateCharity, deleteCharityByUuid } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';
@@ -16,6 +16,18 @@ const detectMime = (buffer: Buffer): 'application/pdf' | 'image/png' | 'image/jp
 
 export const registerCharity = async (req: Request): Promise<CharityOrganisation> => {
   if (!req.user) throw badRequest('Authentication required');
+
+  const allCharities = await listCharities();
+  const existing = allCharities.find(c => c.ownerUserId === req.user!.id);
+  if (existing) {
+    if (existing.status === 'pending') {
+      throw badRequest('Your charity registration is already pending review.', 'CHARITY_PENDING_REVIEW');
+    }
+    if (existing.status === 'rejected') {
+      await deleteCharityByUuid(existing.uuid);
+    }
+  }
+
   const file = req.file;
   const organisationName = sanitizeText(req.body.organisationName ?? req.body.name, 160);
   const description = sanitizeText(req.body.description, 1000);

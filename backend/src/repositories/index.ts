@@ -34,6 +34,7 @@ export const {
   getCharityByOwnerUserId,
   listCharities,
   updateCharity,
+  deleteCharityByUuid,
   addCampaign,
   getCampaignById,
   getCampaignByUuid,
