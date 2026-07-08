@@ -86,6 +86,61 @@ describe('SFR02 — Authentication & Session Management', () => {
     assert.equal(Number(persisted.rows[0].failed_login_attempts), 0);
     assert.equal(persisted.rows[0].locked_until, null);
   });
+
+  test('admin accounts require password AND a follow-up email OTP — password alone does not create a session', async () => {
+    const step1 = await postJson('/api/auth/login', {
+      email: 'admin@bidforgood.test',
+      password: 'S3cure!Pass2026',
+    });
+    assert.equal(step1.response.status, 200);
+    assert.equal(step1.body.mfaRequired, true);
+    assert.equal(step1.setCookie, undefined);
+
+    const otp = readDevOtpForTest('admin@bidforgood.test');
+    assert.match(String(otp), /^\d{6}$/);
+
+    const verified = await postJson('/api/auth/login/passwordless/verify', {
+      email: 'admin@bidforgood.test',
+      otp,
+    });
+    assert.equal(verified.response.status, 200);
+    assert.ok(verified.setCookie?.includes('HttpOnly'));
+    assert.ok(verified.csrf);
+  });
+
+  test('admin accounts cannot use the passwordless (email-only) login path', async () => {
+    const requested = await postJson('/api/auth/login/passwordless/request', {
+      email: 'admin@bidforgood.test',
+    });
+    assert.equal(requested.response.status, 202);
+    assert.match(requested.body.message, /if the email matches/i);
+
+    // Suppressed silently (anti-enumeration): no OTP was actually issued, so
+    // any code submitted to verify fails the same way as a missing OTP.
+    const verified = await postJson('/api/auth/login/passwordless/verify', {
+      email: 'admin@bidforgood.test',
+      otp: '000000',
+    });
+    assert.equal(verified.response.status, 401);
+  });
+
+  test('non-admin roles may still log in with password alone (no mandatory OTP)', async () => {
+    const email = 'bidderonefactor@example.com';
+    const password = 'correcthorsebatterystaple11';
+    await registerVerifiedUser({
+      email,
+      username: 'bidderonefactor',
+      full_name: 'Bidder One Factor',
+      password,
+      roles: ['bidder'],
+    });
+
+    const ok = await postJson('/api/auth/login', { email, password });
+    assert.equal(ok.response.status, 200);
+    assert.equal(ok.body.mfaRequired, undefined);
+    assert.ok(ok.setCookie?.includes('HttpOnly'));
+    assert.ok(ok.csrf);
+  });
 });
 
 describe('SFR01 — Registration & Email Verification', () => {

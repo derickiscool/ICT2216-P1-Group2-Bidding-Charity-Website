@@ -6,7 +6,7 @@ interface AuthStore {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<LoginResult>
   requestLoginOtp: (email: string) => Promise<string>
   verifyLoginOtp: (email: string, otp: string) => Promise<void>
   logout: () => Promise<void>
@@ -30,6 +30,21 @@ interface LoginResponse {
   user: User
 }
 
+// Admin accounts require a follow-up OTP after the password step; other
+// roles complete immediately. `mfaRequired` distinguishes the two shapes
+// the /auth/login endpoint can return.
+interface LoginApiResponse {
+  mfaRequired?: boolean
+  message?: string
+  csrfToken?: string
+  user?: User
+}
+
+interface LoginResult {
+  mfaRequired: boolean
+  message?: string
+}
+
 interface RegisterResponse {
   message: string
 }
@@ -47,9 +62,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   login: async (email, password) => {
     set({ isLoading: true })
     try {
-      const res = await api.post<LoginResponse>('/auth/login', { email, password })
-      setCsrfToken(res.data.csrfToken)
-      set({ user: res.data.user, isAuthenticated: true, isLoading: false })
+      const res = await api.post<LoginApiResponse>('/auth/login', { email, password })
+      if (res.data.mfaRequired) {
+        set({ isLoading: false })
+        return { mfaRequired: true, message: res.data.message }
+      }
+      setCsrfToken(res.data.csrfToken!)
+      set({ user: res.data.user!, isAuthenticated: true, isLoading: false })
+      return { mfaRequired: false }
     } catch (err) {
       set({ isLoading: false })
       throw err
