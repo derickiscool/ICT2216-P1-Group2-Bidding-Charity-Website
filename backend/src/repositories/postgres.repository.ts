@@ -784,6 +784,10 @@ const updateCharity = async (record: CharityOrganisation): Promise<void> => {
   );
 };
 
+const deleteCharityByUuid = async (uuid: string): Promise<void> => {
+  await query('DELETE FROM charities WHERE uuid = $1', [uuid]);
+};
+
 const getCharityById = async (id: number): Promise<CharityOrganisation | undefined> => {
   const row = await firstRow<CharityRow>('SELECT * FROM charities WHERE id = $1 LIMIT 1', [id]);
   return row ? mapCharity(row) : undefined;
@@ -1379,6 +1383,7 @@ export const seedDemoData = async (): Promise<void> => {
     { email: 'donor@bidforgood.test', username: 'donor', full_name: 'Demo Donor', roles: ['donor'] },
     { email: 'bidder@bidforgood.test', username: 'bidder', full_name: 'Demo Bidder', roles: ['bidder'] },
     { email: 'charity@bidforgood.test', username: 'charity', full_name: 'Demo Charity', roles: ['charity'] },
+    { email: 'charity3@bidforgood.test', username: 'charity3', full_name: 'Demo Charity Three', roles: ['charity'] },
   ];
   const userIds: Record<string, number> = {};
   for (const demoUser of demoUsers) {
@@ -1474,6 +1479,7 @@ export const postgresRepository: BidForGoodRepository = {
   getCharityByOwnerUserId,
   listCharities,
   updateCharity,
+  deleteCharityByUuid,
 
   addCampaign,
   getCampaignById,
