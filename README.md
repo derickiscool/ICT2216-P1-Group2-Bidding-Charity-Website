@@ -181,26 +181,6 @@ frontend type-check: PASS
 npm audit --audit-level=high: PASS
 ```
 
-## Demo Accounts
-
-All demo accounts use the password `S3cure!Pass2026`. Loaded automatically on first `docker compose up` (fresh volume), or on demand with `npm run seed` (from `backend/`) — see `backend/db/init/seed.sql`.
-
-```text
-donor1@bidforgood.test  (donor)
-donor2@bidforgood.test  (donor)
-donor3@bidforgood.test  (donor)   
-bidder1@bidforgood.test (bidder)
-bidder2@bidforgood.test (bidder)
-bidder3@bidforgood.test (bidder)
-bidder4@bidforgood.test (bidder)
-bidder5@bidforgood.test (bidder)
-charity1@bidforgood.test (charity) 
-charity2@bidforgood.test (charity) 
-charity3@bidforgood.test (charity) 
-charity4@bidforgood.test (charity) 
-staff1@bidforgood.test (charity_staff)
-```
-
 **Charities**
 
 | Organisation | Status | Owner |
