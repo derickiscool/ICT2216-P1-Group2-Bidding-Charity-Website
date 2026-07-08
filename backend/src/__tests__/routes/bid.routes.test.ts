@@ -214,10 +214,18 @@ describe('FR12 — Auto-Bidding', () => {
     // bidderTwo cannot respond with 200 because the next legal bid is 205
     // (195 + donor minimum increment 10), which exceeds bidderTwo's max.
     assert.equal(secondAutoBidBody.result.currentBid, 195);
-    assert.deepEqual(
-      secondAutoBidBody.result.bids.map(bid => bid.amount),
-      [120, 145, 170, 195],
+
+    // Normalise the response values before asserting. PostgreSQL numeric values
+    // may be returned as string-like values depending on the driver/parser, and
+    // Jest can report those as visually identical arrays even when strict
+    // equality fails. The behaviour under test is the bid sequence, not the
+    // database parser's runtime representation.
+    const acceptedBidAmounts = Array.from(
+      secondAutoBidBody.result.bids,
+      bid => Number(bid.amount),
     );
+    assert.equal(acceptedBidAmounts.length, 4);
+    assert.equal(acceptedBidAmounts.join(','), '120,145,170,195');
     assert.equal(secondAutoBidBody.result.bids[secondAutoBidBody.result.bids.length - 1]?.bidder_username, 'bidder');
     assert.equal(secondAutoBidBody.result.bids.every(bid => bid.is_auto_bid), true);
 
