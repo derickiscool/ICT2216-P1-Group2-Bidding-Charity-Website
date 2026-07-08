@@ -60,7 +60,7 @@ export default function ForgotPasswordPage() {
             Forgot your password?
           </h2>
           <p className="text-base leading-relaxed" style={{ color: '#9DB5B5' }}>
-            Enter your email address and we'll send a one-time code to reset your password.
+            Enter your email address and we'll send a secure reset token to reset your password.
           </p>
         </div>
       </div>
@@ -82,7 +82,7 @@ export default function ForgotPasswordPage() {
                 style={{ background: C.emeraldLight, border: '1px solid rgba(4,120,87,0.20)' }}>
                 <CheckCircle2 className="w-5 h-5 flex-shrink-0" style={{ color: C.emerald }} />
                 <p className="text-sm font-medium" style={{ color: C.emerald }}>
-                  A reset code has been sent. Please check your email.
+                  A reset token has been sent. Please check your email.
                 </p>
               </div>
               <button
@@ -93,7 +93,7 @@ export default function ForgotPasswordPage() {
                 onMouseEnter={e => (e.currentTarget.style.background = C.emeraldDark)}
                 onMouseLeave={e => (e.currentTarget.style.background = C.emerald)}
               >
-                Enter reset code →
+                Enter reset token →
               </button>
               <p className="text-sm text-center mt-4" style={{ color: C.muted }}>
                 <Link to="/login" style={{ color: C.emerald }} className="font-medium">Back to login</Link>
@@ -103,7 +103,7 @@ export default function ForgotPasswordPage() {
             <>
               <h1 className="text-2xl font-bold mb-1" style={{ color: C.slate }}>Reset your password</h1>
               <p className="text-sm mb-8" style={{ color: C.muted }}>
-                We'll send a 6-digit code to your email address.
+                We'll send a single-use reset token to your email address.
               </p>
 
               {error && (
@@ -128,7 +128,7 @@ export default function ForgotPasswordPage() {
                   style={{ background: loading ? '#6ba88e' : C.emerald, cursor: loading ? 'not-allowed' : 'pointer' }}
                   onMouseEnter={e => { if (!loading) (e.currentTarget.style.background = C.emeraldDark) }}
                   onMouseLeave={e => { if (!loading) (e.currentTarget.style.background = C.emerald) }}>
-                  {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : 'Send reset code'}
+                  {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : 'Send reset token'}
                 </button>
               </form>
 

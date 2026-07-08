@@ -32,7 +32,7 @@ export default function ResetPasswordPage() {
   const prefillEmail = (location.state as { email?: string })?.email ?? ''
 
   const [email, setEmail] = useState(prefillEmail)
-  const [otp, setOtp] = useState('')
+  const [token, setToken] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPwd, setShowPwd] = useState(false)
@@ -51,14 +51,14 @@ export default function ResetPasswordPage() {
 
     const errs: Record<string, string> = {}
     if (!email.trim()) errs.email = 'Email is required.'
-    if (!/^\d{6}$/.test(otp)) errs.otp = 'Enter the 6-digit code from your email.'
+    if (!/^[A-Za-z0-9_-]{32,128}$/.test(token.trim())) errs.otp = 'Enter the secure reset token from your email.'
     if (!password) errs.password = 'Password is required.'
     if (password && confirm !== password) errs.confirm = 'Passwords do not match.'
     if (Object.keys(errs).length > 0) { setFieldErrors(errs); return }
 
     setLoading(true)
     try {
-      await api.post('/auth/reset-password', { email: email.trim(), token: otp, password })
+      await api.post('/auth/reset-password', { email: email.trim(), token: token.trim(), password })
       setDone(true)
     } catch (err) {
       const ae = err as ApiError
@@ -87,7 +87,7 @@ export default function ResetPasswordPage() {
           </div>
           <h2 className="text-3xl font-bold text-white leading-snug mb-4">Set a new password</h2>
           <p className="text-base leading-relaxed" style={{ color: '#9DB5B5' }}>
-            Enter the 6-digit code sent to your email and choose a strong new password.
+            Enter the secure reset token sent to your email and choose a strong new password.
           </p>
         </div>
       </div>
@@ -127,7 +127,7 @@ export default function ResetPasswordPage() {
             <>
               <h1 className="text-2xl font-bold mb-1" style={{ color: C.slate }}>Set new password</h1>
               <p className="text-sm mb-8" style={{ color: C.muted }}>
-                Enter the code from your email and your new password.
+                Enter the reset token from your email and your new password.
               </p>
 
               {error && (
@@ -150,12 +150,12 @@ export default function ResetPasswordPage() {
                   {fieldErrors.email && <p className="text-xs mt-1" style={{ color: C.danger }}>{fieldErrors.email}</p>}
                 </div>
 
-                {/* OTP */}
+                {/* Reset token */}
                 <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>6-digit reset code</label>
-                  <input type="text" inputMode="numeric" maxLength={6} value={otp}
-                    onChange={e => { setOtp(e.target.value.replace(/\D/g, '')); setFieldErrors(p => ({ ...p, otp: '' })) }}
-                    placeholder="123456" style={inputCls(!!fieldErrors.otp)}
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Reset token</label>
+                  <input type="text" autoComplete="one-time-code" maxLength={128} value={token}
+                    onChange={e => { setToken(e.target.value.trim()); setFieldErrors(p => ({ ...p, otp: '' })) }}
+                    placeholder="Paste reset token" style={inputCls(!!fieldErrors.otp)}
                     onFocus={e => (e.target.style.borderColor = C.emerald)}
                     onBlur={e => (e.target.style.borderColor = fieldErrors.otp ? C.danger : C.beige)} />
                   {fieldErrors.otp && <p className="text-xs mt-1" style={{ color: C.danger }}>{fieldErrors.otp}</p>}
@@ -218,7 +218,7 @@ export default function ResetPasswordPage() {
               </form>
 
               <p className="text-sm text-center mt-6" style={{ color: C.muted }}>
-                Didn't get a code?{' '}
+                Didn't get a token?{' '}
                 <Link to="/forgot-password" className="font-semibold" style={{ color: C.emerald }}>Send again</Link>
               </p>
             </>

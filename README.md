@@ -173,15 +173,11 @@ npm audit --audit-level=high: PASS
 
 ## Demo Accounts
 
-All demo accounts use the password `S3cure!Pass2026`. Loaded automatically on first `docker compose up` (fresh volume), or on demand with `npm run seed` (from `backend/`) — see `backend/db/init/seed.sql`.
+Static demo credentials are no longer committed. To create a temporary admin for local testing, run `npm run seed:admin` from `backend/` with `SEED_ADMIN_PASSWORD` set in the environment. The seeded admin is marked `must_change_password`.
 
 ```text
 admin@bidforgood.test     (admin)
-donor@bidforgood.test     (donor)
-bidder@bidforgood.test    (bidder)
-bidder2@bidforgood.test   (bidder)  — second bidder, used to demo competing/outbid scenarios
-charity@bidforgood.test   (charity) — owns the approved demo charity
-charity2@bidforgood.test  (charity) — owns the pending demo charity
+password: provided by SEED_ADMIN_PASSWORD at seed time
 ```
 
 **Charities**
