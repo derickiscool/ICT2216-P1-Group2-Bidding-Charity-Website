@@ -173,7 +173,10 @@ function AutoBidModal({
                 className="w-full rounded-xl py-2.5 pl-8 pr-4 text-sm font-bold outline-none"
                 style={{ border: `1px solid ${C.beige}`, background: C.linen, color: C.slate }} />
             </div>
-            <p className="text-[11px] mt-1" style={{ color: C.muted }}>The backend will reject increments below the listing minimum.</p>
+            <p className="text-[11px] mt-1 leading-relaxed" style={{ color: C.muted }}>
+              The backend rejects increments below the listing minimum. Auto-bids keep responding using your
+              configured increment, but only while the next legal bid can still fit within your private maximum.
+            </p>
           </div>
           {err && <p className="text-xs font-bold" style={{ color: C.danger }}>{err}</p>}
         </div>

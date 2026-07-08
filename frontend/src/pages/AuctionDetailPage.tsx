@@ -653,7 +653,7 @@ export default function AuctionDetailPage() {
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--bfg-slate)' }}>Auto-Bid</p>
-                          <p className="text-[10px] mt-0.5" style={{ color: 'var(--bfg-text-muted)' }}>Bid automatically up to a limit</p>
+                          <p className="text-[10px] mt-0.5" style={{ color: 'var(--bfg-text-muted)' }}>Keeps bidding automatically up to your private limit</p>
                         </div>
                         {/* Toggle — pure CSS, no translate issues */}
                         <button
@@ -701,8 +701,9 @@ export default function AuctionDetailPage() {
                                 style={{ color: 'var(--bfg-slate)' }}
                               />
                             </div>
-                            <p className="text-[10px] mt-1" style={{ color: 'var(--bfg-text-muted)' }}>
-                              Must be at least the listing minimum increment.
+                            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: 'var(--bfg-text-muted)' }}>
+                              Must be at least the listing minimum increment. Auto-bids only continue when the next
+                              generated bid can still meet the donor-defined minimum increment.
                             </p>
                           </div>
                           <button
@@ -714,7 +715,8 @@ export default function AuctionDetailPage() {
                             {autoBidSaving ? 'Saving Auto-Bid…' : savedAutoBidActive ? 'Update Auto-Bid' : 'Save Auto-Bid'}
                           </button>
                           <p className="text-[10px] leading-relaxed" style={{ color: 'var(--bfg-text-muted)' }}>
-                            Your maximum and increment are only visible to you. Other bidders only see public bid amounts.
+                            Your maximum and increment are only visible to you. Auto-bid responses move by your increment,
+                            capped by your maximum, and stop once the next legal bid would exceed that maximum.
                           </p>
                         </div>
                       )}

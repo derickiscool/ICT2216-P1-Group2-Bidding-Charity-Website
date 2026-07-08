@@ -168,4 +168,62 @@ describe('FR12 — Auto-Bidding', () => {
     assert.equal(publicBids.body.data, undefined);
     assert.equal(JSON.stringify(publicBids.body).includes('max_amount'), false);
   });
+
+  test('same maximum auto-bids stop when the next legal bid would exceed the shared max', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const bidderOne = await loginAs('bidder@bidforgood.test');
+
+    await registerVerifiedUser({
+      email: 'autobidder-same-max@bidforgood.test',
+      username: 'sameMaxBidder',
+      full_name: 'Same Max Bidder',
+      password: 'S3cure!Pass2026',
+      roles: ['bidder'],
+    });
+    const bidderTwo = await loginAs('autobidder-same-max@bidforgood.test');
+
+    const listing = { body: await createActiveListing(donor, {
+      title: 'FR12 Same Max Auto-Bid Test',
+      description: 'Listing used to prove equal auto-bid maximums keep priority without exposing max settings.',
+      starting_price: 100,
+      min_increment: 10,
+    }) };
+
+    const firstAutoBid = await postJson(
+      '/api/bids/auto-bids',
+      { listing_id: listing.body.id, max_amount: 200, auto_increment: 25 },
+      { cookie: bidderOne.cookie, 'x-csrf-token': bidderOne.csrf },
+    );
+    assert.equal(firstAutoBid.response.status, 201);
+    const firstAutoBidBody = firstAutoBid.body as unknown as { result: { currentBid: number } };
+    assert.equal(firstAutoBidBody.result.currentBid, 110);
+
+    const secondAutoBid = await postJson(
+      '/api/bids/auto-bids',
+      { listing_id: listing.body.id, max_amount: 200, auto_increment: 25 },
+      { cookie: bidderTwo.cookie, 'x-csrf-token': bidderTwo.csrf },
+    );
+    assert.equal(secondAutoBid.response.status, 201);
+
+    const secondAutoBidBody = secondAutoBid.body as unknown as {
+      result: { currentBid: number; winnerId: number; bids: Array<{ amount: number; bidder_username: string; is_auto_bid: boolean }> };
+    };
+
+    // FR12: auto-bidders keep responding while each generated public bid still
+    // satisfies the listing minimum increment. After bidderOne responds at 195,
+    // bidderTwo cannot respond with 200 because the next legal bid is 205
+    // (195 + donor minimum increment 10), which exceeds bidderTwo's max.
+    assert.equal(secondAutoBidBody.result.currentBid, 195);
+    assert.deepEqual(
+      secondAutoBidBody.result.bids.map(bid => bid.amount),
+      [120, 145, 170, 195],
+    );
+    assert.equal(secondAutoBidBody.result.bids[secondAutoBidBody.result.bids.length - 1]?.bidder_username, 'bidder');
+    assert.equal(secondAutoBidBody.result.bids.every(bid => bid.is_auto_bid), true);
+
+    const publicBids = await request(`/api/bids/listings/${listing.body.id}`);
+    assert.equal(publicBids.response.status, 200);
+    assert.equal(JSON.stringify(publicBids.body).includes('max_amount'), false);
+  });
+
 });
