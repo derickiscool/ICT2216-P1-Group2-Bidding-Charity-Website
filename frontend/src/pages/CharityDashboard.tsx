@@ -305,8 +305,11 @@ function DashboardOverviewTile({
   )
 }
 
+const SAFE_IMAGE_SRC = /^(blob:https?:\/\/[^\s<>"']+|data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i
+const isSafeImageSrc = (value: string): boolean => SAFE_IMAGE_SRC.test(value)
+
 function DashboardCampaignImage({ src }: { src?: string }) {
-  if (src) {
+  if (src && isSafeImageSrc(src)) {
     return <img src={src} alt="Campaign preview" className="h-28 w-full rounded-2xl object-cover" />
   }
 
@@ -520,12 +523,14 @@ function DashboardImageUploadInput({ previewUrl, error, disabled, onChange, onCl
   onChange: (e: ChangeEvent<HTMLInputElement>) => void
   onClear: () => void
 }) {
+  const safePreviewUrl = previewUrl && isSafeImageSrc(previewUrl) ? previewUrl : undefined
+
   return (
     <div>
       <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Campaign image</label>
       <div className="rounded-2xl border border-dashed p-4" style={{ borderColor: error ? C.danger : C.beige, background: disabled ? C.linen : '#fff' }}>
-        {previewUrl ? (
-          <img src={previewUrl} alt="Selected campaign preview" className="h-40 w-full rounded-xl object-cover mb-3" />
+        {safePreviewUrl ? (
+          <img src={safePreviewUrl} alt="Selected campaign preview" className="h-40 w-full rounded-xl object-cover mb-3" />
         ) : (
           <div className="h-40 rounded-xl flex flex-col items-center justify-center mb-3" style={{ background: C.linen, color: C.muted }}>
             <ImageIcon className="w-8 h-8 mb-2" />
