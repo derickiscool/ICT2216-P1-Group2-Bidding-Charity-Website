@@ -138,12 +138,13 @@ describe('FR12 — Auto-Bidding', () => {
 
     const autoBid = await postJson(
       '/api/bids/auto-bids',
-      { listing_id: listing.body.id, max_amount: 200 },
+      { listing_id: listing.body.id, max_amount: 200, auto_increment: 25 },
       { cookie: bidderOne.cookie, 'x-csrf-token': bidderOne.csrf },
     );
     assert.equal(autoBid.response.status, 201);
-    const autoBidBody = autoBid.body as unknown as { autoBid: { max_amount: number }; result: { currentBid: number } };
+    const autoBidBody = autoBid.body as unknown as { autoBid: { max_amount: number; auto_increment: number }; result: { currentBid: number } };
     assert.equal(autoBidBody.autoBid.max_amount, 200);
+    assert.equal(autoBidBody.autoBid.auto_increment, 25);
     assert.equal(autoBidBody.result.currentBid, 110);
 
     const manualBid = await postJson(
@@ -157,7 +158,9 @@ describe('FR12 — Auto-Bidding', () => {
       bids: Array<{ is_auto_bid: boolean }>;
     };
 
-    assert.equal(manualBidBody.currentBid, 160);
+    // The automatic response uses bidder one's chosen +$25 increment instead of
+    // the listing's default +$10 increment, while still keeping max_amount private.
+    assert.equal(manualBidBody.currentBid, 175);
     assert.equal(manualBidBody.bids.some(bid => bid.is_auto_bid), true);
 
     const publicBids = await request(`/api/bids/listings/${listing.body.id}`);
