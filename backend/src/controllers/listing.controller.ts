@@ -19,8 +19,8 @@ import { getMyListingTrackingDashboard } from '../services/listingTracking.servi
 import { closeExpiredAuctions } from '../services/payment.service';
 
 export const listActive = async (req: Request, res: Response): Promise<void> => {
-  const listings = await searchPublicListings(req.query);
-  res.json({ data: listings, total: listings.length });
+  const result = await searchPublicListings(req.query);
+  res.json(result);
 };
 
 export const listMine = async (req: Request, res: Response): Promise<void> => {
