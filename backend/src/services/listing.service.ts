@@ -472,7 +472,7 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   const active = (await listActiveListings()).filter(listing => isPubliclyBiddableNow(listing, nowMs));
 
   const results = active.filter(l => {
-    const matchesQ = !q || `${l.title} ${l.description} ${l.charityName}`.toLowerCase().includes(q.toLowerCase());
+    const matchesQ = !q || l.title.toLowerCase().includes(q.toLowerCase());
     const matchesCategory = !category || l.category.toLowerCase() === category.toLowerCase();
     const matchesCondition = !condition || l.condition === condition;
     const matchesPriceMin = priceMin === undefined || l.current_bid >= priceMin;

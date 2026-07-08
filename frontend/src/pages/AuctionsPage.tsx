@@ -225,7 +225,7 @@ export default function AuctionsPage() {
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
               <div className="relative w-full sm:max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--bfg-beige)' }} />
-                <input type="text" placeholder="Search by name, description or charity..." value={search}
+                <input type="text" placeholder="Search by name..." value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm outline-none"
                   style={{ background: '#FFFFFF', border: '1px solid var(--bfg-beige)', color: 'var(--bfg-slate)' }} />
