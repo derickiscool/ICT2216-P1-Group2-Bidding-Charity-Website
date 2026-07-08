@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { CharityOrganisation, Listing, Payment } from '../types/domain';
-import { addCharity, getCharityByUuid, getPaymentsForListing, listCharities, listListings, updateCharity, deleteCharityByUuid } from '../repositories';
+import { addCharity, getCharityByUuid, getPaymentsForListing, listCampaignsByCharity, listCharities, listListings, updateCharity, deleteCharityByUuid } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';
@@ -88,8 +88,13 @@ export const getCharityDashboard = async (ownerUserId: number, charityId?: numbe
     : allCharities.find(c => c.ownerUserId === ownerUserId) ?? null;
 
   const allListings = await listListings();
-  const organisationName = charity?.organisationName ?? '';
-  const listings = allListings.filter(l => l.charityName.toLowerCase() === organisationName.toLowerCase());
+  // FR09/FR20: use the actual campaign ownership relation instead of the
+  // denormalised charityName text stored on each listing. This keeps the
+  // dashboard and review counts accurate even if a charity name changes, and
+  // prevents listings from another charity with a similar name from appearing.
+  const charityCampaigns = charity ? await listCampaignsByCharity(charity.id) : [];
+  const campaignIds = new Set(charityCampaigns.map(campaign => campaign.id));
+  const listings = allListings.filter(l => campaignIds.has(l.campaign_id));
 
   // Fetch payments for each sold listing to compute fund statistics and per-item flags
   const soldListings = listings.filter(l => l.status === 'sold');

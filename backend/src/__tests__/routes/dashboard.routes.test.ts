@@ -213,6 +213,42 @@ describe('FR20 — Charity Dashboard', () => {
     assert.ok(Array.isArray(body.listings));
     assert.ok(body.stats);
   });
+
+  test('includes admin-forwarded listings that are awaiting charity review', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const admin = await loginAs('admin@bidforgood.test');
+    const charity = await loginAs('charity@bidforgood.test');
+
+    const created = await postJson(
+      '/api/listings',
+      {
+        title: 'Dashboard Charity Review Item',
+        description: 'This listing should appear in the charity dashboard review queue.',
+        category: 'Collectibles',
+        charityName: 'Test Charity',
+        starting_price: 100,
+        min_increment: 10,
+        durationHours: 24,
+      },
+      { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
+    );
+    assert.equal(created.response.status, 201);
+
+    const forwarded = await postJson(
+      `/api/listings/${created.body.uuid}/approve`,
+      {},
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(forwarded.response.status, 200);
+    assert.equal(forwarded.body.status, 'charity_review');
+
+    const dashboard = await request('/api/charities/dashboard', { headers: { cookie: charity.cookie } });
+    assert.equal(dashboard.response.status, 200);
+    const dashboardBody = dashboard.body as Body;
+    const listings = dashboardBody.listings as Array<{ uuid: string; status: string }>;
+    const reviewItem = listings.find(listing => listing.uuid === created.body.uuid);
+    assert.equal(reviewItem?.status, 'charity_review');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
