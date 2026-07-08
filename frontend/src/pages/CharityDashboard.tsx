@@ -1277,9 +1277,19 @@ export default function CharityDashboard() {
                     disabled={creatingCampaign}
                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                       const file = e.target.files?.[0]
-                      if (!file) return
-                      const url = URL.createObjectURL(file)
-                      setNewCampaignForm(p => ({ ...p, image_file: file, image_preview_url: url }))
+                      if (!file) {
+                        setNewCampaignForm(p => ({ ...p, image_file: null, image_preview_url: '' }))
+                        return
+                      }
+                      const imageError = validateCampaignImage(file)
+                      if (imageError) {
+                        setNewCampaignErrors(p => ({ ...p, image_file: imageError }))
+                        e.target.value = ''
+                        return
+                      }
+                      readImageAsDataUrl(file, (url) => {
+                        setNewCampaignForm(p => ({ ...p, image_file: file, image_preview_url: url }))
+                      })
                       setNewCampaignErrors(p => ({ ...p, image_file: undefined }))
                     }}
                     onClear={() => {
