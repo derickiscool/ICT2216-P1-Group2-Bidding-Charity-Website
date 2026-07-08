@@ -64,7 +64,15 @@ export const authenticateOptional = async (req: Request, res: Response, next: Ne
   try {
     const token = getTokenFromRequest(req);
     if (!token) { next(); return; }
-    const verified = await verifySessionToken(token);
+    let verified: Awaited<ReturnType<typeof verifySessionToken>>;
+    try {
+      verified = await verifySessionToken(token);
+    } catch {
+      // FSR16 req 3: log invalid/expired session even on optional-auth routes.
+      await audit(req, 'AUTH_SESSION_INVALID', { path: req.originalUrl });
+      next();
+      return;
+    }
     const user = await findUserById(verified.userId);
     if (!user || !user.is_active) { next(); return; }
     req.user = toPublicUser(user);
@@ -74,7 +82,12 @@ export const authenticateOptional = async (req: Request, res: Response, next: Ne
     if (refreshed) setSessionCookie(res, refreshed);
     await assertPasswordChangeGate(req);
     next();
-  } catch {
+  } catch (err) {
+    // Forward AppErrors (e.g. PASSWORD_CHANGE_REQUIRED) so the client gets the correct response.
+    if (err instanceof Error && 'statusCode' in err) { next(err); return; }
+    req.user = undefined;
+    req.csrfToken = undefined;
+    req.sessionId = undefined;
     next();
   }
 };
