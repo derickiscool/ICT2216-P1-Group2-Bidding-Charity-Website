@@ -68,8 +68,6 @@ export interface Listing {
   category: string
   images: string[]
   starting_price: number
-  reserve_price?: number
-  buy_now_price?: number
   current_bid: number
   min_increment?: number
   bid_count: number
@@ -149,6 +147,7 @@ export interface AutoBid {
   bidder_id: number
   bidder_username: string
   max_amount: number
+  auto_increment: number
   is_active: boolean
   created_at: string
   updated_at: string

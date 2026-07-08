@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { getApprovedCharities, getCharities, getCharityDashboard, registerCharity, reviewCharity, streamCharityDocument } from '../services/charity.service';
-import { listAllActiveCampaigns } from '../repositories';
+import { getCharityById, listAllActiveCampaigns } from '../repositories';
 
 export const createCharityRegistration = async (req: Request, res: Response): Promise<void> => {
   const charity = await registerCharity(req);
@@ -32,15 +32,28 @@ export const reviewCharityRegistration = async (req: Request, res: Response): Pr
 // Public endpoint — returns all active campaigns so donors can pick one when creating a listing.
 export const listPublicCampaigns = async (_req: Request, res: Response): Promise<void> => {
   const campaigns = await listAllActiveCampaigns();
-  res.json(
-    campaigns.map(c => ({
-      id: c.id,
-      uuid: c.uuid,
-      name: c.name,
-      description: c.description,
-      hasImage: c.hasImage,
-    }))
+
+  // FR08: donors now pick target organisation first, then campaign. Include only
+  // public charity/campaign fields so the UI can group campaigns without exposing
+  // verification documents or private charity records.
+  const response = await Promise.all(
+    campaigns.map(async c => {
+      const charity = await getCharityById(c.charity_id);
+      if (!charity || charity.status !== 'approved') return null;
+      return {
+        id: c.id,
+        uuid: c.uuid,
+        name: c.name,
+        description: c.description,
+        charity_id: c.charity_id,
+        charityName: charity.organisationName,
+        end_date: c.end_date,
+        hasImage: c.hasImage,
+      };
+    }),
   );
+
+  res.json(response.filter(campaign => campaign !== null));
 };
 
 export const charityDashboard = async (req: Request, res: Response): Promise<void> => {

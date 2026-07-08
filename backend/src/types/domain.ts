@@ -116,8 +116,6 @@ export interface Listing {
   category: string;
   images: string[];
   starting_price: number;
-  reserve_price?: number;
-  buy_now_price?: number;
   current_bid: number;
   bid_count: number;
   status: ListingStatus;
@@ -191,6 +189,9 @@ export interface AutoBidSetting {
   bidder_id: number;
   bidder_username: string;
   max_amount: number;
+  // FR12: bidder-selected public step used when the backend places automatic response bids.
+  // The value is stored with the private max_amount, but only the owner/admin views it.
+  auto_increment: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;

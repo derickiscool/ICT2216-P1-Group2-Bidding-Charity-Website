@@ -110,24 +110,29 @@ function Row({ label, value, highlight, mono }: { label: string; value: string; 
 // ─── Auto-Bid Modal ──────────────────────────────────────────────────────────
 
 function AutoBidModal({
-  listingTitle, currentMax, onSave, onClose,
+  listingTitle, currentMax, currentIncrement, onSave, onClose,
 }: {
   listingTitle: string
   currentMax: number
-  onSave: (amount: number) => Promise<void>
+  currentIncrement: number
+  onSave: (amount: number, increment: number) => Promise<void>
   onClose: () => void
 }) {
   const [amount, setAmount] = useState(currentMax.toString())
+  const [increment, setIncrement] = useState(currentIncrement.toString())
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const handleSave = async () => {
     const val = parseFloat(amount)
-    if (isNaN(val) || val <= 0) { setErr('Enter a valid amount'); return }
+    const step = parseFloat(increment)
+    if (isNaN(val) || val <= 0) { setErr('Enter a valid maximum amount'); return }
+    if (isNaN(step) || step <= 0) { setErr('Enter a valid auto-bid increment'); return }
+    if (step > val) { setErr('Increment cannot be higher than your maximum amount'); return }
     setSaving(true)
     setErr(null)
     try {
-      await onSave(val)
+      await onSave(val, step)
       onClose()
     } catch (e) {
       setErr((e as ApiError).message || 'Failed to save')
@@ -158,6 +163,20 @@ function AutoBidModal({
                 className="w-full rounded-xl py-2.5 pl-8 pr-4 text-sm font-bold outline-none"
                 style={{ border: `1px solid ${C.beige}`, background: C.linen, color: C.slate }} />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold" style={{ color: C.muted }}>Auto-Bid Increment</label>
+            <div className="relative mt-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold" style={{ color: C.muted }}>$</span>
+              <input type="number" step="0.01" min="0.01" value={increment}
+                onChange={e => setIncrement(e.target.value)}
+                className="w-full rounded-xl py-2.5 pl-8 pr-4 text-sm font-bold outline-none"
+                style={{ border: `1px solid ${C.beige}`, background: C.linen, color: C.slate }} />
+            </div>
+            <p className="text-[11px] mt-1 leading-relaxed" style={{ color: C.muted }}>
+              The backend rejects increments below the listing minimum. Auto-bids keep responding using your
+              configured increment, but only while the next legal bid can still fit within your private maximum.
+            </p>
           </div>
           {err && <p className="text-xs font-bold" style={{ color: C.danger }}>{err}</p>}
         </div>
@@ -237,7 +256,7 @@ export default function BidderDashboard() {
   const [completingUuid, setCompletingUuid] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [receiptLoading, setReceiptLoading] = useState(false)
-  const [autoBidModal, setAutoBidModal] = useState<{ listingId: number; listingTitle: string; currentMax: number } | null>(null)
+  const [autoBidModal, setAutoBidModal] = useState<{ listingId: number; listingTitle: string; currentMax: number; currentIncrement: number } | null>(null)
   const [nowMs, setNowMs] = useState(0)
 
   // ─── Derived data ───────────────────────────────────────────────────────
@@ -368,8 +387,8 @@ export default function BidderDashboard() {
     }
   }
 
-  const saveAutoBid = async (listingId: number, amount: number) => {
-    await api.post('/bids/auto-bids', { listingId, maxAmount: amount })
+  const saveAutoBid = async (listingId: number, amount: number, increment: number) => {
+    await api.post('/bids/auto-bids', { listingId, maxAmount: amount, autoIncrement: increment })
     const res = await api.get<AutoBid[]>('/bids/auto-bids')
     setAutoBids(res.data)
   }
@@ -584,7 +603,7 @@ export default function BidderDashboard() {
                               </td>
                               <td className="px-6 py-4 text-center">
                                 <span className="text-xs font-bold" style={{ color: autoBid ? C.emerald : C.muted }}>
-                                  {autoBid ? `On (${money(autoBid.max_amount)})` : 'Off'}
+                                  {autoBid ? `On (${money(autoBid.max_amount)} / +${money(autoBid.auto_increment)})` : 'Off'}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-right">
@@ -600,6 +619,7 @@ export default function BidderDashboard() {
                                     listingId: bid.listing_id,
                                     listingTitle: bid.listingTitle || `Listing #${bid.listing_id}`,
                                     currentMax: autoBid?.max_amount ?? 0,
+                                    currentIncrement: autoBid?.auto_increment ?? 1,
                                   })}
                                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
                                     style={{ border: `1px solid ${C.beige}`, color: C.emerald }}>
@@ -900,7 +920,8 @@ export default function BidderDashboard() {
         <AutoBidModal
           listingTitle={autoBidModal.listingTitle}
           currentMax={autoBidModal.currentMax}
-          onSave={async (amount) => saveAutoBid(autoBidModal.listingId, amount)}
+          currentIncrement={autoBidModal.currentIncrement}
+          onSave={async (amount, increment) => saveAutoBid(autoBidModal.listingId, amount, increment)}
           onClose={() => setAutoBidModal(null)}
         />
       )}
