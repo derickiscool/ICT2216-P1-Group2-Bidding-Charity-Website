@@ -6,7 +6,7 @@ import {
   saveLoginOtp, getLoginOtp, removeLoginOtp,
   savePasswordResetToken, getPasswordResetTokenByEmail, removePasswordResetToken, revokeAllSessionsByUserId,
 } from '../repositories';
-import type { UserRole } from '../types/domain';
+import type { User, UserRole } from '../types/domain';
 import { badRequest, tooManyRequests, unauthorised } from '../utils/errors';
 import { isStrongPassword } from '../utils/breachedPasswords';
 import { normalizeEmail, randomToken, sha256, safeString, isValidEmail } from '../utils/security';
@@ -139,6 +139,19 @@ export const verifyRegistrationOtp = async (emailInput: string, otpInput: string
   return toPublicUser(user);
 };
 
+const issueLoginOtp = async (user: User): Promise<void> => {
+  const otp = crypto.randomInt(100000, 1000000).toString();
+  await saveLoginOtp({
+    user_id: user.id,
+    email: user.email,
+    otpHash: sha256(otp),
+    expiresAt: new Date(Date.now() + OTP_TTL_MS),
+    attempts: 0,
+    createdAt: new Date(),
+  });
+  await sendLoginOtp(user.email, otp);
+};
+
 export const login = async (emailInput: string, password: string, req: Request, res: Response) => {
   const email = normalizeEmail(emailInput);
   const generic = unauthorised('Invalid email or password');
@@ -167,6 +180,16 @@ export const login = async (emailInput: string, password: string, req: Request, 
   await resetLoginFailures(email);
   user.failedLoginAttempts = 0;
   user.lockedUntil = undefined;
+
+  // Admins hold platform-wide privileges, so their login always requires both
+  // factors: the password just verified above, plus a fresh email OTP.
+  if (user.roles.includes('admin')) {
+    await updateUser(user);
+    await issueLoginOtp(user);
+    await audit(req, 'AUTH_LOGIN_PASSWORD_VERIFIED', { email }, 'user', user.uuid, user.id);
+    return { mfaRequired: true, message: 'Enter the 6-digit code sent to your email.' };
+  }
+
   user.lastLoginAt = new Date().toISOString();
   await updateUser(user);
   const safeUser = toPublicUser(user);
@@ -202,22 +225,18 @@ export const requestLoginOtp = async (emailInput: string, req?: Request): Promis
     await audit(req, 'AUTH_PASSWORDLESS_REQUEST_SUPPRESSED', { email, reason: 'user_not_found_or_inactive' }, 'user');
     return generic;
   }
+  // Admin accounts must always prove both factors (password + OTP), so the
+  // password-free passwordless flow is not a valid login path for them.
+  if (user.roles.includes('admin')) {
+    await audit(req, 'AUTH_PASSWORDLESS_REQUEST_SUPPRESSED', { email, reason: 'admin_requires_password' }, 'user', user.uuid, user.id);
+    return generic;
+  }
   if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
     await audit(req, 'AUTH_PASSWORDLESS_REQUEST_LOCKED', { email }, 'user', user.uuid, user.id);
     throw tooManyRequests('Too many login attempts. Please try again later.');
   }
 
-  const otp = crypto.randomInt(100000, 1000000).toString();
-  await saveLoginOtp({
-    user_id: user.id,
-    email,
-    otpHash: sha256(otp),
-    expiresAt: new Date(Date.now() + OTP_TTL_MS),
-    attempts: 0,
-    createdAt: new Date(),
-  });
-
-  await sendLoginOtp(email, otp);
+  await issueLoginOtp(user);
   await audit(req, 'AUTH_PASSWORDLESS_OTP_CREATED', { email }, 'user', user.uuid, user.id);
   return generic;
 };

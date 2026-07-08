@@ -36,6 +36,9 @@ export default function LoginPage() {
   const [step, setStep]         = useState<'request' | 'verify'>('request')
   const [otp, setOtp]           = useState('')
   const [infoMsg, setInfoMsg]   = useState<string | null>(null)
+  // Admin accounts land in the OTP-verify step via the password form (mandatory
+  // 2FA), not the passwordless toggle — tracks which so "resend" does the right thing.
+  const [otpFlow, setOtpFlow]   = useState<'password' | 'passwordless'>('passwordless')
 
   const [stats, setStats] = useState({
     activeAuctions: '0',
@@ -71,7 +74,17 @@ export default function LoginPage() {
     e.preventDefault(); setError(null); setInfoMsg(null)
     if (method === 'password') {
       if (!email.trim() || !password) { setError('Please fill in all fields.'); return }
-      try { await login(email.trim(), password); navigate(from, { replace: true }) }
+      try {
+        const result = await login(email.trim(), password)
+        if (result.mfaRequired) {
+          setInfoMsg(result.message || 'A login verification OTP has been sent.')
+          setOtpFlow('password')
+          setMethod('otp')
+          setStep('verify')
+        } else {
+          navigate(from, { replace: true })
+        }
+      }
       catch (err) { const ae = err as ApiError; setAttempts(n => n + 1); setError(ae.message || 'Invalid email or password.') }
     } else {
       if (step === 'request') {
@@ -79,6 +92,7 @@ export default function LoginPage() {
         try {
           const msg = await requestLoginOtp(email.trim())
           setInfoMsg(msg || 'A login verification OTP has been sent.')
+          setOtpFlow('passwordless')
           setStep('verify')
         } catch (err) {
           const ae = err as ApiError
@@ -95,6 +109,23 @@ export default function LoginPage() {
           setError(ae.message || 'Invalid or expired OTP.')
         }
       }
+    }
+  }
+
+  const onResendOrChangeEmail = async () => {
+    setError(null); setInfoMsg(null); setOtp('')
+    if (otpFlow === 'password') {
+      // The password was already verified once — resend by re-submitting it
+      // rather than dropping back to the passwordless email-only request.
+      try {
+        const result = await login(email.trim(), password)
+        if (result.mfaRequired) setInfoMsg(result.message || 'A new login verification OTP has been sent.')
+      } catch (err) {
+        const ae = err as ApiError
+        setError(ae.message || 'Failed to resend the login code.')
+      }
+    } else {
+      setStep('request')
     }
   }
 
@@ -219,9 +250,9 @@ export default function LoginPage() {
                     We sent a 6-digit OTP code to <span className="font-medium">{email}</span>.
                     Please check your email for the code.
                   </p>
-                  <button type="button" onClick={() => { setStep('request'); setError(null); setInfoMsg(null); setOtp('') }}
+                  <button type="button" onClick={onResendOrChangeEmail}
                     className="text-xs font-semibold underline mt-2" style={{ color: C.emerald }}>
-                    Change email or resend code
+                    {otpFlow === 'password' ? 'Resend code' : 'Change email or resend code'}
                   </button>
                 </div>
                 <div>
@@ -263,6 +294,7 @@ export default function LoginPage() {
           <button type="button" onClick={() => {
             setMethod(m => m === 'password' ? 'otp' : 'password')
             setStep('request')
+            setOtpFlow('passwordless')
             setError(null)
             setInfoMsg(null)
             setOtp('')

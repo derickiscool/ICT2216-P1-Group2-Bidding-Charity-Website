@@ -153,6 +153,17 @@ Frontend: http://localhost:5173
 
 For local OTP testing, registration OTPs are printed in the backend console. OTPs are not returned by API responses.
 
+## Envrionment Setup For Encryption Keys
+
+Run this command to get the encryption key:
+```bash
+cd backend
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+```env
+DATA_ENCRYPTION_KEY=<your_generated_32_byte_base64_key>
+```
+
 ## Validation Commands
 
 Run these from the repository root before committing:
