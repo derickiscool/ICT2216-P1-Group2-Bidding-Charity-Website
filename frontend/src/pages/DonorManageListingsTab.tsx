@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, Gavel, Image as ImageIcon, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
 import api from '../services/api'
-import type { ApiError, DonorListingTrackingItem, DonorListingTrackingResponse, ItemCondition, ListingStatus } from '../types'
+import type { ApiError, DonorListingTrackingItem, DonorListingTrackingResponse, ItemCondition } from '../types'
 
 const C = {
   slate: '#2D3A3A', emerald: '#047857', emeraldDark: '#035c43',
@@ -19,8 +19,6 @@ const isSafeImageSrc = (value: string): boolean => SAFE_IMAGE_SRC.test(value)
 
 const toSafePreviewUrl = (file: File): string => URL.createObjectURL(file).replace(/[<>"'&]/g, '')
 
-const EMPTY_SUMMARY = { total: 0, draft: 0, pending: 0, changes_requested: 0, charity_review: 0, active: 0, sold: 0, shipped: 0, delivered: 0, expired: 0, cancelled: 0, rejected: 0 }
-
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-SG', { dateStyle: 'medium', timeStyle: 'short' })
 
 interface EditForm {
@@ -31,6 +29,8 @@ interface EditForm {
   existingImages: string[]
   newImages: File[]
 }
+
+type TrackingFilterStatus = 'all' | DonorListingTrackingItem['trackingFilterStatus']
 
 function money(value: unknown): string {
   const amount = Number(value ?? 0)
@@ -43,16 +43,40 @@ function formatDateTime(value?: string): string {
   return Number.isNaN(date.getTime()) ? 'Not set' : DATE_FORMATTER.format(date)
 }
 
-function statusStyle(status: ListingStatus) {
-  switch (status) {
+function statusStyle(listing: DonorListingTrackingItem) {
+  if (listing.trackingFilterStatus === 'upcoming') return { bg: C.amberLight, fg: C.amber, label: 'Upcoming' }
+
+  switch (listing.status) {
     case 'active': return { bg: C.emeraldLight, fg: C.emeraldDark, label: 'Active' }
-    case 'pending': return { bg: C.amberLight, fg: C.amber, label: 'Pending Review' }
-    case 'sold': return { bg: C.mauveLight, fg: C.mauve, label: 'Sold' }
+    case 'pending':
+    case 'changes_requested':
+    case 'charity_review':
+      return { bg: C.amberLight, fg: C.amber, label: 'Pending Review' }
+    case 'sold':
+    case 'shipped':
+    case 'delivered':
+      return { bg: C.mauveLight, fg: C.mauve, label: 'Sold' }
     case 'expired': return { bg: '#F3F4F6', fg: '#4B5563', label: 'Expired' }
     case 'cancelled': return { bg: C.dangerLight, fg: C.danger, label: 'Cancelled' }
     case 'rejected': return { bg: C.dangerLight, fg: C.danger, label: 'Rejected' }
-    default: return { bg: '#F3F4F6', fg: '#4B5563', label: 'Draft' }
+    default: return { bg: '#F3F4F6', fg: '#4B5563', label: 'Other' }
   }
+}
+
+function editActionLabel(listing: DonorListingTrackingItem): string {
+  if (listing.status === 'rejected') return 'Resubmit'
+  if (listing.status === 'changes_requested') return 'Edit & Resubmit'
+  return 'Edit'
+}
+
+function editActionTitle(listing: DonorListingTrackingItem): string {
+  if (listing.status === 'rejected') return 'Update this rejected listing and resubmit it for review'
+  if (listing.status === 'changes_requested') return 'Update the requested changes and resubmit for review'
+  return listing.canEdit ? 'Edit listing' : 'Only pending, changes-requested, or rejected listings can be edited'
+}
+
+function isResubmissionStatus(status?: DonorListingTrackingItem['status']): boolean {
+  return status === 'rejected' || status === 'changes_requested'
 }
 
 function inputSt(hasErr: boolean, extra?: React.CSSProperties): React.CSSProperties {
@@ -70,7 +94,7 @@ export default function DonorManageListingsTab() {
   const [globalErr, setGlobalErr] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<ListingStatus | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<TrackingFilterStatus>('all')
   const [editing, setEditing] = useState<DonorListingTrackingItem | null>(null)
   const [deleting, setDeleting] = useState<DonorListingTrackingItem | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -102,38 +126,53 @@ export default function DonorManageListingsTab() {
 
   useEffect(() => { const id = window.setTimeout(() => { void fetchDashboard() }, 0); return () => window.clearTimeout(id) }, [fetchDashboard])
 
-  const listings = useMemo(() => dashboard?.listings ?? [], [dashboard?.listings])
-  const summary = dashboard?.summary ?? EMPTY_SUMMARY
+  const listings = useMemo(
+    () => (dashboard?.listings ?? []).filter(listing => listing.status !== 'draft'),
+    [dashboard?.listings],
+  )
+
+  const filterCounts = useMemo(() => ({
+    all: listings.length,
+    pending: listings.filter(listing => listing.trackingFilterStatus === 'pending').length,
+    upcoming: listings.filter(listing => listing.trackingFilterStatus === 'upcoming').length,
+    active: listings.filter(listing => listing.trackingFilterStatus === 'active').length,
+    sold: listings.filter(listing => listing.trackingFilterStatus === 'sold').length,
+    expired: listings.filter(listing => listing.trackingFilterStatus === 'expired').length,
+    rejected: listings.filter(listing => listing.trackingFilterStatus === 'rejected').length,
+    cancelled: listings.filter(listing => listing.trackingFilterStatus === 'cancelled').length,
+  }), [listings])
 
   const filteredListings = useMemo(() => {
     const q = query.trim().toLowerCase()
     return listings.filter(listing => {
       const searchable = `${listing.title} ${listing.description} ${listing.category} ${listing.charityName ?? ''} ${listing.statusLabel}`.toLowerCase()
       const matchesSearch = !q || searchable.includes(q)
-      const matchesStatus = statusFilter === 'all' || listing.status === statusFilter
+      const matchesStatus = statusFilter === 'all' || listing.trackingFilterStatus === statusFilter
       return matchesSearch && matchesStatus
     })
   }, [listings, query, statusFilter])
 
   const statusOptions = useMemo(() => ([
-    { value: 'all' as const, label: 'All', count: summary.total },
-    { value: 'draft' as const, label: 'Draft', count: summary.draft },
-    { value: 'pending' as const, label: 'Pending', count: summary.pending },
-    { value: 'active' as const, label: 'Active', count: summary.active },
-    { value: 'sold' as const, label: 'Sold', count: summary.sold },
-    { value: 'expired' as const, label: 'Expired', count: summary.expired },
-    { value: 'rejected' as const, label: 'Rejected', count: summary.rejected },
-    { value: 'cancelled' as const, label: 'Cancelled', count: summary.cancelled },
-  ]), [summary])
+    { value: 'all' as const, label: 'All', count: filterCounts.all },
+    { value: 'pending' as const, label: 'Pending', count: filterCounts.pending },
+    { value: 'upcoming' as const, label: 'Upcoming', count: filterCounts.upcoming },
+    { value: 'active' as const, label: 'Active', count: filterCounts.active },
+    { value: 'sold' as const, label: 'Sold', count: filterCounts.sold },
+    { value: 'expired' as const, label: 'Expired', count: filterCounts.expired },
+    { value: 'rejected' as const, label: 'Rejected', count: filterCounts.rejected },
+    { value: 'cancelled' as const, label: 'Cancelled', count: filterCounts.cancelled },
+  ]), [filterCounts])
 
   const summaryCards = useMemo(() => ([
-    { label: 'Total', value: summary.total, filter: 'all' as const },
-    { label: 'Draft', value: summary.draft, filter: 'draft' as const },
-    { label: 'Pending', value: summary.pending, filter: 'pending' as const },
-    { label: 'Active', value: summary.active, filter: 'active' as const },
-    { label: 'Sold', value: summary.sold, filter: 'sold' as const },
-    { label: 'Expired', value: summary.expired, filter: 'expired' as const },
-  ]), [summary])
+    { label: 'Total', value: filterCounts.all, filter: 'all' as const },
+    { label: 'Pending', value: filterCounts.pending, filter: 'pending' as const },
+    { label: 'Upcoming', value: filterCounts.upcoming, filter: 'upcoming' as const },
+    { label: 'Active', value: filterCounts.active, filter: 'active' as const },
+    { label: 'Sold', value: filterCounts.sold, filter: 'sold' as const },
+    { label: 'Expired', value: filterCounts.expired, filter: 'expired' as const },
+    { label: 'Rejected', value: filterCounts.rejected, filter: 'rejected' as const },
+    { label: 'Cancelled', value: filterCounts.cancelled, filter: 'cancelled' as const },
+  ]), [filterCounts])
 
   const openEdit = (listing: DonorListingTrackingItem) => {
     setEditing(listing)
@@ -189,7 +228,9 @@ export default function DonorManageListingsTab() {
     setSuccessMsg('')
     try {
       await api.patch(`/listings/${editing.uuid}`, payload)
-      setSuccessMsg('Listing updated successfully.')
+      setSuccessMsg(isResubmissionStatus(editing.status)
+        ? 'Listing resubmitted for administrator review.'
+        : 'Listing updated successfully.')
       setEditing(null)
       await fetchDashboard()
     } catch (err) {
@@ -242,7 +283,7 @@ export default function DonorManageListingsTab() {
           <input type="text" value={query} onChange={e => setQuery(e.target.value)}
             placeholder="Search by title, category, charity, or status..."
             style={inputSt(false)} />
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as ListingStatus | 'all')} style={inputSt(false)}>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as TrackingFilterStatus)} style={inputSt(false)}>
             {statusOptions.map(option => (
               <option key={option.value} value={option.value}>{option.label} ({option.count})</option>
             ))}
@@ -263,7 +304,7 @@ export default function DonorManageListingsTab() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {filteredListings.map(listing => {
-            const status = statusStyle(listing.status)
+            const status = statusStyle(listing)
             const image = listing.images?.[0]
             const safeImage = image && isSafeImageSrc(image) ? image : undefined
             return (
@@ -295,10 +336,19 @@ export default function DonorManageListingsTab() {
                       </div>
                     </div>
                   </div>
+                  {isResubmissionStatus(listing.status) && listing.review_note && (
+                    <div className="rounded-xl p-3 mb-4" style={{ background: C.dangerLight, border: `1px solid ${C.dangerBorder}` }}>
+                      <p className="text-xs uppercase font-semibold" style={{ color: C.danger }}>
+                        {listing.status === 'rejected' ? 'Rejection Reason' : 'Requested Changes'}
+                      </p>
+                      <p className="text-sm mt-1 leading-relaxed" style={{ color: C.slate }}>{listing.review_note}</p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3 text-sm mb-4 mt-auto">
                     <div><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Starting Price</p><p className="font-black" style={{ color: C.emerald }}>${money(listing.starting_price)}</p></div>
                     <div><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>{listing.status === 'sold' ? 'Final Bid' : 'Current Bid'}</p><p className="font-black" style={{ color: C.slate }}>${money(listing.finalBidAmount ?? listing.current_bid)}</p></div>
                     <div><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Bids</p><p className="font-semibold" style={{ color: C.slate }}>{listing.bid_count}</p></div>
+                    <div><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Starts</p><p className="font-semibold truncate" style={{ color: C.slate }}>{formatDateTime(listing.start_time)}</p></div>
                     <div><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Ends</p><p className="font-semibold truncate" style={{ color: C.slate }}>{formatDateTime(listing.end_time)}</p></div>
                     <div className="col-span-2"><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Charity Campaign</p><p className="font-semibold truncate" style={{ color: C.slate }}>{listing.charityName || 'Verified Charity'}</p></div>
                   </div>
@@ -306,8 +356,8 @@ export default function DonorManageListingsTab() {
                     <button type="button" disabled={!listing.canEdit} onClick={() => openEdit(listing)}
                       className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ borderColor: C.beige, color: C.slate, background: C.white }}
-                      title={listing.canEdit ? 'Edit listing' : 'Only draft, pending, and rejected listings can be edited'}>
-                      <Pencil className="w-4 h-4" /> Edit
+                      title={editActionTitle(listing)}>
+                      <Pencil className="w-4 h-4" /> {editActionLabel(listing)}
                     </button>
                     <button type="button" disabled={!listing.canDelete} onClick={() => setDeleting(listing)}
                       className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
@@ -329,12 +379,24 @@ export default function DonorManageListingsTab() {
           <div className="max-w-2xl mx-auto rounded-2xl shadow-xl" style={{ background: C.white }}>
             <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: C.beige }}>
               <div>
-                <h2 className="text-xl font-bold" style={{ color: C.slate }}>Edit Listing</h2>
-                <p className="text-xs mt-1" style={{ color: C.muted }}>Only draft, pending, and rejected listings can be edited.</p>
+                <h2 className="text-xl font-bold" style={{ color: C.slate }}>{isResubmissionStatus(editing.status) ? 'Resubmit Listing' : 'Edit Listing'}</h2>
+                <p className="text-xs mt-1" style={{ color: C.muted }}>
+                  {isResubmissionStatus(editing.status)
+                    ? 'Update the listing details below. Submitting will send it back to admin review.'
+                    : 'Only pending listings can be edited before review continues.'}
+                </p>
               </div>
               <button type="button" onClick={() => setEditing(null)} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-5 space-y-4">
+              {isResubmissionStatus(editing.status) && editing.review_note && (
+                <div className="rounded-xl px-4 py-3" style={{ background: C.dangerLight, border: `1px solid ${C.dangerBorder}` }}>
+                  <p className="text-xs uppercase font-bold" style={{ color: C.danger }}>
+                    {editing.status === 'rejected' ? 'Rejection Reason' : 'Requested Changes'}
+                  </p>
+                  <p className="text-sm mt-1 leading-relaxed" style={{ color: C.slate }}>{editing.review_note}</p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Title</label>
                 <input value={editForm.title} onChange={setField('title')} style={inputSt(!!editErrors.title)} />
@@ -394,7 +456,7 @@ export default function DonorManageListingsTab() {
             <div className="flex justify-end gap-3 p-5 border-t" style={{ borderColor: C.beige }}>
               <button type="button" onClick={() => setEditing(null)} className="px-4 py-2 rounded-xl text-sm font-semibold border" style={{ color: C.slate, borderColor: C.beige }}>Cancel</button>
               <button type="button" onClick={saveEdit} disabled={submitting} className="px-4 py-2 rounded-xl text-sm font-bold text-white inline-flex items-center gap-2 disabled:opacity-60" style={{ background: C.emerald }}>
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} {isResubmissionStatus(editing.status) ? 'Resubmit Listing' : 'Save Changes'}
               </button>
             </div>
           </div>

@@ -31,7 +31,14 @@ const assertActiveBiddableListing = async (listingId: number, bidderId: number):
 
   const listing = await getListingById(listingId);
   if (!listing || listing.status !== 'active') throw notFound('Active listing not found');
-  if (new Date(listing.end_time).getTime() <= Date.now()) {
+
+  const now = Date.now();
+  if (new Date(listing.start_time).getTime() > now) {
+    // Approved future auctions are visible to the donor as UPCOMING, but cannot receive bids
+    // or be surfaced publicly until their start time arrives.
+    throw badRequest('Auction has not started yet.', 'AUCTION_NOT_STARTED');
+  }
+  if (new Date(listing.end_time).getTime() <= now) {
     await closeExpiredAuctions();
     throw badRequest('Auction has ended.');
   }

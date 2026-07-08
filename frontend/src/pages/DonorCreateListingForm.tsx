@@ -13,6 +13,7 @@ const C = {
 const MAX_IMAGES = 5
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const USER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time zone'
 
 const toSafePreviewUrl = (file: File): string => URL.createObjectURL(file).replace(/[<>"'&]/g, '')
 
@@ -212,7 +213,7 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
           <h2 className="text-2xl font-bold mb-3" style={{ color: C.slate }}>Listing Submitted!</h2>
           <p className="text-sm mb-8 leading-relaxed" style={{ color: C.muted }}>
             Your auction listing for <span className="font-semibold" style={{ color: C.slate }}>{form.title}</span> has been submitted.
-            It is currently <span className="font-semibold" style={{ color: '#D97706' }}>Pending Admin Approval</span>.
+            It is currently <span className="font-semibold" style={{ color: '#D97706' }}>Pending Admin Review</span>. After that, the charity will complete the final review.
           </p>
           <div className="flex gap-3 justify-center">
             <button onClick={() => { setSuccess(false); setForm({
@@ -358,13 +359,15 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
                 </div>
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Auction Start <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Auction Start (local time) <span className="text-red-500">*</span></label>
                     <input id="listing-start-time" type="datetime-local" value={form.start_time} onChange={setField('start_time')} style={inputSt(!!errors.start_time, { fontSize: '12px' })} />
+                    <p className="text-[11px] mt-1" style={{ color: C.muted }}>Shown in {USER_TIME_ZONE}. Future starts appear as Upcoming until this time.</p>
                     {errors.start_time && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.start_time}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Auction End <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Auction End (local time) <span className="text-red-500">*</span></label>
                     <input id="listing-end-time" type="datetime-local" value={form.end_time} onChange={setField('end_time')} style={inputSt(!!errors.end_time, { fontSize: '12px' })} />
+                    <p className="text-[11px] mt-1" style={{ color: C.muted }}>Must be after the start time. Max duration is 30 days.</p>
                     {errors.end_time && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.end_time}</p>}
                   </div>
                 </div>
@@ -419,13 +422,13 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
 
         <div className="mt-8 pt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t" style={{ borderColor: C.beige }}>
           <div className="px-3 py-1.5 text-xs font-medium rounded-md" style={{ background: C.emeraldLight, color: C.emeraldDark, border: '1px solid #A7F3D0' }}>
-            Your listing will be reviewed by an Admin before going live.
+            Your listing needs Admin approval, then Charity approval before it appears publicly.
           </div>
           <button type="submit" id="submit-listing-btn" disabled={isLoading || campaignsLoading}
             className="px-5 py-2 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90 shadow-sm flex items-center gap-2"
             style={{ background: (isLoading || campaignsLoading) ? '#6ba88e' : C.emerald, cursor: (isLoading || campaignsLoading) ? 'not-allowed' : 'pointer' }}>
             {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isLoading ? 'Submitting…' : 'Submit for Admin Approval'}
+            {isLoading ? 'Submitting…' : 'Submit for Review'}
           </button>
         </div>
       </form>

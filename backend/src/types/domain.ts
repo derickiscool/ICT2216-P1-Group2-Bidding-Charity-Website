@@ -136,10 +136,13 @@ export interface Listing {
 
 export interface DonorListingStatusSummary {
   total: number;
+  // Draft listings are intentionally hidden from the FR10 donor tracking view.
   draft: number;
   pending: number;
   changes_requested: number;
   charity_review: number;
+  // Upcoming is a derived display bucket: status='active' but start_time is still in the future.
+  upcoming: number;
   active: number;
   sold: number;
   shipped: number;
@@ -152,6 +155,9 @@ export interface DonorListingStatusSummary {
 export interface DonorListingTrackingItem extends Listing {
   // Backend-owned user interface hints for FR10. The frontend can display these
   // directly without reimplementing auction status rules in the browser.
+  // For example, an approved listing whose start time is still in the future remains
+  // status='active' in the database, but is grouped as 'upcoming' for donor tracking.
+  trackingFilterStatus: 'pending' | 'upcoming' | 'active' | 'sold' | 'expired' | 'rejected' | 'cancelled' | 'other';
   statusLabel: string;
   statusMessage: string;
   timelineLabel: string;
