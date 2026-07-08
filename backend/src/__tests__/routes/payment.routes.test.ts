@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, test } from '@jest/globals';
 import assert from 'node:assert/strict';
-import { startServer, stopServer, request, postJson, loginAs } from '../helpers/setup';
+import { startServer, stopServer, request, postJson, loginAs, registerVerifiedUser } from '../helpers/setup';
 import { query } from '../../utils/db';
 
 beforeAll(startServer);
@@ -85,6 +85,112 @@ const setupPaidAuction = async () => {
 
   return { listing, donor, bidder, admin, paymentUuid: pendingPayment.uuid as string };
 };
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FR14 — Payment Deadline Expiry
+// ─────────────────────────────────────────────────────────────────────────────
+describe('FR14 — Payment Deadline Expiry', () => {
+  test('missed payment expires the auction instead of reassigning to the next bidder', async () => {
+    const donor = await loginAs('donor@bidforgood.test');
+    const admin = await loginAs('admin@bidforgood.test');
+    const bidderOne = await loginAs('bidder@bidforgood.test');
+
+    await registerVerifiedUser({
+      email: 'fr14-second-bidder@example.com',
+      username: 'fr14SecondBidder',
+      full_name: 'FR14 Second Bidder',
+      password: 'S3cure!Pass2026',
+      roles: ['bidder'],
+    });
+    const bidderTwo = await loginAs('fr14-second-bidder@example.com');
+
+    const listingRes = await postJson(
+      '/api/listings',
+      {
+        title: 'FR14 No Reassignment Test',
+        description: 'Auction used to prove missed payment expires instead of falling back to another bidder.',
+        category: 'Collectibles',
+        charityName: 'Test Charity',
+        starting_price: 100,
+        min_increment: 10,
+        durationHours: 24,
+      },
+      { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
+    );
+    assert.equal(listingRes.response.status, 201);
+    const listing = listingRes.body as Rec;
+
+    const approveRes = await postJson(
+      `/api/listings/${listing.uuid as string}/approve`,
+      {},
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(approveRes.response.status, 200);
+
+    // Short-circuit charity approval for this deadline-specific test. The listing
+    // still follows the normal bidding/payment services after being activated.
+    await query(`UPDATE listings SET status = 'active' WHERE id = $1`, [listing.id]);
+
+    const lowerBid = await postJson(
+      '/api/bids',
+      { listing_id: listing.id, amount: 150 },
+      { cookie: bidderTwo.cookie, 'x-csrf-token': bidderTwo.csrf },
+    );
+    assert.equal(lowerBid.response.status, 201);
+
+    const winningBid = await postJson(
+      '/api/bids',
+      { listing_id: listing.id, amount: 500 },
+      { cookie: bidderOne.cookie, 'x-csrf-token': bidderOne.csrf },
+    );
+    assert.equal(winningBid.response.status, 201);
+
+    await query(
+      `UPDATE listings SET start_time = NOW() - INTERVAL '2 seconds', end_time = NOW() - INTERVAL '1 second' WHERE id = $1`,
+      [listing.id],
+    );
+
+    const closeRes = await postJson(
+      '/api/payments/process-deadlines/run',
+      {},
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(closeRes.response.status, 200);
+
+    const firstPayment = await query(
+      `SELECT uuid, bidder_id, amount, status FROM payments WHERE listing_id = $1 ORDER BY id DESC LIMIT 1`,
+      [listing.id],
+    );
+    assert.equal(firstPayment.rows.length, 1);
+    assert.equal(Number(firstPayment.rows[0].amount), 500);
+    assert.equal(firstPayment.rows[0].status, 'pending');
+
+    // Move the pending payment beyond the 24-hour deadline, then process deadlines.
+    await query(`UPDATE payments SET payment_deadline = NOW() - INTERVAL '1 second' WHERE uuid = $1`, [firstPayment.rows[0].uuid]);
+
+    const expireRes = await postJson(
+      '/api/payments/process-deadlines/run',
+      {},
+      { cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+    );
+    assert.equal(expireRes.response.status, 200);
+
+    const listingAfter = await query(`SELECT status, winner_id FROM listings WHERE id = $1`, [listing.id]);
+    assert.equal(listingAfter.rows[0].status, 'expired');
+    assert.equal(listingAfter.rows[0].winner_id, null);
+
+    const paymentsAfter = await query(`SELECT amount, status FROM payments WHERE listing_id = $1 ORDER BY id ASC`, [listing.id]);
+    assert.equal(paymentsAfter.rows.length, 1, 'missed payment must not create a second fallback payment offer');
+    assert.equal(Number(paymentsAfter.rows[0].amount), 500);
+    assert.equal(paymentsAfter.rows[0].status, 'expired');
+
+    const secondBidderPayments = await request('/api/payments/mine', { headers: { cookie: bidderTwo.cookie } });
+    assert.equal(secondBidderPayments.response.status, 200);
+    const fallbackOffers = ((secondBidderPayments.body as Rec).data as Rec[]).filter(p => p.listing_uuid === listing.uuid);
+    assert.equal(fallbackOffers.length, 0, 'second-highest bidder should not receive a fallback payment offer');
+  });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SFR14 — Digital Donation Receipt
@@ -222,6 +328,26 @@ describe('FR17 — Shipping & Delivery', () => {
     );
     assert.equal(res.response.status, 400);
     assert.equal((res.body as Rec).code, 'COURIER_INVALID_FORMAT');
+  });
+
+  test('tracking number and courier must match allowed shipping formats', async () => {
+    const { listing, donor } = await setupPaidAuction();
+
+    const invalidTracking = await postJson(
+      `/api/listings/${listing.uuid as string}/shipping`,
+      { tracking_number: 'TRK#123', courier: 'DHL' },
+      { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
+    );
+    assert.equal(invalidTracking.response.status, 400);
+    assert.equal((invalidTracking.body as Rec).code, 'TRACKING_INVALID_FORMAT');
+
+    const invalidCourier = await postJson(
+      `/api/listings/${listing.uuid as string}/shipping`,
+      { tracking_number: 'TRK-123456', courier: 'Courier@Now' },
+      { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
+    );
+    assert.equal(invalidCourier.response.status, 400);
+    assert.equal((invalidCourier.body as Rec).code, 'COURIER_INVALID_FORMAT');
   });
 
   test('valid shipping creates a delivery record', async () => {

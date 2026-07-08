@@ -320,7 +320,7 @@ export default function PaymentDeadlinesPage() {
             </div>
             <h1 className="text-3xl font-black" style={{ color: C.slate }}>Payment Deadlines</h1>
             <p className="mt-2" style={{ color: C.muted }}>
-              Complete payment before the deadline. Missed payments are automatically reassigned to the next valid bidder.
+              Complete payment before the deadline. If payment is missed, the auction expires instead of being reassigned to another bidder.
             </p>
           </div>
           <button type="button" onClick={loadPayments}
