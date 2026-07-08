@@ -141,8 +141,6 @@ interface ListingRow {
   category: string;
   images: string[];
   starting_price: number | string;
-  reserve_price: number | string | null;
-  buy_now_price: number | string | null;
   current_bid: number | string;
   bid_count: number;
   status: ListingStatus;
@@ -185,6 +183,7 @@ interface AutoBidRow {
   bidder_id: number;
   bidder_username: string;
   max_amount: number | string;
+  auto_increment: number | string;
   is_active: boolean;
   created_at: DbDate;
   updated_at: DbDate;
@@ -380,8 +379,6 @@ const mapListing = (row: ListingRow): Listing => ({
   category: row.category,
   images: Array.isArray(row.images) ? row.images : [],
   starting_price: Number(row.starting_price),
-  reserve_price: optionalNumber(row.reserve_price),
-  buy_now_price: optionalNumber(row.buy_now_price),
   current_bid: Number(row.current_bid),
   bid_count: Number(row.bid_count),
   status: row.status,
@@ -413,6 +410,7 @@ const mapAutoBid = (row: AutoBidRow): AutoBidSetting => ({
   bidder_id: Number(row.bidder_id),
   bidder_username: row.bidder_username,
   max_amount: Number(row.max_amount),
+  auto_increment: Number(row.auto_increment),
   is_active: row.is_active,
   created_at: toIso(row.created_at),
   updated_at: toIso(row.updated_at),
@@ -945,9 +943,9 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
   const row = await firstRow<ListingRow>(
     `INSERT INTO listings
        (donor_id, campaign_id, title, description, condition, category, images, starting_price,
-        reserve_price, buy_now_price, current_bid, bid_count, status, start_time, end_time,
-        charity_name, min_increment, review_note, review_stage)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, 0, $11, $12, $13, $14, $15, $16, $17)
+        current_bid, bid_count, status, start_time, end_time, charity_name, min_increment,
+        review_note, review_stage)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, 0, $9, $10, $11, $12, $13, $14, $15)
      RETURNING *`,
     [
       input.donor_id,
@@ -958,8 +956,6 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
       input.category,
       input.images,
       input.starting_price,
-      input.reserve_price ?? null,
-      input.buy_now_price ?? null,
       input.status,
       input.start_time,
       input.end_time,
@@ -987,10 +983,10 @@ const updateListing = async (listing: Listing): Promise<void> => {
   await query(
     `UPDATE listings
      SET donor_id = $2, campaign_id = $3, title = $4, description = $5, condition = $6,
-         category = $7, images = $8, starting_price = $9, reserve_price = $10,
-         buy_now_price = $11, current_bid = $12, bid_count = $13, status = $14,
-         start_time = $15, end_time = $16, winner_id = $17, charity_name = $18,
-         min_increment = $19, review_note = $20, review_stage = $21
+         category = $7, images = $8, starting_price = $9, current_bid = $10,
+         bid_count = $11, status = $12, start_time = $13, end_time = $14,
+         winner_id = $15, charity_name = $16, min_increment = $17, review_note = $18,
+         review_stage = $19
      WHERE id = $1`,
     [
       listing.id,
@@ -1002,8 +998,6 @@ const updateListing = async (listing: Listing): Promise<void> => {
       listing.category,
       listing.images,
       listing.starting_price,
-      listing.reserve_price ?? null,
-      listing.buy_now_price ?? null,
       listing.current_bid,
       listing.bid_count,
       listing.status,
@@ -1122,15 +1116,16 @@ const getBidsByBidder = async (bidderId: number): Promise<BidWithListing[]> => {
 
 const upsertAutoBid = async (input: NewAutoBidInput): Promise<AutoBidSetting> => {
   const row = await firstRow<AutoBidRow>(
-    `INSERT INTO auto_bids (listing_id, bidder_id, bidder_username, max_amount, is_active)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO auto_bids (listing_id, bidder_id, bidder_username, max_amount, auto_increment, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (listing_id, bidder_id) DO UPDATE SET
        bidder_username = EXCLUDED.bidder_username,
        max_amount = EXCLUDED.max_amount,
+       auto_increment = EXCLUDED.auto_increment,
        is_active = EXCLUDED.is_active,
        updated_at = NOW()
      RETURNING *`,
-    [input.listing_id, input.bidder_id, input.bidder_username, input.max_amount, input.is_active],
+    [input.listing_id, input.bidder_id, input.bidder_username, input.max_amount, input.auto_increment, input.is_active],
   );
   if (!row) throw new Error('Failed to save auto-bid setting.');
   return mapAutoBid(row);

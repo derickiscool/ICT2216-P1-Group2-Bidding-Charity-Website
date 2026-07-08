@@ -60,6 +60,7 @@ interface AutoBidCandidate {
   bidderId: number;
   bidderUsername: string;
   maxAmount: number;
+  autoIncrement: number;
   updatedAt: number;
   source: 'auto' | 'public';
 }
@@ -76,6 +77,9 @@ const resolveAutoBids = async (listing: Listing): Promise<Bid[]> => {
       bidderId: autoBid.bidder_id,
       bidderUsername: autoBid.bidder_username,
       maxAmount: roundMoney(autoBid.max_amount),
+      // Use at least the listing minimum so old rows created before this FR12
+      // bug fix cannot place an automatic response that undercuts the auction rule.
+      autoIncrement: roundMoney(Math.max(autoBid.auto_increment, listing.min_increment)),
       updatedAt: new Date(autoBid.updated_at).getTime(),
       source: 'auto',
     });
@@ -87,6 +91,7 @@ const resolveAutoBids = async (listing: Listing): Promise<Bid[]> => {
       bidderId: listing.winner_id,
       bidderUsername: existing?.bidderUsername ?? 'bidder',
       maxAmount: roundMoney(Math.max(existing?.maxAmount ?? 0, listing.current_bid)),
+      autoIncrement: existing?.autoIncrement ?? listing.min_increment,
       // Existing auto-bids keep priority on exact ties; the current public bid is
       // treated as the latest candidate.
       updatedAt: existing?.updatedAt ?? Date.now(),
@@ -107,7 +112,7 @@ const resolveAutoBids = async (listing: Listing): Promise<Bid[]> => {
   const second = ranked.find(candidate => candidate.bidderId !== winner.bidderId);
   const targetAmount = roundMoney(
     second
-      ? Math.max(listing.current_bid, Math.min(winner.maxAmount, second.maxAmount + listing.min_increment))
+      ? Math.max(listing.current_bid, Math.min(winner.maxAmount, second.maxAmount + winner.autoIncrement))
       : listing.current_bid,
   );
 
@@ -169,7 +174,7 @@ export const placeBid = async (listingIdInput: number, amountInput: number, req:
   });
 };
 
-export const setAutoBid = async (listingIdInput: number, maxAmountInput: number, req: Request): Promise<{ autoBid: AutoBidSetting; result: BidPlacementResult }> => {
+export const setAutoBid = async (listingIdInput: number, maxAmountInput: number, autoIncrementInput: unknown, req: Request): Promise<{ autoBid: AutoBidSetting; result: BidPlacementResult }> => {
   const user = assertBidder(req);
   const listingId = Number(listingIdInput);
   const maxAmount = roundMoney(Number(maxAmountInput));
@@ -181,6 +186,16 @@ export const setAutoBid = async (listingIdInput: number, maxAmountInput: number,
     const listing = await assertActiveBiddableListing(listingId, user.id);
     const minimum = nextMinimumBid(listing);
     const userIsWinning = listing.winner_id === user.id;
+    // Existing clients that do not yet send auto_increment continue to work by
+    // defaulting to the listing's donor-defined minimum bid increment.
+    const autoIncrement = roundMoney(Number(autoIncrementInput ?? listing.min_increment));
+
+    if (!Number.isFinite(autoIncrement) || autoIncrement < listing.min_increment) {
+      throw badRequest(`Auto-bid increment must be at least ${listing.min_increment.toFixed(2)}.`, 'AUTO_BID_INCREMENT_TOO_LOW');
+    }
+    if (autoIncrement > maxAmount) {
+      throw badRequest('Auto-bid increment cannot be higher than your maximum auto-bid amount.', 'AUTO_BID_INCREMENT_TOO_HIGH');
+    }
 
     if (!userIsWinning && maxAmount < minimum) {
       throw badRequest(`Maximum auto-bid must be at least ${minimum.toFixed(2)}.`, 'AUTO_BID_TOO_LOW');
@@ -194,6 +209,7 @@ export const setAutoBid = async (listingIdInput: number, maxAmountInput: number,
       bidder_id: user.id,
       bidder_username: user.username,
       max_amount: maxAmount,
+      auto_increment: autoIncrement,
       is_active: true,
     });
 
@@ -215,7 +231,7 @@ export const setAutoBid = async (listingIdInput: number, maxAmountInput: number,
     await audit(
       req,
       'AUTO_BID_SET',
-      { listingId, autoBidId: autoBid.uuid, maxAmount: '[MASKED]', generatedPublicBids: acceptedBids.length },
+      { listingId, autoBidId: autoBid.uuid, maxAmount: '[MASKED]', autoIncrement, generatedPublicBids: acceptedBids.length },
       'listing',
       listing.uuid,
       user.id,

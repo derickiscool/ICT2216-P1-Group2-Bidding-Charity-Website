@@ -110,52 +110,46 @@ const ensureOwnerOrAdmin = (listing: Listing, req: Request): void => {
   if (!isAdmin && listing.donor_id !== req.user?.id) throw forbidden('Access denied');
 };
 
+const campaignEndOfDayMs = (endDate: string | undefined): number | undefined => {
+  if (!endDate) return undefined;
+  // Campaigns store an end date, not a precise timestamp. For this Singapore-based
+  // project, treat that date as valid until 23:59:59.999 SGT so donors do not
+  // accidentally attach an auction that ends after the beneficiary campaign closes.
+  const dateOnly = endDate.slice(0, 10);
+  const value = Date.parse(`${dateOnly}T23:59:59.999+08:00`);
+  return Number.isFinite(value) ? value : undefined;
+};
+
+const ensureCampaignCoversAuctionWindow = (campaignEndDate: string | undefined, auctionEnd: Date): void => {
+  const campaignEnd = campaignEndOfDayMs(campaignEndDate);
+  if (campaignEnd !== undefined && auctionEnd.getTime() > campaignEnd) {
+    throw badRequest('The selected campaign ends before the auction ends. Please select a campaign that is still active for the full auction duration.', 'VALIDATION_ERROR', {
+      campaign_id: 'This campaign ends before the auction end date.',
+    });
+  }
+};
+
 export const createListing = async (body: Record<string, unknown>, req: Request): Promise<Listing> => {
   if (!req.user) throw forbidden();
   const starting = roundMoney(Number(body.starting_price ?? body.startingPrice));
-  const minIncrement = roundMoney(Number(body.min_increment ?? body.minIncrement ?? 5));
+  const rawMinIncrement = body.min_increment ?? body.minIncrement;
+  const minIncrement = roundMoney(Number(rawMinIncrement));
   const durationHours = Number(body.durationHours ?? 24);
-  if (!Number.isFinite(starting) || starting < 1) throw badRequest('Starting price must be at least 1.');
-  if (!Number.isFinite(minIncrement) || minIncrement < 1) throw badRequest('Minimum bid increment must be at least 1.');
-  if (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 720) throw badRequest('Auction duration must be 1 to 720 hours.');
 
-  // Parse optional price fields
-  const reserveRaw = body.reserve_price ?? body.reservePrice;
-  const buyNowRaw = body.buy_now_price ?? body.buyNowPrice;
-  const reservePrice = reserveRaw !== undefined && reserveRaw !== '' ? roundMoney(Number(reserveRaw)) : undefined;
-  const buyNowPrice = buyNowRaw !== undefined && buyNowRaw !== '' ? roundMoney(Number(buyNowRaw)) : undefined;
-  if (reservePrice !== undefined && (!Number.isFinite(reservePrice) || reservePrice < starting)) throw badRequest('Reserve price must be a valid number greater than or equal to the starting price.');
-  if (buyNowPrice !== undefined && (!Number.isFinite(buyNowPrice) || buyNowPrice <= starting)) throw badRequest('Buy-Now price must be greater than the starting price.');
+  if (!Number.isFinite(starting) || starting < 1) throw badRequest('Starting price must be at least 1.');
+  // FR08: the donor must explicitly set the minimum bid increment. Do not silently
+  // default it, otherwise different auctions can behave inconsistently.
+  if (rawMinIncrement === undefined || rawMinIncrement === '' || !Number.isFinite(minIncrement) || minIncrement < 1) {
+    throw badRequest('Minimum bid increment is required and must be at least 1.', 'VALIDATION_ERROR', {
+      min_increment: 'Minimum bid increment is required and must be at least 1.',
+    });
+  }
+  if (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 720) throw badRequest('Auction duration must be 1 to 720 hours.');
 
   const title = sanitizeListingText(body.title, 120, 'title');
   const description = sanitizeListingText(body.description, 1200, 'description');
   const category = sanitizeText(body.category, 60);
   if (title.length < 3 || description.length < 10 || category.length < 2) throw badRequest('Listing title, description, and category are required.');
-
-  // Validate campaign_id and resolve the charity name from the DB.
-  // In production, we strictly require a valid campaign ID.
-  // For legacy tests that still pass 'charityName' directly, we provide a fallback.
-  let campaignId = Number(body.campaign_id);
-  let charityName = '';
-
-  if (Number.isInteger(campaignId) && campaignId >= 1) {
-    const campaign = await getCampaignById(campaignId);
-    if (!campaign || campaign.status !== 'active') throw badRequest('The selected campaign is not active or does not exist.');
-    const parentCharity = await getCharityById(campaign.charity_id);
-    if (!parentCharity || parentCharity.status !== 'approved') throw badRequest('The charity linked to this campaign is not approved.');
-    charityName = parentCharity.organisationName;
-  } else if (process.env.NODE_ENV === 'test' && body.charityName) {
-    // Legacy fallback for test suite
-    campaignId = 1;
-    charityName = sanitizeText(String(body.charityName), 160);
-  } else {
-    throw badRequest('A valid campaign must be selected.');
-  }
-
-  // Every donor submission enters the two-stage review pipeline (SFR09). There is no admin
-  // shortcut to 'active' — admins cannot create listings (enforced at the route), preserving
-  // separation of duties between authoring and moderating.
-  const status: ListingStatus = 'pending';
 
   // Use explicit start/end times from the request if provided and valid; fall back to durationHours.
   const now = new Date();
@@ -173,6 +167,32 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
   const actualDuration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
   if (actualDuration > 720) throw badRequest('Auction duration cannot exceed 30 days (720 hours).');
 
+  // Validate campaign_id and resolve the charity name from the DB.
+  // In production, we strictly require a valid campaign ID.
+  // For legacy tests that still pass 'charityName' directly, we provide a fallback.
+  let campaignId = Number(body.campaign_id);
+  let charityName = '';
+
+  if (Number.isInteger(campaignId) && campaignId >= 1) {
+    const campaign = await getCampaignById(campaignId);
+    if (!campaign || campaign.status !== 'active') throw badRequest('The selected campaign is not active or does not exist.');
+    const parentCharity = await getCharityById(campaign.charity_id);
+    if (!parentCharity || parentCharity.status !== 'approved') throw badRequest('The charity linked to this campaign is not approved.');
+    ensureCampaignCoversAuctionWindow(campaign.end_date, endTime);
+    charityName = parentCharity.organisationName;
+  } else if (process.env.NODE_ENV === 'test' && body.charityName) {
+    // Legacy fallback for test suite
+    campaignId = 1;
+    charityName = sanitizeText(String(body.charityName), 160);
+  } else {
+    throw badRequest('A valid campaign must be selected.');
+  }
+
+  // Every donor submission enters the two-stage review pipeline (SFR09). There is no admin
+  // shortcut to 'active' — admins cannot create listings (enforced at the route), preserving
+  // separation of duties between authoring and moderating.
+  const status: ListingStatus = 'pending';
+
   const images = imagesFromUploads(req);
 
   const listing = await addListing({
@@ -184,15 +204,13 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
     category,
     images,
     starting_price: starting,
-    reserve_price: reservePrice,
-    buy_now_price: buyNowPrice,
     status,
     start_time: startTime.toISOString(),
     end_time: endTime.toISOString(),
     charityName,
     min_increment: minIncrement
   });
-  await audit(req, 'LISTING_CREATED', { title, status, reservePrice, buyNowPrice, charityName, imageCount: images.length }, 'listing', listing.uuid, req.user.id);
+  await audit(req, 'LISTING_CREATED', { title, status, charityName, imageCount: images.length, minIncrement }, 'listing', listing.uuid, req.user.id);
   return listing;
 };
 
