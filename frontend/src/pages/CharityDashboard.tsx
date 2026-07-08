@@ -1372,8 +1372,8 @@ export default function CharityDashboard() {
                         <tr style={{ background: C.linen }}>
                           <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Item Title</th>
                           <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Donor</th>
-                          <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Current Bid</th>
-                          <th className="text-center px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Status</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest hidden md:table-cell" style={{ color: C.muted }}>Charity</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest hidden lg:table-cell" style={{ color: C.muted }}>Start / End</th>
                           <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Actions</th>
                         </tr>
                       </thead>
@@ -1396,38 +1396,38 @@ export default function CharityDashboard() {
                               <td className="px-6 py-4 text-xs" style={{ color: C.muted }}>
                                 Donor #{l.donor_id}
                               </td>
-                              <td className="px-6 py-4 text-right font-bold font-mono" style={{ color: C.emerald }}>
-                                {money(l.current_bid)}
+                              <td className="px-6 py-4 hidden md:table-cell text-xs" style={{ color: C.muted }}>
+                                {l.charityName || '—'}
                               </td>
-                              <td className="px-6 py-4 text-center">
-                                {statusPill(displayStatus.status, displayStatus.label)}
+                              <td className="px-6 py-4 hidden lg:table-cell text-xs" style={{ color: C.muted }}>
+                                {new Date(l.start_time).toLocaleDateString()} → {new Date(l.end_time).toLocaleDateString()}
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="flex items-center justify-end gap-1">
                                   {isReviewRow && !isRejectingThisListing && (
                                     <>
+                                      <Link to="/charity/listing-reviews"
+                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+                                        style={{ color: C.muted }} title="Open full charity review page">
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                      </Link>
                                       <button
                                         type="button"
                                         onClick={() => { void approveDashboardListing(l) }}
                                         disabled={reviewActionsDisabled}
                                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                                         style={{ background: C.emerald }}>
-                                        {isReviewingThisListing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                                        {isReviewingThisListing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                                         {isReviewingThisListing ? 'Approving...' : 'Approve'}
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => { setRejectingListingUuid(l.uuid ?? null); setListingRejectReason(''); setListingNotice(null) }}
                                         disabled={reviewActionsDisabled}
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                                        style={{ background: C.danger }}>
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
+                                        style={{ color: C.danger, border: `1px solid ${C.dangerBorder}`, background: C.dangerLight }}>
                                         Reject
                                       </button>
-                                      <Link to="/charity/listing-reviews"
-                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-opacity hover:opacity-80"
-                                        style={{ color: C.emerald, border: `1px solid ${C.emerald}` }}>
-                                        Full review
-                                      </Link>
                                     </>
                                   )}
 
@@ -1469,12 +1469,19 @@ export default function CharityDashboard() {
                                     </form>
                                   )}
 
-                                  {l.uuid && isLiveActiveListing(l, dashboardNowMs) && (
+                                  {!isReviewRow && l.uuid && isLiveActiveListing(l, dashboardNowMs) && (
                                     <Link to={`/auctions/${l.uuid}`} target="_blank"
                                       className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
                                       style={{ color: C.muted }} title="View listing">
                                       <ExternalLink className="w-3.5 h-3.5" />
                                     </Link>
+                                  )}
+
+                                  {!isReviewRow && !isLiveActiveListing(l, dashboardNowMs) && (
+                                    <span className="text-[10px] font-bold px-2 py-1 rounded-full"
+                                      style={{ background: C.linen, color: C.muted }}>
+                                      {displayStatus.label || displayStatus.status.charAt(0).toUpperCase() + displayStatus.status.slice(1)}
+                                    </span>
                                   )}
                                 </div>
                               </td>

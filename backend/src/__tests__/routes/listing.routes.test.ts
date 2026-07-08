@@ -126,6 +126,7 @@ describe('SFR09 — Two-stage listing moderation (Admin → Charity)', () => {
     const approve = await postJson(`/api/listings/${listing.uuid}/approve`, {}, { cookie: admin.cookie, 'x-csrf-token': admin.csrf });
     assert.equal(approve.response.status, 200);
     assert.equal(approve.body.status, 'charity_review');
+    assert.equal(approve.body.review_stage, 'charity');
 
     // Still hidden from public listings.
     const publicList = await request('/api/listings');

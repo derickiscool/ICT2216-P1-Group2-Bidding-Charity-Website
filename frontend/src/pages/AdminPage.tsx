@@ -45,6 +45,14 @@ interface TabNavItem {
 
 const PAGE_SIZE = 15
 
+const adminListingStatusLabel = (status: Listing['status']) => {
+  const labels: Partial<Record<Listing['status'], string>> = {
+    charity_review: 'Charity Review',
+    changes_requested: 'Changes Requested',
+  }
+  return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
+}
+
 // ─── Pagination bar ──────────────────────────────────────────────────────────
 
 function PaginationBar({ page, totalPages, totalItems, onPageChange }: {
@@ -272,11 +280,15 @@ export default function AdminPage() {
   const handleApproveListing = async (uuid: string) => {
     setActionLoading(uuid)
     try {
-      await api.post(`/listings/${uuid}/approve`)
-      setMessage('Listing approved successfully.')
-      setListingsData(prev => prev.map(l => l.uuid === uuid ? { ...l, status: 'active' as const } : l))
+      // FR09 stage 1: admin approval must not publish the auction.
+      // The backend forwards the listing to the charity review queue by
+      // returning status='charity_review'. Using the returned listing here
+      // prevents the admin UI from falsely showing it as Active.
+      const res = await api.post<Listing>(`/listings/${uuid}/approve`)
+      setMessage('Listing forwarded to the assigned charity for review.')
+      setListingsData(prev => prev.map(l => l.uuid === uuid ? res.data : l))
     } catch (err) {
-      setError((err as ApiError).message || 'Failed to approve listing.')
+      setError((err as ApiError).message || 'Failed to forward listing to charity review.')
     } finally {
       setActionLoading(null)
     }
@@ -792,8 +804,9 @@ export default function AdminPage() {
 
               {/* Filter tabs */}
               <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-                {['pending', 'active', 'sold', 'expired', 'cancelled'].map(status => {
-                  const count = listingsData.filter(l => l.status === status).length
+                {['pending', 'charity_review', 'active', 'sold', 'expired', 'cancelled'].map(status => {
+                  const listingStatus = status as Listing['status']
+                  const count = listingsData.filter(l => l.status === listingStatus).length
                   return (
                     <button key={status} onClick={() => handleListingsFilter(status)}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap"
@@ -801,7 +814,7 @@ export default function AdminPage() {
                         background: listingsFilter === status ? C.emerald : C.linen,
                         color: listingsFilter === status ? '#fff' : C.muted,
                       }}>
-                      {status.charAt(0).toUpperCase() + status.slice(1)}
+                      {adminListingStatusLabel(listingStatus)}
                       <span className="text-[10px] opacity-70">({count})</span>
                     </button>
                   )
@@ -876,7 +889,7 @@ export default function AdminPage() {
                                 {l.status !== 'pending' && l.status !== 'active' && (
                                   <span className="text-[10px] font-bold px-2 py-1 rounded-full"
                                     style={{ background: C.linen, color: C.muted }}>
-                                    {l.status.charAt(0).toUpperCase() + l.status.slice(1)}
+                                    {adminListingStatusLabel(l.status)}
                                   </span>
                                 )}
                               </div>

@@ -110,19 +110,17 @@ const ensureOwnerOrAdmin = (listing: Listing, req: Request): void => {
   if (!isAdmin && listing.donor_id !== req.user?.id) throw forbidden('Access denied');
 };
 
-const campaignEndOfDayMs = (endDate: string | Date | undefined): number | undefined => {
+const campaignEndOfDayMs = (endDate: string | undefined): number | undefined => {
   if (!endDate) return undefined;
   // Campaigns store an end date, not a precise timestamp. For this Singapore-based
   // project, treat that date as valid until 23:59:59.999 SGT so donors do not
   // accidentally attach an auction that ends after the beneficiary campaign closes.
-  // The pg library may return DATE columns as either a string or a Date object,
-  // so handle both to prevent a TypeError crash (FR07/FR08 fix).
-  const dateOnly = typeof endDate === 'string' ? endDate.slice(0, 10) : endDate.toISOString().slice(0, 10);
+  const dateOnly = endDate.slice(0, 10);
   const value = Date.parse(`${dateOnly}T23:59:59.999+08:00`);
   return Number.isFinite(value) ? value : undefined;
 };
 
-const ensureCampaignCoversAuctionWindow = (campaignEndDate: string | Date | undefined, auctionEnd: Date): void => {
+const ensureCampaignCoversAuctionWindow = (campaignEndDate: string | undefined, auctionEnd: Date): void => {
   const campaignEnd = campaignEndOfDayMs(campaignEndDate);
   if (campaignEnd !== undefined && auctionEnd.getTime() > campaignEnd) {
     throw badRequest('The selected campaign ends before the auction ends. Please select a campaign that is still active for the full auction duration.', 'VALIDATION_ERROR', {
@@ -309,9 +307,12 @@ export const approveListing = async (uuid: string, req: Request): Promise<Listin
   if (listing.status !== 'pending') throw badRequest('Only pending listings can be approved.');
   listing.status = 'charity_review';
   listing.review_note = undefined;
-  listing.review_stage = undefined;
+  // Mark the current reviewer stage explicitly so dashboards and donor tracking
+  // can show that this listing has passed admin review and is now waiting for
+  // the assigned charity organisation.
+  listing.review_stage = 'charity';
   await updateListing(listing);
-  await audit(req, 'LISTING_FORWARDED_TO_CHARITY', { uuid }, 'listing', listing.uuid, req.user?.id);
+  await audit(req, 'LISTING_FORWARDED_TO_CHARITY', { uuid, nextStage: 'charity' }, 'listing', listing.uuid, req.user?.id);
   return listing;
 };
 
@@ -472,7 +473,7 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   const active = (await listActiveListings()).filter(listing => isPubliclyBiddableNow(listing, nowMs));
 
   const results = active.filter(l => {
-    const matchesQ = !q || l.title.toLowerCase().includes(q.toLowerCase());
+    const matchesQ = !q || `${l.title} ${l.description} ${l.charityName}`.toLowerCase().includes(q.toLowerCase());
     const matchesCategory = !category || l.category.toLowerCase() === category.toLowerCase();
     const matchesCondition = !condition || l.condition === condition;
     const matchesPriceMin = priceMin === undefined || l.current_bid >= priceMin;
@@ -495,18 +496,15 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   return { data, total, page, pageSize, totalPages };
 };
 
-export const getPublicListing = async (uuid: string, isAdmin = false, userId?: number): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
+export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
 
   // Allow viewing of resolved listing statuses (sold, shipped, delivered, expired)
   // so that bidders can see their won/ended auctions. Active listings still require
   // the time window check (future auctions remain hidden until they start).
-  // Also allow the listing's donor to view their own listing at any status
-  // (pending, changes_requested, draft) so they don't get a 404.
   const terminalStatuses = new Set<Listing['status']>(['sold', 'shipped', 'delivered', 'expired']);
-  const isOwner = userId !== undefined && listing.donor_id === userId;
-  if (!isAdmin && !isOwner && !terminalStatuses.has(listing.status) && !isPubliclyBiddableNow(listing)) {
+  if (!isAdmin && !terminalStatuses.has(listing.status) && !isPubliclyBiddableNow(listing)) {
     throw notFound('Listing not found');
   }
 

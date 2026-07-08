@@ -214,7 +214,7 @@ describe('FR20 — Charity Dashboard', () => {
     assert.ok(body.stats);
   });
 
-  test('includes admin-forwarded listings that are awaiting charity review', async () => {
+  test('only shows listings after the admin has routed them to charity review', async () => {
     const donor = await loginAs('donor@bidforgood.test');
     const admin = await loginAs('admin@bidforgood.test');
     const charity = await loginAs('charity@bidforgood.test');
@@ -223,7 +223,7 @@ describe('FR20 — Charity Dashboard', () => {
       '/api/listings',
       {
         title: 'Dashboard Charity Review Item',
-        description: 'This listing should appear in the charity dashboard review queue.',
+        description: 'This listing should appear in the charity dashboard review queue only after admin approval.',
         category: 'Collectibles',
         charityName: 'Test Charity',
         starting_price: 100,
@@ -233,6 +233,14 @@ describe('FR20 — Charity Dashboard', () => {
       { cookie: donor.cookie, 'x-csrf-token': donor.csrf },
     );
     assert.equal(created.response.status, 201);
+    assert.equal(created.body.status, 'pending');
+
+    // Strict FR09 flow: raw donor submissions are still at the admin gate,
+    // so they must not appear in the charity dashboard yet.
+    const beforeForward = await request('/api/charities/dashboard', { headers: { cookie: charity.cookie } });
+    assert.equal(beforeForward.response.status, 200);
+    const beforeListings = (beforeForward.body as Body).listings as Array<{ uuid: string; status: string }>;
+    assert.equal(beforeListings.some(listing => listing.uuid === created.body.uuid), false);
 
     const forwarded = await postJson(
       `/api/listings/${created.body.uuid}/approve`,
@@ -241,13 +249,15 @@ describe('FR20 — Charity Dashboard', () => {
     );
     assert.equal(forwarded.response.status, 200);
     assert.equal(forwarded.body.status, 'charity_review');
+    assert.equal(forwarded.body.review_stage, 'charity');
 
     const dashboard = await request('/api/charities/dashboard', { headers: { cookie: charity.cookie } });
     assert.equal(dashboard.response.status, 200);
     const dashboardBody = dashboard.body as Body;
-    const listings = dashboardBody.listings as Array<{ uuid: string; status: string }>;
+    const listings = dashboardBody.listings as Array<{ uuid: string; status: string; review_stage?: string }>;
     const reviewItem = listings.find(listing => listing.uuid === created.body.uuid);
     assert.equal(reviewItem?.status, 'charity_review');
+    assert.equal(reviewItem?.review_stage, 'charity');
   });
 });
 

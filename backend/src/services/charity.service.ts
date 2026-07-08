@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import type { CharityOrganisation, Listing, Payment } from '../types/domain';
+import type { CharityOrganisation, Listing } from '../types/domain';
 import { addCharity, getCharityByUuid, getPaymentsForListing, listCampaignsByCharity, listCharities, listListings, updateCharity, deleteCharityByUuid } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { sanitizeText, sha256 } from '../utils/security';
@@ -94,7 +94,27 @@ export const getCharityDashboard = async (ownerUserId: number, charityId?: numbe
   // prevents listings from another charity with a similar name from appearing.
   const charityCampaigns = charity ? await listCampaignsByCharity(charity.id) : [];
   const campaignIds = new Set(charityCampaigns.map(campaign => campaign.id));
-  const listings = allListings.filter(l => campaignIds.has(l.campaign_id));
+
+  // Strict FR09 routing rule:
+  // - Donor-created listings stay invisible to the charity while status='pending'
+  //   because they are still waiting for the first admin check.
+  // - The charity only sees listings after the admin forwards them to
+  //   status='charity_review', plus listings that have already completed the
+  //   charity stage and became auction/history records.
+  // - Admin-side rejections/changes-requested are not routed to the charity.
+  const charityRoutedStatuses = new Set<Listing['status']>([
+    'charity_review',
+    'active',
+    'sold',
+    'shipped',
+    'delivered',
+    'expired',
+    'cancelled',
+  ]);
+  const listings = allListings.filter(l =>
+    campaignIds.has(l.campaign_id) &&
+    (charityRoutedStatuses.has(l.status) || (l.status === 'rejected' && l.review_stage === 'charity')),
+  );
 
   // Fetch payments for each sold listing to compute fund statistics and per-item flags
   const soldListings = listings.filter(l => l.status === 'sold');
