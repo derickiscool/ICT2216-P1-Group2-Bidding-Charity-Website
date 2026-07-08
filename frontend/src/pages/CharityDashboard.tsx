@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Package, Loader2, AlertCircle, Info,
+  Package, Loader2, AlertCircle,
   CheckCircle, Clock, Plus, ExternalLink, RefreshCw, X, Edit3, Upload,
   HeartHandshake, Users, DollarSign, ListOrdered,
   CalendarDays, Target, Eye, Flag, ImageIcon, ChevronLeft, ChevronRight,
@@ -154,8 +154,9 @@ function readImageAsDataUrl(file: File, onReady: (value: string) => void) {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Tab = 'campaigns' | 'staff' | 'proceeds' | 'listings'
-type ListingNotice = { type: 'success' | 'error'; text: string } | null
+type Tab = 'campaigns' | 'staff' | 'proceeds' | 'listings' | 'create-campaign' | 'create-staff';
+
+type ListingNotice = { type: 'success' | 'error'; text: string } | null;
 
 interface TabNavItem {
   id: Tab
@@ -610,7 +611,6 @@ export default function CharityDashboard() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [canManageCampaigns, setCanManageCampaigns] = useState(false)
   const [staff, setStaff] = useState<StaffAccount[]>([])
-  const [notRegistered, setNotRegistered] = useState(false)
   const [charityDetails, setCharityDetails] = useState<CharityOrganisation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -627,6 +627,14 @@ export default function CharityDashboard() {
   const [rejectingListingUuid, setRejectingListingUuid] = useState<string | null>(null)
   const [listingRejectReason, setListingRejectReason] = useState('')
 
+  // Inline creation form states
+  const [newCampaignForm, setNewCampaignForm] = useState<CampaignForm>(emptyCampaignForm)
+  const [newCampaignErrors, setNewCampaignErrors] = useState<CampaignFormErrors>({})
+  const [creatingCampaign, setCreatingCampaign] = useState(false)
+  const [staffForm, setStaffForm] = useState({ full_name: '', email: '', temporary_password: '' })
+  const [staffFormErrors, setStaffFormErrors] = useState<Record<string, string>>({})
+  const [creatingStaff, setCreatingStaff] = useState(false)
+
   const isOwner = user?.roles?.includes('charity')
 
   const loadData = useCallback(async () => {
@@ -642,7 +650,9 @@ export default function CharityDashboard() {
       const [dash, camps, staffData] = await Promise.all([dashRes, campRes, staffRes])
 
       if (!dash.data.charity) {
-        setNotRegistered(true)
+        // A charity role account without a linked organisation should not happen
+        // in normal registration flow — fall through to the pending-status checks.
+        setCharityDetails(null)
       } else {
         setCharityDetails(dash.data.charity)
       }
@@ -664,6 +674,73 @@ export default function CharityDashboard() {
   }, [isOwner])
 
   useEffect(() => { const id = window.setTimeout(() => { void loadData() }, 0); return () => window.clearTimeout(id) }, [loadData])
+
+  // ─── Inline campaign creation ──────────────────────────────────────────
+
+  const saveCreateCampaign = async (e: FormEvent) => {
+    e.preventDefault()
+    const errors: CampaignFormErrors = {}
+    if (!newCampaignForm.name.trim()) errors.name = 'Name is required.'
+    else if (newCampaignForm.name.trim().length < 3) errors.name = 'Name must be at least 3 characters.'
+    if (!newCampaignForm.description.trim()) errors.description = 'Description is required.'
+    else if (newCampaignForm.description.trim().length < 10) errors.description = 'Description must be at least 10 characters.'
+    setNewCampaignErrors(errors)
+    if (Object.keys(errors).length > 0) return
+
+    const fd = new FormData()
+    fd.append('name', newCampaignForm.name.trim())
+    fd.append('description', newCampaignForm.description.trim())
+    if (newCampaignForm.end_date) fd.append('end_date', newCampaignForm.end_date)
+    if (newCampaignForm.image_file) fd.append('image', newCampaignForm.image_file)
+    setCreatingCampaign(true)
+    try {
+      const res = await api.post<Campaign>('/charities/campaigns', fd)
+      setCampaigns(prev => [res.data, ...prev])
+      setNewCampaignForm(emptyCampaignForm)
+      setNewCampaignErrors({})
+      setActiveTab('campaigns')
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setNewCampaignErrors(ae.errors as CampaignFormErrors)
+      else setError(ae.message || 'Failed to create campaign.')
+    } finally {
+      setCreatingCampaign(false)
+    }
+  }
+
+  // ─── Inline staff creation ─────────────────────────────────────────────
+
+  const saveCreateStaff = async (e: FormEvent) => {
+    e.preventDefault()
+    const errors: Record<string, string> = {}
+    if (!staffForm.full_name.trim()) errors.full_name = 'Full name is required.'
+    else if (staffForm.full_name.trim().length < 2) errors.full_name = 'Full name must be at least 2 characters.'
+    if (!staffForm.email.trim()) errors.email = 'Work email is required.'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(staffForm.email.trim())) errors.email = 'Enter a valid email address.'
+    if (!staffForm.temporary_password) errors.temporary_password = 'Temporary password is required.'
+    else if (staffForm.temporary_password.length < 8) errors.temporary_password = 'Temporary password must be at least 8 characters.'
+    setStaffFormErrors(errors)
+    if (Object.keys(errors).length > 0) return
+
+    setCreatingStaff(true)
+    try {
+      const res = await api.post('/charities/staff', {
+        full_name: staffForm.full_name.trim(),
+        email: staffForm.email.trim(),
+        temporary_password: staffForm.temporary_password,
+      })
+      setStaff(prev => [res.data, ...prev])
+      setStaffForm({ full_name: '', email: '', temporary_password: '' })
+      setStaffFormErrors({})
+      setActiveTab('staff')
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setStaffFormErrors(ae.errors)
+      else setError(ae.message || 'Failed to create staff account.')
+    } finally {
+      setCreatingStaff(false)
+    }
+  }
 
   // ─── Derived data ───────────────────────────────────────────────────────
 
@@ -918,26 +995,6 @@ export default function CharityDashboard() {
     )
   }
 
-  if (notRegistered) {
-    return (
-      <div className="min-h-[calc(100vh-64px)] flex items-center justify-center" style={{ background: C.linen }}>
-        <div className="text-center max-w-md mx-auto p-8">
-          <Info className="w-12 h-12 mx-auto mb-4" style={{ color: '#92400E' }} />
-          <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>No Charity Organisation Registered</h2>
-          <p className="text-sm mb-6" style={{ color: C.muted }}>
-            Your account hasn't been linked to a charity organisation yet.
-            Register your charity first to start viewing donations and auction items.
-          </p>
-          <Link to="/register/charity"
-            className="inline-block px-6 py-3 rounded-xl text-white font-semibold"
-            style={{ background: C.emerald }}>
-            Register Charity →
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
   if (charityDetails && charityDetails.status === 'pending') {
     return (
       <div className="min-h-[calc(100vh-64px)] flex items-center justify-center" style={{ background: C.linen }}>
@@ -1011,11 +1068,11 @@ export default function CharityDashboard() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>Campaigns</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>Manage your fundraising campaigns and track progress</p>
                 </div>
-                <Link to="/charity/campaigns"
+                <button type="button" onClick={() => setActiveTab('create-campaign')}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                   style={{ background: C.emerald }}>
                   <Plus className="w-4 h-4" /> Create New Campaign
-                </Link>
+                </button>
               </div>
 
               <DashboardCampaignOverview
@@ -1031,11 +1088,11 @@ export default function CharityDashboard() {
                   <HeartHandshake className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
                   <p className="font-bold" style={{ color: C.slate }}>No campaigns yet</p>
                   <p className="text-sm mt-1 mb-4" style={{ color: C.muted }}>Create your first fundraising campaign to start accepting auction donations.</p>
-                  <Link to="/charity/campaigns"
+                  <button type="button" onClick={() => setActiveTab('create-campaign')}
                     className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                     style={{ background: C.emerald }}>
                     <Plus className="w-4 h-4" /> Create Campaign
-                  </Link>
+                  </button>
                 </div>
               ) : (
                 <section className="rounded-2xl bg-white shadow-sm" style={{ border: `1px solid ${C.beige}` }}>
@@ -1084,11 +1141,11 @@ export default function CharityDashboard() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>Staff Accounts</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>Create, deactivate, and reactivate staff accounts for your organisation</p>
                 </div>
-                <Link to="/charity/staff"
+                <button type="button" onClick={() => setActiveTab('create-staff')}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                   style={{ background: C.emerald }}>
                   <Plus className="w-4 h-4" /> Add Staff Account
-                </Link>
+                </button>
               </div>
 
               {staff.length === 0 ? (
@@ -1096,11 +1153,11 @@ export default function CharityDashboard() {
                   <Users className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
                   <p className="font-bold" style={{ color: C.slate }}>No staff accounts yet</p>
                   <p className="text-sm mt-1 mb-4" style={{ color: C.muted }}>Add staff members to help manage your campaigns and listings.</p>
-                  <Link to="/charity/staff"
+                  <button type="button" onClick={() => setActiveTab('create-staff')}
                     className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                     style={{ background: C.emerald }}>
                     <Plus className="w-4 h-4" /> Add Staff
-                  </Link>
+                  </button>
                 </div>
               ) : (
                 <div className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
@@ -1171,6 +1228,106 @@ export default function CharityDashboard() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ───────────── CREATE CAMPAIGN (inline) ───────────── */}
+          {activeTab === 'create-campaign' && (
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h1 className="text-2xl font-black" style={{ color: C.slate }}>Create New Campaign</h1>
+                  <p className="text-sm mt-1" style={{ color: C.muted }}>Set up a new fundraising campaign for your charity organisation</p>
+                </div>
+                <button type="button" onClick={() => { setNewCampaignForm(emptyCampaignForm); setNewCampaignErrors({}); setActiveTab('campaigns') }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                  style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                  Back to Campaigns
+                </button>
+              </div>
+
+              <form onSubmit={saveCreateCampaign} noValidate className="rounded-2xl bg-white p-6 space-y-5 shadow-sm" style={{ border: `1px solid ${C.beige}` }}>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Campaign Name *</label>
+                  <input value={newCampaignForm.name} onChange={e => setNewCampaignForm(p => ({ ...p, name: e.target.value }))}
+                    placeholder="e.g. Winter Fundraising 2026" style={dashboardInputStyle(!!newCampaignErrors.name)} />
+                  {newCampaignErrors.name && <p className="text-xs mt-1" style={{ color: C.danger }}>{newCampaignErrors.name}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Description *</label>
+                  <textarea rows={4} value={newCampaignForm.description} onChange={e => setNewCampaignForm(p => ({ ...p, description: e.target.value }))}
+                    placeholder="Describe the campaign and its fundraising goals" style={dashboardInputStyle(!!newCampaignErrors.description, { resize: 'none' })} />
+                  {newCampaignErrors.description && <p className="text-xs mt-1" style={{ color: C.danger }}>{newCampaignErrors.description}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>End Date (optional)</label>
+                  <input type="date" value={newCampaignForm.end_date} onChange={e => setNewCampaignForm(p => ({ ...p, end_date: e.target.value }))}
+                    style={dashboardInputStyle(false)} />
+                  <p className="text-xs mt-1" style={{ color: C.muted }}>{END_DATE_HELP_TEXT}</p>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="submit" disabled={creatingCampaign}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-50"
+                    style={{ background: C.emerald }}>
+                    {creatingCampaign ? 'Creating…' : 'Create Campaign'}
+                  </button>
+                  <button type="button" onClick={() => { setNewCampaignForm(emptyCampaignForm); setNewCampaignErrors({}); setActiveTab('campaigns') }}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold"
+                    style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* ───────────── CREATE STAFF (inline) ───────────── */}
+          {activeTab === 'create-staff' && (
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h1 className="text-2xl font-black" style={{ color: C.slate }}>Add Staff Account</h1>
+                  <p className="text-sm mt-1" style={{ color: C.muted }}>Create a new staff account for your charity organisation</p>
+                </div>
+                <button type="button" onClick={() => { setStaffForm({ full_name: '', email: '', temporary_password: '' }); setStaffFormErrors({}); setActiveTab('staff') }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                  style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                  Back to Staff
+                </button>
+              </div>
+
+              <form onSubmit={saveCreateStaff} noValidate className="rounded-2xl bg-white p-6 space-y-5 shadow-sm" style={{ border: `1px solid ${C.beige}` }}>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Full Name *</label>
+                  <input value={staffForm.full_name} onChange={e => setStaffForm(p => ({ ...p, full_name: e.target.value }))}
+                    placeholder="e.g. Jane Doe" style={dashboardInputStyle(!!staffFormErrors.full_name)} />
+                  {staffFormErrors.full_name && <p className="text-xs mt-1" style={{ color: C.danger }}>{staffFormErrors.full_name}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Work Email *</label>
+                  <input type="email" value={staffForm.email} onChange={e => setStaffForm(p => ({ ...p, email: e.target.value }))}
+                    placeholder="e.g. jane@charity.org" style={dashboardInputStyle(!!staffFormErrors.email)} />
+                  {staffFormErrors.email && <p className="text-xs mt-1" style={{ color: C.danger }}>{staffFormErrors.email}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Temporary Password *</label>
+                  <input type="password" value={staffForm.temporary_password} onChange={e => setStaffForm(p => ({ ...p, temporary_password: e.target.value }))}
+                    placeholder="Set an initial password (min 8 characters)" style={dashboardInputStyle(!!staffFormErrors.temporary_password)} />
+                  {staffFormErrors.temporary_password && <p className="text-xs mt-1" style={{ color: C.danger }}>{staffFormErrors.temporary_password}</p>}
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="submit" disabled={creatingStaff}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-50"
+                    style={{ background: C.emerald }}>
+                    {creatingStaff ? 'Creating…' : 'Create Staff Account'}
+                  </button>
+                  <button type="button" onClick={() => { setStaffForm({ full_name: '', email: '', temporary_password: '' }); setStaffFormErrors({}); setActiveTab('staff') }}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold"
+                    style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 
