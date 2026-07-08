@@ -522,7 +522,7 @@ function DashboardImageUploadInput({ previewUrl, error, disabled, onChange, onCl
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Campaign image</label>
+      <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Campaign image</label>
       <div className="rounded-2xl border border-dashed p-4" style={{ borderColor: error ? C.danger : C.beige, background: disabled ? C.linen : '#fff' }}>
         {previewUrl ? (
           <img src={previewUrl} alt="Selected campaign preview" className="h-40 w-full rounded-xl object-cover mb-3" />
@@ -684,6 +684,12 @@ export default function CharityDashboard() {
     else if (newCampaignForm.name.trim().length < 3) errors.name = 'Name must be at least 3 characters.'
     if (!newCampaignForm.description.trim()) errors.description = 'Description is required.'
     else if (newCampaignForm.description.trim().length < 10) errors.description = 'Description must be at least 10 characters.'
+
+    if (newCampaignForm.image_file) {
+      const imageError = validateCampaignImage(newCampaignForm.image_file)
+      if (imageError) errors.image_file = imageError
+    }
+
     setNewCampaignErrors(errors)
     if (Object.keys(errors).length > 0) return
 
@@ -1258,6 +1264,23 @@ export default function CharityDashboard() {
                   <textarea rows={4} value={newCampaignForm.description} onChange={e => setNewCampaignForm(p => ({ ...p, description: e.target.value }))}
                     placeholder="Describe the campaign and its fundraising goals" style={dashboardInputStyle(!!newCampaignErrors.description, { resize: 'none' })} />
                   {newCampaignErrors.description && <p className="text-xs mt-1" style={{ color: C.danger }}>{newCampaignErrors.description}</p>}
+                </div>
+                <div>
+                  <DashboardImageUploadInput
+                    previewUrl={newCampaignForm.image_preview_url || ''}
+                    error={newCampaignErrors.image_file}
+                    disabled={creatingCampaign}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const url = URL.createObjectURL(file)
+                      setNewCampaignForm(p => ({ ...p, image_file: file, image_preview_url: url }))
+                      setNewCampaignErrors(p => ({ ...p, image_file: undefined }))
+                    }}
+                    onClear={() => {
+                      setNewCampaignForm(p => ({ ...p, image_file: null, image_preview_url: '' }))
+                    }}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>End Date (optional)</label>
