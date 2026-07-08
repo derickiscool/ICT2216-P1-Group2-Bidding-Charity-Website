@@ -1,9 +1,15 @@
 import type { Request, Response } from 'express';
 import { getReceipt, getReceiptByPaymentUuid, listMyReceipts } from '../services/receipt.service';
-import { notFound, forbidden } from '../utils/errors';
+import { notFound, forbidden, badRequest } from '../utils/errors';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const assertUuid = (value: string): void => {
+  if (!UUID_RE.test(value)) throw badRequest('Invalid identifier format.', 'INVALID_PARAM');
+};
 
 export const viewReceipt = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) return;
+  assertUuid(req.params.uuid);
   const receipt = await getReceipt(req.params.uuid);
   if (!receipt) throw notFound('Receipt not found');
 
@@ -16,6 +22,7 @@ export const viewReceipt = async (req: Request, res: Response): Promise<void> =>
 
 export const viewReceiptByPayment = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) return;
+  assertUuid(req.params.uuid);
   const receipt = await getReceiptByPaymentUuid(req.params.uuid);
   if (!receipt) throw notFound('Receipt not found');
   const isAdmin = req.user.roles.includes('admin');
