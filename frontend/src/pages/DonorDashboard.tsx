@@ -19,6 +19,9 @@ type DonorListing = Listing & {
 }
 
 // ─── Validation ─────────────────────────────────────────────────────────────
+// Keep these rules aligned with backend/src/services/listing.service.ts.
+// Frontend validation gives the donor fast feedback; backend validation remains
+// authoritative so malicious requests cannot bypass this form.
 
 const TRACKING_RE = /^[A-Za-z0-9 \-]{4,50}$/
 const COURIER_RE = /^[A-Za-z0-9 \-\.&]{2,60}$/
@@ -31,7 +34,7 @@ const validateTracking = (v: string): string | null => {
 
 const validateCourier = (v: string): string | null => {
   if (!v.trim()) return 'Courier name is required.'
-  if (!COURIER_RE.test(v.trim())) return 'Use 2–60 alphanumeric characters, spaces, hyphens, or periods only.'
+  if (!COURIER_RE.test(v.trim())) return 'Use 2–60 alphanumeric characters, spaces, hyphens, periods, or ampersands only.'
   return null
 }
 
