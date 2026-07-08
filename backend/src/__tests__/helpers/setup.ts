@@ -39,6 +39,7 @@ let baseUrl = '';
 export const startServer = async () => {
   process.env.NODE_ENV = 'test';
   process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-ci';
+  process.env.DATA_ENCRYPTION_KEY = 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
   process.env.MAIL_DELIVERY_DISABLED = 'true';
   delete process.env.LOGIN_ATTEMPT_CACHE;
   delete process.env.REDIS_URL;
