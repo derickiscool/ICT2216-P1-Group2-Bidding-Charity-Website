@@ -383,6 +383,9 @@ export const provideTracking = async (uuid: string, trackingNumber: string, cour
   delivery.shipped_at = new Date().toISOString();
   await updateDelivery(delivery);
 
+  listing.status = 'shipped';
+  await updateListing(listing);
+
   await audit(req, 'LISTING_SHIPPED', { uuid, tracking: cleanedTracking, courier: cleanedCourier }, 'listing', listing.uuid, req.user?.id);
   return { delivery, listing };
 };
@@ -400,6 +403,9 @@ export const confirmDelivery = async (uuid: string, req: Request): Promise<{ del
 
   delivery.confirmed_at = new Date().toISOString();
   await updateDelivery(delivery);
+
+  listing.status = 'delivered';
+  await updateListing(listing);
 
   // Release escrow to charity
   await releaseEscrowForListing(listing.id, req);
@@ -470,7 +476,14 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
 export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
-  if (!isAdmin && !isPubliclyBiddableNow(listing)) throw notFound('Listing not found');
+
+  // Allow viewing of resolved listing statuses (sold, shipped, delivered, expired)
+  // so that bidders can see their won/ended auctions. Active listings still require
+  // the time window check (future auctions remain hidden until they start).
+  const terminalStatuses = new Set<Listing['status']>(['sold', 'shipped', 'delivered', 'expired']);
+  if (!isAdmin && !terminalStatuses.has(listing.status) && !isPubliclyBiddableNow(listing)) {
+    throw notFound('Listing not found');
+  }
 
   // Attach campaign details (includes total_raised, description) for the auction detail page.
   let campaign: import('../types/domain').Campaign | undefined;

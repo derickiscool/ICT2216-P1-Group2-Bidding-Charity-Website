@@ -204,8 +204,8 @@ interface PaymentRow {
   bidder_id: number;
   amount: number | string;
   payment_ref: string;
-  escrow_state: 'not_held' | 'held' | 'released' | 'refunded';
-  status: 'pending' | 'successful' | 'failed' | 'expired';
+  escrow_state: 'not_held' | 'held' | 'released';
+  status: 'pending' | 'successful' | 'expired';
   payment_deadline: DbDate;
   offered_at: DbDate;
   paid_at: DbDate | null;
@@ -219,6 +219,7 @@ interface PaymentWithListingRow extends PaymentRow {
   charity_name?: string;
   has_shipping?: boolean;
   listing_image?: string;
+  listing_status?: ListingStatus;
 }
 
 interface AuditEventRow {
@@ -247,6 +248,8 @@ interface ReceiptRow {
   receipt_ref: string;
   integrity_hash: string;
   generated_at: DbDate;
+  bidder_username: string;
+  payment_ref: string;
 }
 
 const USER_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
@@ -459,6 +462,7 @@ const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing =
   charity_name: row.charity_name ?? '',
   has_shipping: row.has_shipping ?? false,
   listing_image: row.listing_image ?? undefined,
+  listing_status: row.listing_status ?? undefined,
 });
 
 const mapReceipt = (row: ReceiptRow): Receipt => ({
@@ -473,6 +477,8 @@ const mapReceipt = (row: ReceiptRow): Receipt => ({
   receipt_ref: row.receipt_ref,
   integrity_hash: row.integrity_hash,
   generated_at: toIso(row.generated_at),
+  bidder_username: row.bidder_username,
+  payment_ref: row.payment_ref,
 });
 
 const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
@@ -1216,11 +1222,13 @@ const addReceipt = async (input: {
   charity_name: string;
   receipt_ref: string;
   integrity_hash: string;
+  bidder_username: string;
+  payment_ref: string;
 }): Promise<Receipt> => {
   const row = await firstRow<ReceiptRow>(
-    `INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [input.payment_id, input.listing_id, input.bidder_id, input.item_title, input.amount, input.charity_name, input.receipt_ref, input.integrity_hash],
+    `INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash, bidder_username, payment_ref)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [input.payment_id, input.listing_id, input.bidder_id, input.item_title, input.amount, input.charity_name, input.receipt_ref, input.integrity_hash, input.bidder_username, input.payment_ref],
   );
   if (!row) throw new Error('Failed to create receipt.');
   return mapReceipt(row);
@@ -1308,12 +1316,13 @@ const getPendingPaymentForListing = async (listingId: number): Promise<Payment |
 const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListing[]> => {
   const rows = await allRows<PaymentWithListingRow>(
     `SELECT
-       p.*,
-       l.uuid AS listing_uuid,
-       l.title AS listing_title,
-       l.charity_name AS charity_name,
-       (d.tracking_number IS NOT NULL) AS has_shipping,
-       l.images[1] AS listing_image
+        p.*,
+        l.uuid AS listing_uuid,
+        l.title AS listing_title,
+        l.charity_name AS charity_name,
+        (d.tracking_number IS NOT NULL) AS has_shipping,
+        l.images[1] AS listing_image,
+        l.status AS listing_status
      FROM payments p
      INNER JOIN listings l ON l.id = p.listing_id
      LEFT JOIN deliveries d ON d.listing_id = p.listing_id
