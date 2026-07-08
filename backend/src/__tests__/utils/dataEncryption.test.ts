@@ -9,7 +9,7 @@ import {
 
 describe('data encryption utilities', () => {
   beforeEach(() => {
-    process.env.DATA_ENCRYPTION_KEY = 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
+    process.env.DATA_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
   });
 
   test('encrypts and decrypts uploaded binary data with AES-GCM envelope', () => {
