@@ -34,6 +34,33 @@ describe('SFR12/SFR13 — Search & Filter Security', () => {
     assert.equal(unsafe.response.status, 400);
     assert.equal(unsafe.body.code, 'UNSAFE_SEARCH_QUERY');
   });
+
+  test('rejects other malformed-syntax and SQL-injection query variants', async () => {
+    const unsafeQueries = [
+      "1 UNION SELECT username, password FROM users",
+      "test; DROP TABLE listings;",
+      "test/*comment*/attack",
+      "O'Brien", // unbalanced/bare quote with no keyword — still rejected as unsafe syntax
+      "1 AND 1=1",
+      "SLEEP(5)",
+    ];
+    for (const q of unsafeQueries) {
+      const res = await request(`/api/listings?q=${encodeURIComponent(q)}`);
+      assert.equal(res.response.status, 400, `expected rejection for query: ${q}`);
+      assert.equal(res.body.code, 'UNSAFE_SEARCH_QUERY');
+    }
+
+    // The category filter is validated with the same rules as the search query.
+    const categoryInjection = await request(
+      `/api/listings?category=${encodeURIComponent("Art' OR '1'='1")}`,
+    );
+    assert.equal(categoryInjection.response.status, 400);
+    assert.equal(categoryInjection.body.code, 'UNSAFE_SEARCH_QUERY');
+
+    // A benign query with ordinary punctuation must still be accepted.
+    const safe = await request(`/api/listings?q=${encodeURIComponent('vintage watch, gold')}`);
+    assert.equal(safe.response.status, 200);
+  });
 });
 
 describe('SFR08 — Active Listing Field Locking', () => {

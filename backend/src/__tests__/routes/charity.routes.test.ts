@@ -111,4 +111,67 @@ describe('SFR04/SFR05 — Charity Document Upload & Admin Review', () => {
   assert.equal(reviewedAgain.response.status, 400);
   assert.equal(reviewedAgain.body.code, 'CHARITY_ALREADY_REVIEWED');
   });
+
+  test('accepts genuine PNG and JPEG supporting documents', async () => {
+    const charity = await loginAs('charity@bidforgood.test');
+
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Buffer.from('fake png body')]);
+    const pngForm = new FormData();
+    pngForm.set('organisationName', 'PNG Proof Charity');
+    pngForm.set('description', 'A charity registration with a genuine PNG proof.');
+    pngForm.set('supportingDocument', new Blob([pngBytes], { type: 'image/png' }), 'proof.png');
+    const pngRes = await request('/api/charities/register', {
+      method: 'POST',
+      headers: { cookie: charity.cookie, 'x-csrf-token': charity.csrf },
+      body: pngForm,
+    });
+    assert.equal(pngRes.response.status, 201);
+    assert.equal(pngRes.body.status, 'pending');
+
+    const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, ...Buffer.from('fake jpeg body')]);
+    const jpegForm = new FormData();
+    jpegForm.set('organisationName', 'JPEG Proof Charity');
+    jpegForm.set('description', 'A charity registration with a genuine JPEG proof.');
+    jpegForm.set('supportingDocument', new Blob([jpegBytes], { type: 'image/jpeg' }), 'proof.jpg');
+    const jpegRes = await request('/api/charities/register', {
+      method: 'POST',
+      headers: { cookie: charity.cookie, 'x-csrf-token': charity.csrf },
+      body: jpegForm,
+    });
+    assert.equal(jpegRes.response.status, 201);
+    assert.equal(jpegRes.body.status, 'pending');
+  });
+
+  test('rejects a document whose declared MIME type does not match its actual signature', async () => {
+    const charity = await loginAs('charity@bidforgood.test');
+
+    // Genuine PNG bytes, but declared as a PDF — the detected/declared mismatch
+    // must be rejected even though the bytes themselves match an allowed type.
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Buffer.from('fake png body')]);
+    const mismatchForm = new FormData();
+    mismatchForm.set('organisationName', 'Mismatched Mime Charity');
+    mismatchForm.set('description', 'A charity registration with a mismatched MIME type.');
+    mismatchForm.set('supportingDocument', new Blob([pngBytes], { type: 'application/pdf' }), 'proof.pdf');
+    const mismatchRes = await request('/api/charities/register', {
+      method: 'POST',
+      headers: { cookie: charity.cookie, 'x-csrf-token': charity.csrf },
+      body: mismatchForm,
+    });
+    assert.equal(mismatchRes.response.status, 400);
+    assert.equal(mismatchRes.body.code, 'UNSUPPORTED_DOCUMENT');
+
+    // Executable disguised with a PNG extension and MIME type — the byte
+    // signature check must still catch it since the bytes aren't a real PNG.
+    const exeForm = new FormData();
+    exeForm.set('organisationName', 'Executable Disguise Charity');
+    exeForm.set('description', 'A charity registration with an executable disguised as PNG.');
+    exeForm.set('supportingDocument', new Blob([Buffer.from('MZ\x90\x00 fake executable')], { type: 'image/png' }), 'proof.png');
+    const exeRes = await request('/api/charities/register', {
+      method: 'POST',
+      headers: { cookie: charity.cookie, 'x-csrf-token': charity.csrf },
+      body: exeForm,
+    });
+    assert.equal(exeRes.response.status, 400);
+    assert.equal(exeRes.body.code, 'UNSUPPORTED_DOCUMENT');
+  });
 });
