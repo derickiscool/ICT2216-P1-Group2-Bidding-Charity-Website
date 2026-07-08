@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Upload, AlertCircle, CheckCircle2, Loader2, Info } from 'lucide-react'
+import { Upload, AlertCircle, CheckCircle2, Loader2, Building2, CalendarDays, Search, X } from 'lucide-react'
 import api from '../services/api'
 import type { ApiError } from '../types'
 
@@ -32,7 +32,130 @@ interface PublicCampaign {
   uuid: string
   name: string
   description: string
+  charity_id: number
+  charityName: string
+  end_date?: string
   hasImage: boolean
+}
+
+interface CharityOption {
+  id: number
+  name: string
+  campaignCount: number
+}
+
+const formatForInput = (d: Date) => {
+  const tzOffset = d.getTimezoneOffset() * 60000
+  return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16)
+}
+
+const localInputToIso = (value: string): string => {
+  const normalised = value.length === 16 ? `${value}:00` : value
+  return new Date(normalised).toISOString()
+}
+
+const campaignEndDateLabel = (endDate?: string): string => {
+  if (!endDate) return 'No campaign end date'
+  const [year, month, day] = endDate.slice(0, 10).split('-').map(Number)
+  if (!year || !month || !day) return 'No campaign end date'
+  return new Date(year, month - 1, day).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+const campaignEndOfDayMs = (endDate?: string): number | undefined => {
+  if (!endDate) return undefined
+  const [year, month, day] = endDate.slice(0, 10).split('-').map(Number)
+  if (!year || !month || !day) return undefined
+  return new Date(year, month - 1, day, 23, 59, 59, 999).getTime()
+}
+
+const campaignEndsBeforeAuction = (campaign: PublicCampaign, auctionEndInput: string): boolean => {
+  const campaignEnd = campaignEndOfDayMs(campaign.end_date)
+  if (campaignEnd === undefined) return false
+  const auctionEnd = new Date(localInputToIso(auctionEndInput)).getTime()
+  return Number.isFinite(auctionEnd) && auctionEnd > campaignEnd
+}
+
+function CampaignPickerModal({
+  campaigns, auctionEndInput, search, onSearchChange, onSelect, onClose,
+}: {
+  campaigns: PublicCampaign[]
+  auctionEndInput: string
+  search: string
+  onSearchChange: (value: string) => void
+  onSelect: (campaign: PublicCampaign) => void
+  onClose: () => void
+}) {
+  const filtered = campaigns.filter(campaign => (`${campaign.name} ${campaign.description}`).toLowerCase().includes(search.toLowerCase()))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden" style={{ border: `1px solid ${C.beige}` }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: C.beige }}>
+          <div>
+            <h2 className="text-lg font-black" style={{ color: C.slate }}>Select Target Campaign</h2>
+            <p className="text-xs mt-1" style={{ color: C.muted }}>
+              Campaigns ending before your auction end date are disabled.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-[#F7F5F0]" aria-label="Close campaign picker">
+            <X className="w-5 h-5" style={{ color: C.muted }} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: C.muted }} />
+            <input
+              value={search}
+              onChange={e => onSearchChange(e.target.value)}
+              placeholder="Search campaign name or description"
+              style={inputSt(false, { paddingLeft: '38px' })}
+            />
+          </div>
+
+          <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">
+            {filtered.length === 0 ? (
+              <div className="rounded-xl px-4 py-8 text-center" style={{ background: C.linen, border: `1px solid ${C.beige}` }}>
+                <p className="text-sm font-bold" style={{ color: C.slate }}>No matching campaigns</p>
+                <p className="text-xs mt-1" style={{ color: C.muted }}>Try a different search term.</p>
+              </div>
+            ) : filtered.map(campaign => {
+              const disabled = campaignEndsBeforeAuction(campaign, auctionEndInput)
+              return (
+                <button
+                  key={campaign.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onSelect(campaign)}
+                  className="w-full text-left p-4 rounded-xl border transition-all disabled:cursor-not-allowed disabled:opacity-55 hover:shadow-sm"
+                  style={{ borderColor: disabled ? C.dangerBorder : C.beige, background: disabled ? C.dangerLight : C.white }}>
+                  <div className="flex gap-3">
+                    {campaign.hasImage && (
+                      <img src={`/api/charities/campaigns/${campaign.uuid}/image`} alt="Campaign" className="w-16 h-16 rounded-xl object-cover flex-shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-black break-words" style={{ color: C.slate }}>{campaign.name}</p>
+                      <p className="text-xs mt-1 line-clamp-2" style={{ color: C.muted }}>{campaign.description}</p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: C.linen, color: C.slate, border: `1px solid ${C.beige}` }}>
+                          <CalendarDays className="w-3 h-3" /> Ends: {campaignEndDateLabel(campaign.end_date)}
+                        </span>
+                        {disabled && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: C.dangerLight, color: C.danger, border: `1px solid ${C.dangerBorder}` }}>
+                            Campaign ends before auction
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function DonorCreateListingForm({ onCreated }: { onCreated?: () => void }) {
@@ -42,6 +165,9 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
   const [campaigns, setCampaigns] = useState<PublicCampaign[]>([])
   const [campaignsLoading, setCampaignsLoading] = useState(true)
   const [campaignsError, setCampaignsError] = useState('')
+  const [selectedCharityId, setSelectedCharityId] = useState('')
+  const [campaignPickerOpen, setCampaignPickerOpen] = useState(false)
+  const [campaignSearch, setCampaignSearch] = useState('')
 
   useEffect(() => {
     api.get<PublicCampaign[]>('/charities/campaigns/public')
@@ -57,15 +183,6 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
 
   const now = new Date()
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-  const formatForInput = (d: Date) => {
-    const tzOffset = d.getTimezoneOffset() * 60000
-    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16)
-  }
-
-  const localInputToIso = (value: string): string => {
-    const normalised = value.length === 16 ? `${value}:00` : value
-    return new Date(normalised).toISOString()
-  }
 
   const [images, setImages] = useState<File[]>([])
   const [imgError, setImgError] = useState('')
@@ -80,8 +197,6 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
     condition: 'like_new',
     campaign_id: '',
     starting_price: '',
-    reserve_price: '',
-    buy_now_price: '',
     min_increment: '5',
     start_time: formatForInput(now),
     end_time: formatForInput(tomorrow),
@@ -90,14 +205,57 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [globalErr, setGlobalErr] = useState<string | null>(null)
 
+  const charityOptions = useMemo<CharityOption[]>(() => {
+    const grouped = new Map<number, CharityOption>()
+    campaigns.forEach(campaign => {
+      const existing = grouped.get(campaign.charity_id)
+      grouped.set(campaign.charity_id, {
+        id: campaign.charity_id,
+        name: campaign.charityName,
+        campaignCount: (existing?.campaignCount ?? 0) + 1,
+      })
+    })
+    return [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [campaigns])
+
+  const campaignsForSelectedCharity = useMemo(
+    () => campaigns.filter(campaign => String(campaign.charity_id) === selectedCharityId),
+    [campaigns, selectedCharityId],
+  )
+
+  const selectedCampaign = useMemo(
+    () => campaigns.find(campaign => String(campaign.id) === form.campaign_id),
+    [campaigns, form.campaign_id],
+  )
+
   const setField = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setForm(prev => ({ ...prev, [f]: e.target.value }))
     setErrors(prev => ({ ...prev, [f]: '' }))
   }
 
+  const selectCharity = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const charityId = e.target.value
+    setSelectedCharityId(charityId)
+    setCampaignSearch('')
+    setErrors(prev => ({ ...prev, campaign_id: '' }))
+
+    // The campaign list depends on the selected organisation. Clear the previous
+    // campaign if it belongs to another charity so donors do not accidentally submit
+    // to the wrong beneficiary.
+    const currentCampaignStillBelongs = campaigns.some(campaign => String(campaign.id) === form.campaign_id && String(campaign.charity_id) === charityId)
+    if (!currentCampaignStillBelongs) {
+      setForm(prev => ({ ...prev, campaign_id: '' }))
+    }
+  }
+
   const selectCampaign = (campaign: PublicCampaign) => {
+    if (campaignEndsBeforeAuction(campaign, form.end_time)) {
+      setErrors(prev => ({ ...prev, campaign_id: 'This campaign ends before your auction ends. Please choose another campaign.' }))
+      return
+    }
     setForm(prev => ({ ...prev, campaign_id: String(campaign.id) }))
     setErrors(prev => ({ ...prev, campaign_id: '' }))
+    setCampaignPickerOpen(false)
   }
 
   const addImageFiles = (files: File[]) => {
@@ -135,19 +293,16 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
       e.description = 'Please remove script-like content from the listing text.'
     }
     if (form.category.trim().length < 2) e.category = 'Category is required.'
+    if (!selectedCharityId) e.charity_id = 'Please select a target organisation first.'
     if (!form.campaign_id) e.campaign_id = 'Please select a campaign before submitting.'
     if (images.length === 0) setImgError('Please upload at least one item image before submitting.')
 
     const price = Number(form.starting_price)
     if (!form.starting_price || isNaN(price) || price < 1) e.starting_price = 'Starting price must be at least $1.'
 
-    if (form.reserve_price) {
-      const rp = Number(form.reserve_price)
-      if (isNaN(rp) || rp < price) e.reserve_price = 'Reserve price must be equal to or higher than the starting price.'
-    }
-    if (form.buy_now_price) {
-      const bn = Number(form.buy_now_price)
-      if (isNaN(bn) || bn <= price) e.buy_now_price = 'Buy-Now price must be higher than starting price.'
+    const minIncrement = Number(form.min_increment)
+    if (!form.min_increment || isNaN(minIncrement) || minIncrement < 1) {
+      e.min_increment = 'Minimum bid increment is required and must be at least $1.'
     }
 
     const start = new Date(localInputToIso(form.start_time)).getTime()
@@ -156,8 +311,25 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
     if (isNaN(end)) e.end_time = 'Invalid end time.'
     if (!isNaN(start) && !isNaN(end) && end <= start) e.end_time = 'End time must be after start time.'
 
+    if (selectedCampaign && campaignEndsBeforeAuction(selectedCampaign, form.end_time)) {
+      e.campaign_id = 'This campaign ends before your auction ends. Please choose another campaign.'
+    }
+
     setErrors(e)
     return Object.keys(e).length === 0 && images.length > 0
+  }
+
+  const resetForm = () => {
+    setSuccess(false)
+    setForm({
+      title: '', description: '', category: '', condition: 'like_new', campaign_id: '',
+      starting_price: '', min_increment: '5',
+      start_time: formatForInput(new Date()), end_time: formatForInput(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+    })
+    setSelectedCharityId('')
+    setCampaignSearch('')
+    setImages([])
+    setErrors({})
   }
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -186,8 +358,6 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
     payload.append('start_time', startIso)
     payload.append('end_time', endIso)
     payload.append('durationHours', String(durationHours))
-    if (form.reserve_price) payload.append('reserve_price', form.reserve_price)
-    if (form.buy_now_price) payload.append('buy_now_price', form.buy_now_price)
     images.forEach(file => payload.append('images', file))
 
     setIsLoading(true)
@@ -216,11 +386,7 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
             It is currently <span className="font-semibold" style={{ color: '#D97706' }}>Pending Admin Review</span>. After that, the charity will complete the final review.
           </p>
           <div className="flex gap-3 justify-center">
-            <button onClick={() => { setSuccess(false); setForm({
-              title: '', description: '', category: '', condition: 'like_new', campaign_id: '',
-              starting_price: '', reserve_price: '', buy_now_price: '', min_increment: '5',
-              start_time: formatForInput(new Date()), end_time: formatForInput(new Date(Date.now() + 24 * 60 * 60 * 1000)),
-            }); setImages([]) }}
+            <button onClick={resetForm}
               className="px-5 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
               style={{ border: `1px solid ${C.beige}`, color: C.slate }}>
               Create Another
@@ -240,7 +406,6 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
 
   return (
     <div>
-      {/* Breadcrumb removed — sidebar handles nav */}
       {globalErr && (
         <div className="mb-6 flex items-start gap-3 rounded-xl px-4 py-3" style={{ background: C.dangerLight, border: `1px solid ${C.dangerBorder}` }}>
           <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: C.danger }} />
@@ -267,14 +432,14 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Item Condition <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
-                    {['New', 'Like New', 'Good', 'Fair'].map(c => {
-                      const val = c.toLowerCase().replace(' ', '_')
+                    {['New', 'Like New', 'Good', 'Fair'].map(condition => {
+                      const val = condition.toLowerCase().replace(' ', '_')
                       const isSelected = form.condition === val
                       return (
-                        <button key={val} type="button" onClick={() => setForm(p => ({ ...p, condition: val }))}
+                        <button key={val} type="button" onClick={() => setForm(prev => ({ ...prev, condition: val }))}
                           className="flex-1 py-2 text-sm font-medium rounded-lg transition-colors border"
                           style={{ borderColor: isSelected ? C.emerald : C.beige, color: isSelected ? C.emeraldDark : C.slate, background: isSelected ? C.emeraldLight : C.white }}>
-                          {c}
+                          {condition}
                         </button>
                       )
                     })}
@@ -331,31 +496,24 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
             <section className="rounded-xl p-6 shadow-sm bg-white" style={{ border: `1px solid ${C.beige}` }}>
               <h3 className="text-base font-bold mb-5" style={{ color: C.slate }}>Auction Settings</h3>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Starting Price <span className="text-red-500">*</span></label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-medium" style={{ color: C.muted }}>$</span>
-                    <input id="listing-starting-price" type="number" min="1" step="0.01" placeholder="0.00" value={form.starting_price} onChange={setField('starting_price')} style={inputSt(!!errors.starting_price, { paddingLeft: '28px' })} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Starting Price <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-medium" style={{ color: C.muted }}>$</span>
+                      <input id="listing-starting-price" type="number" min="1" step="0.01" placeholder="0.00" value={form.starting_price} onChange={setField('starting_price')} style={inputSt(!!errors.starting_price, { paddingLeft: '28px' })} />
+                    </div>
+                    {errors.starting_price && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.starting_price}</p>}
                   </div>
-                  {errors.starting_price && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.starting_price}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1.5 flex items-center gap-1" style={{ color: C.slate }}>
-                    Reserve Price <Info className="w-3.5 h-3.5 opacity-50" />
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-medium" style={{ color: C.muted }}>$</span>
-                    <input id="listing-reserve-price" type="number" placeholder="Optional" value={form.reserve_price} onChange={setField('reserve_price')} style={inputSt(!!errors.reserve_price, { paddingLeft: '28px' })} />
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Minimum Bid Increment <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-medium" style={{ color: C.muted }}>$</span>
+                      <input id="listing-min-increment" type="number" min="1" step="0.01" placeholder="5.00" value={form.min_increment} onChange={setField('min_increment')} style={inputSt(!!errors.min_increment, { paddingLeft: '28px' })} />
+                    </div>
+                    <p className="text-[11px] mt-1" style={{ color: C.muted }}>Every manual bid and auto-bid increment must meet this amount.</p>
+                    {errors.min_increment && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.min_increment}</p>}
                   </div>
-                  {errors.reserve_price && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.reserve_price}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Buy-Now Price</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-medium" style={{ color: C.muted }}>$</span>
-                    <input id="listing-buy-now-price" type="number" placeholder="Optional" value={form.buy_now_price} onChange={setField('buy_now_price')} style={inputSt(!!errors.buy_now_price, { paddingLeft: '28px' })} />
-                  </div>
-                  {errors.buy_now_price && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.buy_now_price}</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <div>
@@ -375,12 +533,15 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
             </section>
 
             <section className="rounded-xl p-6 shadow-sm bg-white flex-1 flex flex-col" style={{ border: `1px solid ${C.beige}` }}>
-              <h3 className="text-base font-bold mb-1" style={{ color: C.slate }}>Target Campaign <span className="text-red-500 text-xs font-normal">* Required</span></h3>
-              <p className="text-xs mb-3" style={{ color: C.muted }}>Select an active charity campaign to donate auction proceeds to</p>
+              <h3 className="text-base font-bold mb-1" style={{ color: C.slate }}>Target Beneficiary <span className="text-red-500 text-xs font-normal">* Required</span></h3>
+              <p className="text-xs mb-4" style={{ color: C.muted }}>
+                Select the target organisation first, then choose one of its active campaigns.
+              </p>
+
               {campaignsLoading ? (
                 <div className="flex items-center justify-center py-8 gap-2" style={{ color: C.muted }}>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Loading campaigns…</span>
+                  <span className="text-sm">Loading organisations and campaigns…</span>
                 </div>
               ) : campaignsError ? (
                 <div className="flex items-start gap-2 rounded-lg px-3 py-3" style={{ background: C.dangerLight, border: `1px solid ${C.dangerBorder}` }}>
@@ -393,29 +554,58 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
                   <p className="text-xs" style={{ color: C.muted }}>Charities must create an active campaign before you can select one.</p>
                 </div>
               ) : (
-                <div className="space-y-3 flex-1 overflow-y-auto max-h-72">
-                  {campaigns.map(campaign => {
-                    const isSelected = form.campaign_id === String(campaign.id)
-                    return (
-                      <div key={campaign.id} id={`campaign-option-${campaign.id}`} onClick={() => selectCampaign(campaign)}
-                        className="p-3 rounded-lg border cursor-pointer transition-colors flex gap-3 items-start"
-                        style={{ borderColor: isSelected ? C.emerald : C.beige, background: isSelected ? C.emeraldLight : C.white }}>
-                        {campaign.hasImage && (
-                          <img src={`/api/charities/campaigns/${campaign.uuid}/image`} alt={campaign.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-start gap-2">
-                            <p className="text-sm font-bold truncate" style={{ color: C.slate }}>{campaign.name}</p>
-                            {isSelected && <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: C.emerald }} />}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: C.slate }}>Target Organisation</label>
+                    <select id="listing-target-organisation" value={selectedCharityId} onChange={selectCharity} style={inputSt(!!errors.charity_id)}>
+                      <option value="" disabled>Select an organisation...</option>
+                      {charityOptions.map(option => (
+                        <option key={option.id} value={option.id}>{option.name} ({option.campaignCount} campaign{option.campaignCount === 1 ? '' : 's'})</option>
+                      ))}
+                    </select>
+                    {errors.charity_id && <p className="text-xs mt-1" style={{ color: C.danger }}>{errors.charity_id}</p>}
+                  </div>
+
+                  <div className="rounded-xl p-4" style={{ background: C.linen, border: `1px solid ${C.beige}` }}>
+                    {selectedCampaign ? (
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: C.muted }}>Selected Campaign</p>
+                            <p className="text-sm font-black mt-1" style={{ color: C.slate }}>{selectedCampaign.name}</p>
+                            <p className="text-xs mt-1" style={{ color: C.muted }}>{selectedCampaign.charityName}</p>
                           </div>
-                          {campaign.description && <p className="text-xs mt-0.5 line-clamp-2" style={{ color: C.muted }}>{campaign.description}</p>}
+                          <CheckCircle2 className="w-5 h-5 flex-shrink-0" style={{ color: C.emerald }} />
                         </div>
+                        <div className="flex items-center gap-2 text-xs font-bold" style={{ color: C.slate }}>
+                          <CalendarDays className="w-4 h-4" style={{ color: C.emerald }} />
+                          Campaign end date: {campaignEndDateLabel(selectedCampaign.end_date)}
+                        </div>
+                        <button type="button" onClick={() => setCampaignPickerOpen(true)}
+                          className="w-full py-2.5 rounded-xl text-sm font-bold transition-colors"
+                          style={{ border: `1px solid ${C.beige}`, color: C.emerald, background: C.white }}>
+                          Change Campaign
+                        </button>
                       </div>
-                    )
-                  })}
+                    ) : (
+                      <div className="text-center py-4">
+                        <Building2 className="w-8 h-8 mx-auto mb-2" style={{ color: C.beige }} />
+                        <p className="text-sm font-bold" style={{ color: C.slate }}>No campaign selected</p>
+                        <p className="text-xs mt-1 mb-3" style={{ color: C.muted }}>
+                          {selectedCharityId ? 'Open the campaign picker to choose a campaign.' : 'Select a target organisation first.'}
+                        </p>
+                        <button type="button" disabled={!selectedCharityId} onClick={() => setCampaignPickerOpen(true)}
+                          className="px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{ background: C.emerald }}>
+                          Choose Campaign
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {errors.campaign_id && <p className="text-xs" style={{ color: C.danger }}>{errors.campaign_id}</p>}
                 </div>
               )}
-              {errors.campaign_id && <p className="text-xs mt-2" style={{ color: C.danger }}>{errors.campaign_id}</p>}
             </section>
           </div>
         </div>
@@ -432,6 +622,17 @@ export default function DonorCreateListingForm({ onCreated }: { onCreated?: () =
           </button>
         </div>
       </form>
+
+      {campaignPickerOpen && selectedCharityId && (
+        <CampaignPickerModal
+          campaigns={campaignsForSelectedCharity}
+          auctionEndInput={form.end_time}
+          search={campaignSearch}
+          onSearchChange={setCampaignSearch}
+          onSelect={selectCampaign}
+          onClose={() => setCampaignPickerOpen(false)}
+        />
+      )}
     </div>
   )
 }
