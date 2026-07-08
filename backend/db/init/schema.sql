@@ -317,4 +317,36 @@ CREATE TABLE IF NOT EXISTS shipping_verifications (
 
 CREATE INDEX IF NOT EXISTS shipping_verifications_listing_id_idx ON shipping_verifications (listing_id);
 
+-- NFSR04: WORM enforcement — audit_events rows are immutable once written.
+-- This trigger fires even for direct DB admin connections, preventing tampering.
+CREATE OR REPLACE FUNCTION audit_events_block_update()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'WORM violation: audit_events rows are immutable (NFSR04). UPDATE is not permitted.';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS audit_events_no_update ON audit_events;
+CREATE TRIGGER audit_events_no_update
+  BEFORE UPDATE ON audit_events
+  FOR EACH ROW EXECUTE FUNCTION audit_events_block_update();
+
+-- NFSR10: 365-day minimum retention — rows younger than one year cannot be deleted.
+-- TRUNCATE bypasses row-level triggers so test teardown (TRUNCATE ... RESTART IDENTITY CASCADE)
+-- still works cleanly without hitting this guard.
+CREATE OR REPLACE FUNCTION audit_events_retention_check()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.timestamp > NOW() - INTERVAL '365 days' THEN
+    RAISE EXCEPTION 'Retention policy violation: audit_events rows must be retained for at least 365 days (NFSR10). Row timestamp: %', OLD.timestamp;
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS audit_events_retention ON audit_events;
+CREATE TRIGGER audit_events_retention
+  BEFORE DELETE ON audit_events
+  FOR EACH ROW EXECUTE FUNCTION audit_events_retention_check();
+
 COMMIT;

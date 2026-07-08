@@ -110,12 +110,13 @@ const ensureOwnerOrAdmin = (listing: Listing, req: Request): void => {
   if (!isAdmin && listing.donor_id !== req.user?.id) throw forbidden('Access denied');
 };
 
-const campaignEndOfDayMs = (endDate: string | undefined): number | undefined => {
+const campaignEndOfDayMs = (endDate: string | Date | undefined): number | undefined => {
   if (!endDate) return undefined;
   // Campaigns store an end date, not a precise timestamp. For this Singapore-based
   // project, treat that date as valid until 23:59:59.999 SGT so donors do not
   // accidentally attach an auction that ends after the beneficiary campaign closes.
-  const dateOnly = endDate.slice(0, 10);
+  // PostgreSQL DATE columns may be returned as a JS Date object by the pg driver.
+  const dateOnly = (typeof endDate === 'string' ? endDate : endDate.toISOString()).slice(0, 10);
   const value = Date.parse(`${dateOnly}T23:59:59.999+08:00`);
   return Number.isFinite(value) ? value : undefined;
 };

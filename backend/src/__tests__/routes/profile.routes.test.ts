@@ -140,3 +140,30 @@ describe('FR03/SFR03 — password changes require email verification', () => {
     assert.equal(newLogin.response.status, 200);
   });
 });
+
+describe('SFR03 / FSR12 — script injection rejected in profile fields (F-006)', () => {
+  test('rejects <script>, event-handler, and iframe payloads in full_name', async () => {
+    const email = 'sfr03-xss@example.com';
+    await registerVerifiedUser({ email, username: 'sfr03xss', full_name: 'SFR03 XSS', password: PASSWORD, roles: ['bidder'] });
+    const { cookie, csrf } = await loginAs(email, PASSWORD);
+    const headers = authHeaders(cookie, csrf);
+
+    const payloads = [
+      '<script>alert(1)</script>',
+      'John" onmouseover="alert(1)',
+      '<iframe src=evil.com>',
+      'javascript:alert(1)',
+    ];
+
+    for (const payload of payloads) {
+      const res = await putJson('/api/users/profile', { full_name: payload }, headers);
+      assert.equal(res.response.status, 400, `expected 400 for payload: ${payload}`);
+      const errors = res.body.errors as unknown as Record<string, string>;
+      assert.match(errors.full_name, /invalid character/i, `expected invalid-character error for: ${payload}`);
+    }
+
+    // Legitimate name must be accepted (include username as bidder accounts require it)
+    const ok = await putJson('/api/users/profile', { full_name: 'Danial Irfan', username: 'sfr03xss' }, headers);
+    assert.equal(ok.response.status, 200);
+  });
+});

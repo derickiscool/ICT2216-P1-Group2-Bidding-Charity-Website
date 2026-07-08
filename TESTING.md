@@ -3,83 +3,162 @@
 ## Running Tests
 
 ```bash
-# Backend tests (Jest, including Ezra SFR tests)
+# From repo root — runs backend (Jest) and frontend (Vitest)
+npm test
+
+# Backend only
 npm test -w backend
 
-# Frontend tests (Vitest)
+# Frontend only
 npm test -w frontend
 
-# All tests
-npm test
+# Coverage reports
+npm test -w backend -- --coverage
+npm test -w frontend -- --coverage
 ```
+
+Backend tests hit a real PostgreSQL database. The DB is wiped (`TRUNCATE … RESTART IDENTITY CASCADE`) and re-seeded before each test file, so files are fully isolated. Tests run serially (`--runInBand`) to prevent concurrent writers conflicting.
 
 ## Writing Tests
 
 ### Backend
 
 | Property | Value |
-|----------|-------|
+|---|---|
 | Framework | Jest + ts-jest |
-| HTTP assertions | supertest |
+| HTTP assertions | Node.js native `fetch` |
 | Config file | `backend/jest.config.ts` |
-| Test location | `backend/src/__tests__/` (mirrors `src/` structure) |
+| Test location | `backend/src/__tests__/` |
 | File naming | `*.test.ts` |
-| Example | `backend/src/__tests__/utils/db.test.ts` |
-
-Ezra's SFR integration tests are in `backend/src/__tests__/sfr/ezra.sfr.test.ts`.
-They run through the same backend Jest command, so CI does not need a separate test runner.
 
 ### Frontend
 
 | Property | Value |
-|----------|-------|
+|---|---|
 | Framework | Vitest |
 | DOM environment | happy-dom |
 | Component testing | @testing-library/react |
 | Config file | `frontend/vitest.config.ts` |
-| Test location | `frontend/src/__tests__/` (mirrors `src/` structure) |
-| File naming | `*.test.ts` or `*.test.tsx` |
-| Example | `frontend/src/__tests__/store/authStore.test.ts` |
+| Test location | `frontend/src/__tests__/` |
+| File naming | `*.test.ts` / `*.test.tsx` |
 
 ## CI
 
-Tests run automatically on every push and pull request via GitHub Actions.
-See `.github/workflows/tests.yml` for full pipeline configuration.
-
-## Coverage
-
-Coverage reports are generated when running locally:
-```bash
-npm test -w backend -- --coverage
-npm test -w frontend -- --coverage
-```
+Tests run automatically on every push and every PR targeting `main` via GitHub Actions (`.github/workflows/tests.yml`).
 
 ---
 
-## Test Coverage by SFR
+## Tested Requirements
 
-### SFR16 — Admin Session Enforcement
+---
 
-> The system shall provide an Admin dashboard to manage all entities, but must reject all access attempts or administrative actions from HTTP requests that lack a verified, unexpired Administrator-level session token.
+### SFR01 — Registration & Email Verification
 
-**Test file:** `backend/src/__tests__/routes/admin.routes.test.ts`
+**Requirement:** Users shall register with a unique email and password. Passwords must pass a breached-password check. A 6-digit OTP is sent to the user's email and must be verified within the expiry window. OTP re-use and brute-forcing are rejected. Duplicate-email registrations must not leak whether the address is taken.
+
+**Test file:** `backend/src/__tests__/routes/auth.routes.test.ts`
 
 ```
-SFR16 — Admin Session Enforcement
-  ✓ rejects requests with no session cookie
-  ✓ rejects requests with a tampered JWT signature
-  ✓ rejects requests from a valid bidder session (role mismatch)
-  ✓ allows requests from a valid admin session
-  ✓ rejects requests after the absolute session lifetime is exceeded
+SFR01 — Registration & Email Verification
+  ✓ blocks registration with breached or common passwords
+  ✓ verifies OTP once, rejects reused OTP, expires old OTP, and locks after three failures
 ```
 
-| Test case | What it verifies |
+| Test case | What is asserted |
 |---|---|
-| no session cookie | Unauthenticated requests receive 401 — the endpoint is never accessible without a session |
-| tampered JWT signature | Signature verification rejects a cookie whose last 4 signature chars have been flipped — forged tokens cannot reach the admin handler |
-| bidder session (role mismatch) | A valid but non-admin session receives 403 — authentication alone is not sufficient |
-| valid admin session | A correctly authenticated admin session receives 200 — the happy path works |
-| absolute session lifetime exceeded | When `absolute_expires_at` is wound back to the past in the DB, the same cookie now receives 401 — sliding session refresh cannot extend beyond the hard ceiling set at login |
+| blocks registration with breached or common passwords | 400 returned for known-weak passwords; 202 returned for both a new email and an existing email (identical envelope prevents enumeration) |
+| verifies OTP once, rejects reused OTP, expires old OTP, and locks after three failures | Valid OTP → 201 and user created; reused OTP → 400; artificially expired OTP → 400; three wrong OTPs → 429 (lockout) |
+
+---
+
+### SFR02 — Authentication & Session Management
+
+**Requirement:** Users shall authenticate via email and password. On success the server issues a session token as an `HttpOnly; SameSite=Strict` cookie — never in the response body. Bearer-token authentication is not accepted. Accounts lock for a cooldown period after five consecutive failed login attempts.
+
+**Test file:** `backend/src/__tests__/routes/auth.routes.test.ts`
+
+```
+SFR02 — Authentication & Session Management
+  ✓ returns HttpOnly cookie with SameSite=Strict on successful login
+  ✓ rejects Authorization Bearer token when session cookie is absent
+  ✓ locks account after five consecutive failed login attempts
+```
+
+| Test case | What is asserted |
+|---|---|
+| returns HttpOnly cookie with SameSite=Strict on successful login | Wrong password → 401; correct password → 200 with `HttpOnly` + `SameSite=Strict` on the `Set-Cookie` header; `token` must not appear in the JSON body |
+| rejects Authorization Bearer token when session cookie is absent | 401 returned even when a valid token is sent in the `Authorization` header without a cookie |
+| locks account after five consecutive failed login attempts | Five wrong passwords each return 401; sixth attempt (correct password) returns 429 with a lockout message |
+
+---
+
+### SFR04 / SFR05 — Charity Document Upload & Admin Review
+
+**Requirement:** Only users with the `charity` role may submit a charity registration. Supporting documents must be PDF, PNG, or JPG verified by magic-byte inspection (not just extension), with a maximum size of 5 MB. Admin review is required before a charity is approved. Each charity may only be reviewed once.
+
+**Test file:** `backend/src/__tests__/routes/charity.routes.test.ts`
+
+```
+SFR04/SFR05 — Charity Document Upload & Admin Review
+  ✓ rejects unsafe or oversized documents and requires one-time admin review
+```
+
+| Test case | What is asserted |
+|---|---|
+| rejects unsafe or oversized documents and requires one-time admin review | `bidder` role → 403; PDF with wrong magic bytes → 400 `UNSUPPORTED_DOCUMENT`; file over 5 MB → 400 `UPLOAD_REJECTED`; valid PDF → 201 `pending`; non-admin review attempt → 403; admin approval → 200 `approved`; second review attempt → 400 `CHARITY_ALREADY_REVIEWED` |
+
+---
+
+### SFR08 — Active Listing Field Locking
+
+**Requirement:** Once an auction listing becomes active, core auction configuration fields (starting price, end time) are locked and must not be modifiable by any actor, including admins. Attempts to modify locked fields must be explicitly rejected.
+
+**Test file:** `backend/src/__tests__/routes/listing.routes.test.ts`
+
+```
+SFR08 — Active Listing Field Locking
+  ✓ rejects modifications to locked fields on active auction listings
+```
+
+| Test case | What is asserted |
+|---|---|
+| rejects modifications to locked fields on active auction listings | A listing created with `durationHours` immediately becomes active (status `active`); a PATCH attempting to change `startingPrice` and `endTime` returns 403 with a message matching `/locked/i` |
+
+---
+
+### SFR10 — Bid Validation & Flood Protection
+
+**Requirement:** Every bid request must carry a valid CSRF token. Bids below the minimum increment must be rejected. Concurrent bids for the same amount on the same listing must be serialised so that only one succeeds. Automated bid flooding (more than 10 bids in a short window) must be rate-limited.
+
+**Test file:** `backend/src/__tests__/routes/bid.routes.test.ts`
+
+```
+SFR10 — Bid Validation & Flood Protection
+  ✓ requires CSRF token, enforces minimum increment, and accepts valid sequential bids
+  ✓ serialises concurrent same-listing bids and rejects automated bid flooding
+```
+
+| Test case | What is asserted |
+|---|---|
+| requires CSRF token, enforces minimum increment, and accepts valid sequential bids | Missing CSRF → 403; bid equal to current price (below increment) → 400; valid bid → 201; second valid bid → 201 |
+| serialises concurrent same-listing bids and rejects automated bid flooding | Two concurrent identical-amount bids → one 201 and one 400 (DB row-level lock); 11th bid in rapid succession → 429 `BID_FLOOD_REJECTED` |
+
+---
+
+### SFR12 / SFR13 — Search & Filter Security
+
+**Requirement:** Public listing search must only return listings with `active` status. Listings in `draft`, `pending`, `sold`, or `expired` states must be hidden. Search queries that contain SQL-injection-like patterns must be rejected.
+
+**Test file:** `backend/src/__tests__/routes/listing.routes.test.ts`
+
+```
+SFR12/SFR13 — Search & Filter Security
+  ✓ hides pending listings from public search and rejects SQL-like queries
+```
+
+| Test case | What is asserted |
+|---|---|
+| hides pending listings from public search and rejects SQL-like queries | `GET /api/listings` → 200; all returned listings have `status === 'active'`; no listing title contains "Pending"; query with `' OR 1=1--` → 400 `UNSAFE_SEARCH_QUERY` |
 
 ---
 
@@ -163,3 +242,284 @@ SFR15 — Shipping Verification & Delivery Confirmation
 | forced delivery rejected | `POST /:uuid/deliver` on a `sold` (not yet `shipped`) listing returns 400 `INVALID_LISTING_STATUS` — the `delivered` state cannot be reached without passing through `shipped` |
 | non-winner delivery blocked | A non-bidder session (admin) on `POST /:uuid/deliver` returns 403 |
 | full delivery flow | After a valid `POST /:uuid/deliver`, the listing status is `delivered` and the payment `escrow_state` is `released` |
+
+---
+
+### SFR16 — Admin Session Enforcement
+
+> The system shall provide an Admin dashboard to manage all entities, but must reject all access attempts or administrative actions from HTTP requests that lack a verified, unexpired Administrator-level session token.
+
+**Test file:** `backend/src/__tests__/routes/admin.routes.test.ts`
+
+```
+SFR16 — Admin Session Enforcement
+  ✓ rejects requests with no session cookie
+  ✓ rejects requests with a tampered JWT signature
+  ✓ rejects requests from a valid bidder session (role mismatch)
+  ✓ allows requests from a valid admin session
+  ✓ rejects requests after the absolute session lifetime is exceeded
+```
+
+| Test case | What it verifies |
+|---|---|
+| no session cookie | Unauthenticated requests receive 401 — the endpoint is never accessible without a session |
+| tampered JWT signature | Signature verification rejects a cookie whose last 4 signature chars have been flipped — forged tokens cannot reach the admin handler |
+| bidder session (role mismatch) | A valid but non-admin session receives 403 — authentication alone is not sufficient |
+| valid admin session | A correctly authenticated admin session receives 200 — the happy path works |
+| absolute session lifetime exceeded | When `absolute_expires_at` is wound back to the past in the DB, the same cookie now receives 401 — sliding session refresh cannot extend beyond the hard ceiling set at login |
+
+---
+
+### NFSR04 — WORM Enforcement on Audit Log
+
+> The audit logs shall be append-only and tamper-evident, implemented using Write-Once-Read-Many (WORM) storage, preventing any modification even by database admins.
+
+**Test file:** `backend/src/__tests__/routes/audit-log.test.ts`
+
+```
+NFSR04 — WORM enforcement on audit_events
+  ✓ UPDATE on an existing audit_events row is rejected at the database level
+  ✓ DELETE of a row younger than 365 days is rejected at the database level (NFSR10)
+```
+
+| Test case | What it verifies |
+|---|---|
+| UPDATE blocked | A direct `UPDATE audit_events SET action = 'TAMPERED'` via the DB connection raises an exception matching `/WORM violation/i` — the trigger fires even for privileged connections |
+| DELETE blocked within 365 days | A direct `DELETE FROM audit_events` on a freshly-inserted row raises an exception matching `/Retention policy violation/i` — rows cannot be purged before the compliance window elapses |
+
+**Implementation:** Two PostgreSQL row-level triggers in `schema.sql`:
+- `audit_events_no_update` — fires `BEFORE UPDATE`, always raises; implemented by `audit_events_block_update()`
+- `audit_events_retention` — fires `BEFORE DELETE`, raises if `OLD.timestamp > NOW() - INTERVAL '365 days'`; implemented by `audit_events_retention_check()`
+
+`TRUNCATE` (used only by the test-reset helper) bypasses row-level triggers by design and is not a production operation.
+
+---
+
+### NFSR10 — Centralized Security Event Log with 365-Day Retention
+
+> All security-relevant events (logins, bids, payments, admin actions, role changes) shall be logged in a centralized, immutable log server, and retained for a minimum compliance period of 365 days.
+
+**Test file:** `backend/src/__tests__/routes/audit-log.test.ts`
+
+```
+FSR16 — Immutable Audit Log
+  ✓ logs security-relevant events for bids, payments, and admin actions (NFSR10)
+```
+
+| Test case | What it verifies |
+|---|---|
+| NFSR10 event taxonomy | `AUTH_LOGIN_SUCCESS` is present; all auth events carry a non-null timestamp; the audit table is the single centralized store |
+
+**Covered event categories:**
+
+| Category | Actions logged |
+|---|---|
+| Logins / logouts / lockouts | `AUTH_LOGIN_SUCCESS`, `AUTH_LOGIN_FAILED`, `AUTH_LOGIN_LOCKED`, `AUTH_LOGOUT` |
+| Bids | `BID_ACCEPTED`, `BID_REJECTED_MIN_INCREMENT`, `AUTO_BID_CREATED`, `AUTO_BID_CANCELLED` |
+| Payments | `PAYMENT_OFFER_CREATED`, `PAYMENT_OFFER_REASSIGNED`, `PAYMENT_COMPLETED`, `PAYMENT_DEADLINE_MISSED`, `PAYMENT_ACCESS_DENIED`, `ESCROW_RELEASED` |
+| Admin actions | `USER_ACTIVATED`, `USER_DEACTIVATED`, `CHARITY_REVIEWED`, `LISTING_APPROVED`, `LISTING_REJECTED`, `LISTING_CHANGES_REQUESTED` |
+| Role changes | `CHARITY_STAFF_CREATED`, `CHARITY_STAFF_DEACTIVATED`, `CHARITY_STAFF_REACTIVATED` |
+| Session / access | `AUTH_SESSION_MISSING`, `AUTH_SESSION_INVALID`, `ACCESS_DENIED` |
+
+**Retention:** Enforced by the `audit_events_retention` trigger (see NFSR04 above). Rows younger than 365 days cannot be deleted even by a DBA.
+
+---
+
+### FSR16 — Immutable Audit Log
+
+**Requirement:** The system shall generate an immutable, time-stamped log record for:
+1. All successful and failed login attempts, account lockouts, and logouts
+2. Access denials, privilege escalations, and violations of server-side access control rules
+3. Invalid/expired session usage and abnormal input data
+
+**Test file:** `backend/src/__tests__/routes/audit-log.test.ts`
+
+```
+FSR16 — Immutable Audit Log
+  ✓ writes AUTH_LOGIN_SUCCESS to audit_events and maintains an unbroken hash chain
+  ✓ writes a time-stamped security event to access.log on every authenticated request
+```
+
+| Test case | What is asserted |
+|---|---|
+| writes AUTH_LOGIN_SUCCESS to audit_events and maintains an unbroken hash chain | `AUTH_LOGIN_SUCCESS` row exists in the DB after a successful login; every event's `previousHash` equals the preceding row's `currentHash` (tamper detection) |
+| writes a time-stamped security event to access.log on every authenticated request | `access.log` file size grows after a request; appended bytes contain `AUTH_LOGIN_SUCCESS` and an ISO 8601 timestamp |
+
+#### Two logging layers
+
+**Layer 1 — Structured DB audit trail (`audit_events` table)**
+
+Each row is linked to the previous by a SHA-256 hash chain (`previous_hash → current_hash`), making any tampering detectable. Records are append-only (no `UPDATE`/`DELETE` paths in the repository). Queryable by admins at `GET /api/admin/audit-events`.
+
+| Action | Trigger | Source |
+|---|---|---|
+| `AUTH_LOGIN_SUCCESS` | Password verified, session issued | `auth.service.ts` |
+| `AUTH_LOGIN_FAILED` | Wrong password or inactive account | `auth.service.ts` |
+| `AUTH_LOGIN_LOCKED` | Account locked after repeated failures | `auth.service.ts` |
+| `AUTH_LOGOUT` | Session revoked | `auth.service.ts` |
+| `AUTH_SESSION_MISSING` | Protected route hit with no session cookie | `auth.middleware.ts` |
+| `AUTH_SESSION_INVALID` | Cookie present but expired, tampered, or revoked | `auth.middleware.ts` |
+| `ACCESS_DENIED` | Authenticated user lacks the required role | `rbac.middleware.ts` |
+| `INPUT_REJECTED` | Any unhandled 400 AppError (catch-all) | `error.middleware.ts` |
+| `AUTH_REGISTER_*` | Registration OTP flow events | `auth.service.ts` |
+| `PROFILE_UPDATED` / `PASSWORD_CHANGED` | Profile edits | `profile.service.ts` |
+| `BID_ACCEPTED` / `BID_REJECTED_MIN_INCREMENT` | Bid outcomes | `bid.service.ts` |
+| `LISTING_CREATED` / `LISTING_UPDATED` / `LISTING_APPROVED` | Listing lifecycle | `listing.service.ts` |
+| `CHARITY_REGISTER_PENDING` / `CHARITY_REVIEWED` | Charity application flow | `charity.service.ts` |
+
+**Layer 2 — HTTP file log (`logs/access.log`)**
+
+Written by morgan on every request. Append-only, timestamped, human-readable. Each line carries a security event tag derived from the response status and path.
+
+| Tag | Condition |
+|---|---|
+| `AUTH_LOGIN_SUCCESS` / `AUTH_LOGIN_FAILED` / `AUTH_LOGIN_LOCKED` | Login endpoint by status |
+| `AUTH_LOGOUT` | Logout endpoint → 2xx |
+| `SESSION_INVALID_OR_EXPIRED` | Any route → 401 |
+| `ACCESS_DENIED` | Any route → 403 |
+| `ABNORMAL_INPUT_DATA` | Any route → 400 |
+| `RATE_LIMITED` | Any route → 429 |
+
+A dedicated `logs/bid-audit.log` additionally captures every bid/payment endpoint hit with the bid amount included.
+
+---
+
+### SFR03 / FSR12 — XSS Rejection in Profile Fields (F-006)
+
+**Requirement:** The system shall reject user-supplied profile data that contains script-like or event-handler payloads, preventing stored XSS attacks via the `full_name` field.
+
+**Test file:** `backend/src/__tests__/routes/profile.routes.test.ts`
+
+```
+SFR03 / FSR12 — script injection rejected in profile fields (F-006)
+  ✓ rejects <script>, event-handler, and iframe payloads in full_name
+```
+
+| Test case | What is asserted |
+|---|---|
+| rejects script payloads in full_name | Four XSS payloads (`<script>alert(1)</script>`, `"onmouseover="alert(1)`, `<iframe src=evil.com>`, `javascript:alert(1)`) each return 400 with `errors.full_name` matching `/invalid character/i`; a legitimate name `Danial Irfan` is accepted with 200 |
+
+**Implementation:** `containsScriptLikeContent()` in `backend/src/utils/security.ts` is called inside `updateProfile()` in `profile.service.ts`. Any match throws `badRequest` before the DB write.
+
+---
+
+### SFR04 — PDF Magic-Byte Strict Check (F-007)
+
+**Requirement:** Supporting documents claiming to be PDFs must be verified by the full 5-byte magic sequence `%PDF-` (not just the 4-byte `%PDF` prefix), so crafted binary files with a bare `%PDF` header are rejected.
+
+**Test file:** `backend/src/__tests__/routes/charity.routes.test.ts`
+
+```
+SFR04/SFR05 — Charity Document Upload & Admin Review
+  ✓ rejects a file whose first 4 bytes spell %PDF but lacks the mandatory version dash (F-007)
+```
+
+| Test case | What is asserted |
+|---|---|
+| truncated PDF magic bytes | A buffer starting with `%PDFmalicious…` (no version dash) returns 400 `UNSUPPORTED_DOCUMENT` — the 5-byte check distinguishes crafted files from real PDFs |
+
+**Implementation:** `detectMime()` in `backend/src/services/charity.service.ts` compares `buffer.subarray(0, 5).toString('ascii')` against `'%PDF-'`.
+
+---
+
+### SFR16 — Admin Self-Lockout Guard (F-005)
+
+**Requirement:** An administrator must not be able to deactivate their own account through the admin user-status endpoint, preventing accidental or malicious self-lockout from the system.
+
+**Test file:** `backend/src/__tests__/routes/admin.routes.test.ts`
+
+```
+SFR16 — Admin Self-Lockout Guard (F-005)
+  ✓ rejects an administrator attempting to disable their own account
+  ✓ allows an administrator to change the status of a different account
+```
+
+| Test case | What is asserted |
+|---|---|
+| self-disable rejected | Admin fetches their own UUID via `/api/auth/me`, sends `PATCH /api/admin/users/:uuid/status` with `{ is_active: false }` — receives 400 `SELF_ACTION_FORBIDDEN` |
+| other-user status change allowed | Admin deactivates a bidder account (200, `is_active: false`), then reactivates it (200, `is_active: true`) — the guard only blocks self-targeting |
+
+**Implementation:** `toggleUserStatus()` in `backend/src/controllers/admin.controller.ts` compares the path UUID against `req.user?.uuid` and throws `badRequest` on a match.
+
+---
+
+### FSR15 — Passwordless Authentication (Email OTP Login)
+
+**Requirement:** Non-admin users may authenticate using a one-time passcode sent to their email. The OTP must be single-use, expire after the defined window, and lock the account after a fixed number of failed attempts. The request-OTP endpoint must respond identically for both registered and unregistered emails to prevent user enumeration.
+
+**Test file:** `backend/src/__tests__/routes/auth.routes.test.ts`
+
+```
+FSR15 — Passwordless Authentication
+  ✓ issues an HttpOnly SameSite=Strict session cookie on correct OTP
+  ✓ locks out after three wrong OTPs and rejects the correct one afterwards
+  ✓ returns the same 202 response for an unknown email (anti-enumeration)
+```
+
+| Test case | What is asserted |
+|---|---|
+| correct OTP flow | `POST /api/auth/otp/request` returns 202; `POST /api/auth/otp/verify` with the dev-outbox OTP returns 200 with an `HttpOnly; SameSite=Strict` session cookie and no token in the body |
+| lockout after 3 wrong OTPs | First 2 wrong OTPs → 401 each; 3rd wrong OTP → 429 (OTP removed); correct OTP submitted after lockout → 401 (OTP is gone) |
+| unknown email | `POST /api/auth/otp/request` with a non-existent email still returns 202 with the same generic message — prevents enumeration |
+
+---
+
+### FSR16 — Audit Coverage for Access-Control Violations
+
+**Requirement:** The immutable audit log must capture CSRF validation failures and invalid/expired session usage even on optional-auth routes — not only on routes that require a fully authenticated session.
+
+**Test file:** `backend/src/__tests__/routes/audit-log.test.ts`
+
+```
+FSR16 — Audit coverage for access-control violations
+  ✓ writes CSRF_VALIDATION_FAILED when a mutation is sent with a wrong CSRF token
+  ✓ writes AUTH_SESSION_INVALID when an expired/tampered token is sent to an optional-auth route
+  ✓ writes INPUT_REJECTED for every 400 AppError
+```
+
+| Test case | What is asserted |
+|---|---|
+| CSRF violation audited | `PUT /api/users/profile` with a deliberate wrong CSRF token → 403 `CSRF_FAILED`; a new `CSRF_VALIDATION_FAILED` row appears in `audit_events` |
+| Optional-auth session invalid audited | `GET /api/listings/:uuid` with a tampered `bfg_session` cookie → `AUTH_SESSION_INVALID` is written to `audit_events` before the handler processes the (unauthenticated) request |
+| 400 AppError audited | `GET /api/listings?q=' OR 1=1--` → 400 `UNSAFE_SEARCH_QUERY`; a new `INPUT_REJECTED` row appears in `audit_events` (after a 200 ms flush window, since `error.middleware` uses `void audit(...)`) |
+
+**Implementation sources:**
+- `CSRF_VALIDATION_FAILED` → `backend/src/middleware/csrf.middleware.ts` (before throwing 403)
+- `AUTH_SESSION_INVALID` (optional-auth) → inner `try/catch` in `authenticateOptional()` (`auth.middleware.ts`)
+- `INPUT_REJECTED` → `errorHandler` in `backend/src/middleware/error.middleware.ts` (catch-all for 400 AppErrors)
+
+---
+
+### FSR12 — Path Parameter Validation (F-002, F-003, F-004)
+
+**Requirement:** URL path parameters that map to database identifiers must be validated for correct type and format before any database query is executed, preventing PostgreSQL cast errors and SQL injection via the URL path.
+
+**Test file:** `backend/src/__tests__/routes/input-validation.routes.test.ts`
+
+```
+FSR12 — Path parameter validation: listing bids (F-002)
+  ✓ rejects non-numeric, negative, and float listingId values
+  ✓ accepts a valid positive integer listingId
+
+FSR12 — Path parameter validation: receipts (F-003)
+  ✓ rejects non-UUID identifiers on the receipt endpoints
+  ✓ accepts a valid UUID format on receipt endpoints (returns 404 for unknown, not 500)
+
+FSR12 — Path parameter validation: campaign image (unauthenticated, F-004)
+  ✓ rejects non-UUID campaign UUIDs on the public image endpoint
+  ✓ accepts a valid UUID on the campaign image endpoint (returns 404 when no image, not 500)
+```
+
+| Test case | What is asserted |
+|---|---|
+| Invalid listingId (F-002) | `abc`, `-1`, `1.5`, `0` each return 400 `INVALID_PARAM` from `GET /api/bids/listings/:listingId` |
+| Valid listingId (F-002) | `99999` returns 200 or 404 — never 400 or 500 |
+| Non-UUID receipt ID (F-003) | `not-a-uuid`, SQL injection string, `123`, `../traversal` each return 400 `INVALID_PARAM` from `GET /api/receipts/:uuid` and `GET /api/receipts/by-payment/:uuid` (requires bidder auth) |
+| Valid UUID receipt (F-003) | `00000000-0000-0000-0000-000000000000` returns neither 400 nor 500 |
+| Non-UUID campaign image (F-004) | `not-a-uuid`, `1'OR'1'='1`, `abc`, `<script>` each return 400 `INVALID_PARAM` from `GET /api/charities/campaigns/:uuid/image` (public, no auth needed) |
+| Valid UUID campaign image (F-004) | `00000000-0000-0000-0000-000000000000` returns neither 400 nor 500 |
+
+**Implementation:**
+- **F-002** — `listListingBids()` in `bid.controller.ts`: `Number.isFinite` + `Number.isInteger` + positive check before querying
+- **F-003** — `assertUuid()` helper in `receipt.controller.ts`: regex `/^[0-9a-f]{8}-…-[0-9a-f]{12}$/i` applied in both `viewReceipt` and `viewReceiptByPayment`
+- **F-004** — `getCampaignImage()` in `campaign.controller.ts`: same UUID regex check before calling the service

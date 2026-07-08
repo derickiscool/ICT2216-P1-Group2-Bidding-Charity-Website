@@ -193,4 +193,24 @@ describe('SFR04/SFR05 — Charity Document Upload & Admin Review', () => {
     assert.equal(exeRes.response.status, 400);
     assert.equal(exeRes.body.code, 'UNSUPPORTED_DOCUMENT');
   });
+
+  test('rejects a file whose first 4 bytes spell %PDF but lacks the mandatory version dash (F-007)', async () => {
+    const charity = await loginAs('charity@bidforgood.test');
+
+    // Bytes: 0x25 0x50 0x44 0x46 = '%', 'P', 'D', 'F' — old 4-byte check would accept this;
+    // the strengthened 5-byte check requires '%PDF-' and must reject it.
+    const fakePdfBytes = Buffer.from('%PDFmalicious content not a real pdf');
+    const form = new FormData();
+    form.set('organisationName', 'Fake PDF Charity');
+    form.set('description', 'A charity registration with a file whose first 4 bytes look like a PDF but the 5th is not a dash.');
+    form.set('supportingDocument', new Blob([fakePdfBytes], { type: 'application/pdf' }), 'fake.pdf');
+
+    const res = await request('/api/charities/register', {
+      method: 'POST',
+      headers: { cookie: charity.cookie, 'x-csrf-token': charity.csrf },
+      body: form,
+    });
+    assert.equal(res.response.status, 400);
+    assert.equal(res.body.code, 'UNSUPPORTED_DOCUMENT');
+  });
 });

@@ -8,6 +8,7 @@ import {
   placeBid,
   setAutoBid,
 } from '../services/bid.service';
+import { badRequest } from '../utils/errors';
 
 const maskUsername = (u: string): string => {
   if (!u || u.length === 0) return '***';
@@ -58,7 +59,9 @@ export const bidderAutoBids = async (req: Request, res: Response): Promise<void>
 };
 
 export const listListingBids = async (req: Request, res: Response): Promise<void> => {
-  res.json(await listBidsForListing(Number(req.params.listingId)));
+  const id = Number(req.params.listingId);
+  if (!Number.isFinite(id) || !Number.isInteger(id) || id <= 0) throw badRequest('Invalid listing ID.', 'INVALID_PARAM');
+  res.json(await listBidsForListing(id));
 };
 
 export const bidderBids = async (req: Request, res: Response): Promise<void> => {

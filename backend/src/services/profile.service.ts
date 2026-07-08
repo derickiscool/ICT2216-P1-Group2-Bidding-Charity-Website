@@ -13,7 +13,7 @@ import {
 } from '../repositories';
 import type { PublicUser } from '../repositories';
 import { badRequest, notFound, tooManyRequests } from '../utils/errors';
-import { sha256 } from '../utils/security';
+import { sha256, containsScriptLikeContent } from '../utils/security';
 import { isStrongPassword } from '../utils/breachedPasswords';
 import { audit } from './audit.service';
 import { sendPasswordChangeVerificationOtp } from './otpDelivery.service';
@@ -86,6 +86,7 @@ export const updateProfile = async (userId: number, input: UpdateProfileInput, r
   const fullName = cleanTextInput(input.full_name);
   if (fullName.length < 2) errors.full_name = 'Full name must be at least 2 characters.';
   else if (fullName.length > PROFILE_NAME_MAX) errors.full_name = `Full name must be ${PROFILE_NAME_MAX} characters or less.`;
+  else if (containsScriptLikeContent(fullName)) errors.full_name = 'Full name contains invalid characters.';
 
   // Usernames remain user-facing only for bidder/donor accounts because bids use them as public aliases.
   // Charity organisation, charity staff, and admin accounts keep internal identifiers that users cannot edit.

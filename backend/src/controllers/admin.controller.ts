@@ -22,6 +22,8 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
   const newStatus = req.body.is_active;
   if (typeof newStatus !== 'boolean') throw badRequest('is_active must be a boolean value.');
 
+  if (uuid === req.user?.uuid) throw badRequest('Administrators cannot change their own account status.', 'SELF_ACTION_FORBIDDEN');
+
   const { findUserByUuid } = await import('../repositories');
   const user = await findUserByUuid(uuid);
   if (!user) throw notFound('User not found');

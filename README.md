@@ -6,6 +6,8 @@ This branch focuses on Ezra's assigned secure implementation scope for Deliverab
 
 ## Current Implementation Scope
 
+changes made to this branch is work in progress, as more stuff is added, more of it will be logged
+
 Implemented in this branch:
 
 - Secure user registration with OTP verification before account creation.

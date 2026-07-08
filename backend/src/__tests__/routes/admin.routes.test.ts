@@ -122,3 +122,49 @@ describe('SFR16 — Admin Session Enforcement', () => {
     assert.equal(res.response.status, 401);
   });
 });
+
+describe('SFR16 — Admin Self-Lockout Guard (F-005)', () => {
+  test('rejects an administrator attempting to disable their own account', async () => {
+    const { cookie, csrf } = await loginAs('admin@bidforgood.test');
+
+    // Fetch own profile to get the admin's UUID
+    const me = await request('/api/auth/me', { headers: { cookie } });
+    assert.equal(me.response.status, 200);
+    const adminUuid = (me.body as unknown as { uuid: string }).uuid;
+    assert.ok(adminUuid, 'admin UUID must be present in /me response');
+
+    const res = await request(`/api/admin/users/${adminUuid}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie, 'x-csrf-token': csrf },
+      body: JSON.stringify({ is_active: false }),
+    });
+    assert.equal(res.response.status, 400);
+    assert.equal(res.body.code, 'SELF_ACTION_FORBIDDEN');
+  });
+
+  test('allows an administrator to change the status of a different account', async () => {
+    const admin = await loginAs('admin@bidforgood.test');
+    const bidder = await loginAs('bidder@bidforgood.test');
+
+    const bidderProfile = await request('/api/auth/me', { headers: { cookie: bidder.cookie } });
+    const bidderUuid = (bidderProfile.body as unknown as { uuid: string }).uuid;
+
+    // Deactivate the bidder account
+    const deactivate = await request(`/api/admin/users/${bidderUuid}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+      body: JSON.stringify({ is_active: false }),
+    });
+    assert.equal(deactivate.response.status, 200);
+    assert.equal((deactivate.body as unknown as { is_active: boolean }).is_active, false);
+
+    // Re-activate so the account is usable by later tests
+    const reactivate = await request(`/api/admin/users/${bidderUuid}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: admin.cookie, 'x-csrf-token': admin.csrf },
+      body: JSON.stringify({ is_active: true }),
+    });
+    assert.equal(reactivate.response.status, 200);
+    assert.equal((reactivate.body as unknown as { is_active: boolean }).is_active, true);
+  });
+});
