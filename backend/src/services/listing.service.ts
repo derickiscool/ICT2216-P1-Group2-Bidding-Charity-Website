@@ -431,7 +431,18 @@ const isPubliclyBiddableNow = (listing: Listing, nowMs = Date.now()): boolean =>
     && endMs > nowMs;
 };
 
-export const searchPublicListings = async (query: Record<string, unknown>): Promise<Listing[]> => {
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+
+export const searchPublicListings = async (query: Record<string, unknown>): Promise<PaginatedResult<Listing>> => {
   const q = sanitizeText(query.q ?? query.search, 80);
   const category = sanitizeText(query.category, 60);
   if (q && !isSafeSearchQuery(q)) throw badRequest('Search query was rejected because it contained malformed or unsafe syntax.', 'UNSAFE_SEARCH_QUERY');
@@ -443,6 +454,10 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   const endBefore = typeof query.end_before === 'string' && query.end_before ? new Date(query.end_before) : undefined;
   const condition = typeof query.condition === 'string' && ALLOWED_CONDITIONS.has(query.condition) ? query.condition : undefined;
   const sort = typeof query.sort === 'string' && ALLOWED_SORTS.has(query.sort) ? query.sort : 'ending_soon';
+
+  // NFR01: Parse pagination params with sensible bounds to keep response size predictable.
+  const page = Math.max(1, Number(query.page) || 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(query.pageSize) || DEFAULT_PAGE_SIZE));
 
   if (priceMin !== undefined && !Number.isFinite(priceMin)) throw badRequest('Invalid minimum price.');
   if (priceMax !== undefined && !Number.isFinite(priceMax)) throw badRequest('Invalid maximum price.');
@@ -470,7 +485,12 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   else if (sort === 'price_high') results.sort((a, b) => b.current_bid - a.current_bid);
   else results.sort((a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime());
 
-  return results;
+  const total = results.length;
+  const totalPages = Math.ceil(total / pageSize) || 1;
+  const startIndex = (page - 1) * pageSize;
+  const data = results.slice(startIndex, startIndex + pageSize);
+
+  return { data, total, page, pageSize, totalPages };
 };
 
 export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
