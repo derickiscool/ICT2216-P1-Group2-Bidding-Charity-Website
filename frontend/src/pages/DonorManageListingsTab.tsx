@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, Gavel, Image as ImageIcon, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlertCircle, CheckCircle2, ExternalLink, Gavel, Image as ImageIcon, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
 import api from '../services/api'
 import type { ApiError, DonorListingTrackingItem, DonorListingTrackingResponse, ItemCondition } from '../types'
 
@@ -202,7 +203,7 @@ export default function DonorManageListingsTab() {
   const removeExistingImage = (image: string) => setEditForm(prev => ({ ...prev, existingImages: prev.existingImages.filter(item => item !== image) }))
   const removeNewImage = (index: number) => setEditForm(prev => ({ ...prev, newImages: prev.newImages.filter((_, i) => i !== index) }))
 
-  const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|[\s"'<]on\w+\s*=|<\s*iframe/i.test(value)
+  const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|[\s"'</]on\w+\s*=|<\s*iframe/i.test(value)
 
   const validateEdit = () => {
     const e: Record<string, string> = {}
@@ -353,6 +354,11 @@ export default function DonorManageListingsTab() {
                     <div className="col-span-2"><p className="text-xs uppercase font-semibold" style={{ color: C.muted }}>Charity Campaign</p><p className="font-semibold truncate" style={{ color: C.slate }}>{listing.charityName || 'Verified Charity'}</p></div>
                   </div>
                   <div className="flex gap-2 pt-4 border-t" style={{ borderColor: C.beige }}>
+                    <Link to={`/auctions/${listing.uuid}`}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-opacity hover:opacity-80"
+                      style={{ borderColor: C.emerald, color: C.emerald, background: C.emeraldLight }}>
+                      <ExternalLink className="w-4 h-4" /> View
+                    </Link>
                     <button type="button" disabled={!listing.canEdit} onClick={() => openEdit(listing)}
                       className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ borderColor: C.beige, color: C.slate, background: C.white }}

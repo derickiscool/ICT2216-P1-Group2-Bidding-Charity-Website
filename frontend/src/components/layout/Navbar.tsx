@@ -92,7 +92,6 @@ export default function Navbar() {
 
   const logoColor = isHome ? '#fff' : '#2D3A3A'
   const linkColor = isHome ? 'rgba(255,255,255,0.7)' : '#5C6E6E'
-  const linkHoverStyle = 'hover:opacity-100'
 
   return (
     <header className="sticky top-0 z-40 transition-all duration-200" style={navStyle}>
@@ -106,14 +105,11 @@ export default function Navbar() {
 
         {/* Right nav */}
         <nav className="flex items-center gap-1 ml-auto flex-shrink-0">
-          {['Browse', 'Charities'].map((label) => (
-            <Link key={label}
-              to={label === 'Browse' ? '/auctions' : '/charities'}
-              className={`hidden md:block px-3 py-1.5 text-sm font-medium rounded-lg transition-opacity ${linkHoverStyle}`}
-              style={{ color: linkColor }}>
-              {label}
-            </Link>
-          ))}
+          <Link to="/auctions"
+            className="hidden md:block px-3 py-1.5 text-sm font-medium rounded-lg transition-opacity hover:opacity-100"
+            style={{ color: linkColor }}>
+            Browse
+          </Link>
 
           {isAuthenticated && user ? (
             <>
@@ -158,7 +154,6 @@ export default function Navbar() {
       {mobileOpen && (
         <div className="md:hidden border-t px-6 py-4 space-y-2" style={{ background: isHome ? '#2D3A3A' : '#fff', borderColor: '#BBB09B' }}>
           <Link to="/auctions" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Browse Auctions</Link>
-          <Link to="/charities" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Charities</Link>
           {!isAuthenticated && <>
             <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium" style={{ color: isHome ? '#fff' : '#2D3A3A' }}>Log In</Link>
             <Link to="/register" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-semibold" style={{ color: '#047857' }}>Register</Link>

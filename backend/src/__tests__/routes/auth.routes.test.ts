@@ -203,6 +203,34 @@ describe('SFR01 — Registration & Email Verification', () => {
     });
     assert.equal(locked.response.status, 429);
   });
+
+  test('rejects login while registration is still pending email verification', async () => {
+    const email = 'unverified@example.com';
+    const password = 'correcthorsebatterystaple6';
+    const start = await postJson('/api/auth/register', {
+      email,
+      username: 'unverifieduser',
+      full_name: 'Unverified User',
+      password,
+      roles: ['bidder'],
+    });
+    assert.equal(start.response.status, 202);
+
+    // No `users` row exists yet — the account only becomes real after OTP
+    // verification — so logging in with the exact registered credentials
+    // must fail the same way as any other unknown/invalid credentials.
+    const login = await postJson('/api/auth/login', { email, password });
+    assert.equal(login.response.status, 401);
+    assert.equal(login.body.message, 'Invalid email or password');
+
+    // Verifying afterwards must still succeed and unlock normal login.
+    const otp = readDevOtpForTest(email);
+    const verified = await postJson('/api/auth/register/verify', { email, otp });
+    assert.equal(verified.response.status, 201);
+
+    const loginAfterVerify = await postJson('/api/auth/login', { email, password });
+    assert.equal(loginAfterVerify.response.status, 200);
+  });
 });
 
 describe('Password Reset Flow', () => {

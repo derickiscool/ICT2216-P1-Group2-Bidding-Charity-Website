@@ -34,7 +34,7 @@ export const listMineTracking = async (req: Request, res: Response): Promise<voi
 
 export const getListing = async (req: Request, res: Response): Promise<void> => {
   const isAdmin = req.user?.roles?.includes('admin') ?? false;
-  res.json(await getPublicListing(req.params.uuid, isAdmin));
+  res.json(await getPublicListing(req.params.uuid, isAdmin, req.user?.id));
 };
 
 export const create = async (req: Request, res: Response): Promise<void> => {

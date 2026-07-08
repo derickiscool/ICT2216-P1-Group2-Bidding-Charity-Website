@@ -76,7 +76,6 @@ import RegisterPage from './pages/RegisterPage'
 import RegisterCharityPage from './pages/RegisterCharityPage'
 import AuctionsPage from './pages/AuctionsPage'
 import AuctionDetailPage from './pages/AuctionDetailPage'
-import CharitiesPage from './pages/CharitiesPage'
 import CharityStaffManagementPage from './pages/CharityStaffManagementPage'
 import CampaignManagementPage from './pages/CampaignManagementPage'
 import DashboardPage from './pages/DashboardPage'
@@ -114,7 +113,6 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/auctions" element={<AuctionsPage />} />
           <Route path="/auctions/:id" element={<AuctionDetailPage />} />
-          <Route path="/charities" element={<CharitiesPage />} />
           <Route path="/register/charity" element={<RegisterCharityPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/terms" element={<TermsPage />} />

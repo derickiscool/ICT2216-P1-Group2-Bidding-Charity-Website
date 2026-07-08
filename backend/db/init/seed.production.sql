@@ -19,8 +19,8 @@ SELECT * FROM (VALUES
   ('charity2@bidforgood.test',    'charity2',   'Green Paws Rescue',  ARRAY['charity']::TEXT[],     '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
   ('charity3@bidforgood.test',    'charity3',   'Food Bank SG',       ARRAY['charity']::TEXT[],     '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
   ('charity4@bidforgood.test',    'charity4',   'Arts for Youth',     ARRAY['charity']::TEXT[],     '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
-  ('combined1@bidforgood.test',   'combined1',  'Sam Wilson',         ARRAY['bidder','donor']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
-  ('combined2@bidforgood.test',   'combined2',  'Jamie Koh',          ARRAY['bidder','donor']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
+  ('combined1@bidforgood.test',   'combined1',  'Sam Wilson',         ARRAY['bidder']::TEXT[],       '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
+  ('combined2@bidforgood.test',   'combined2',  'Jamie Koh',          ARRAY['bidder']::TEXT[],       '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true),
   ('staff1@bidforgood.test',      'staff1',     'John Tan',           ARRAY['charity_staff']::TEXT[], '$argon2id$v=19$m=65536,t=3,p=1$kRmmV2/5QUV8uhubx1+3iw$ytVsA4zKMPB19uS8PHuhDxdZYNed8tZS8KU5j0wEZMc', true, true)
 ) AS t(email, username, full_name, roles, password_hash, is_verified, is_active)
 WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.email = t.email);

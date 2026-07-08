@@ -167,7 +167,7 @@ function createSmtpSession(socket: net.Socket | tls.TLSSocket): SmtpSession {
 // Implicit TLS (SMTPS-style) — the socket is encrypted from the first byte,
 // so there's no cleartext window before the greeting and nothing for a
 // STARTTLS-stripping attacker to intercept or downgrade.
-function connectTls(host: string, port: number, rejectUnauthorized: boolean, localPort?: number, timeoutMs = 15000): Promise<tls.TLSSocket> {
+function connectTls(host: string, port: number, rejectUnauthorized: boolean, localPort?: number, timeoutMs = 1000): Promise<tls.TLSSocket> {
   return new Promise((resolve, reject) => {
     // @types/node's ConnectionOptions omits localPort, though tls.connect forwards it to net.connect() at runtime.
     const options: tls.ConnectionOptions & { localPort?: number } = { localPort, servername: host, rejectUnauthorized };
@@ -285,12 +285,28 @@ async function attemptDelivery(relay: RelayConfig, dkim: DkimConfig, params: Sen
  * since retrying a 5xx/auth failure won't change the outcome.
  */
 async function deliverViaRelay(relay: RelayConfig, dkim: DkimConfig, params: SendParams): Promise<SendResult> {
-  try {
-    return await attemptDelivery(relay, dkim, params);
-  } catch (err) {
-    if (err instanceof RelayError) throw err;
-    return await attemptDelivery(relay, dkim, params);
+  const maxAttempts = 3;
+  const initialDelay = 500;  // 500ms
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await attemptDelivery(relay, dkim, params);
+    } catch (err) {
+      if (err instanceof RelayError) {
+        // SMTP-level error - don't retry
+        throw err;
+      }
+      
+      // Connection-level error - retry with exponential backoff
+      if (attempt < maxAttempts - 1) {
+        const delay = initialDelay * Math.pow(2, attempt);  // 500ms, 1000ms, 2000ms
+        console.warn(`[mailer] Retry ${attempt + 1}/${maxAttempts} in ${delay}ms:`, err);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
   }
+  
+  throw new Error(`Failed to send email after ${maxAttempts} attempts`);
 }
 
 /**
