@@ -202,7 +202,7 @@ export default function DonorManageListingsTab() {
   const removeExistingImage = (image: string) => setEditForm(prev => ({ ...prev, existingImages: prev.existingImages.filter(item => item !== image) }))
   const removeNewImage = (index: number) => setEditForm(prev => ({ ...prev, newImages: prev.newImages.filter((_, i) => i !== index) }))
 
-  const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|[\s"'<]on\w+\s*=|<\s*iframe/i.test(value)
+  const containsScriptLikeInput = (value: string) => /<\s*script|javascript:|[\s"'</]on\w+\s*=|<\s*iframe/i.test(value)
 
   const validateEdit = () => {
     const e: Record<string, string> = {}

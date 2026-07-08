@@ -47,7 +47,16 @@ const validateCampaignFields = (body: Record<string, unknown>) => {
   if (Object.keys(errors).length > 0) throw badRequest('Campaign input failed validation.', 'VALIDATION_ERROR', errors);
 
   const endDate = typeof body.end_date === 'string' && body.end_date.trim() ? body.end_date.trim() : undefined;
-  if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) throw badRequest('Invalid end date format.', 'VALIDATION_ERROR', { end_date: 'Must be YYYY-MM-DD.' });
+  if (endDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) throw badRequest('Invalid end date format.', 'VALIDATION_ERROR', { end_date: 'Must be YYYY-MM-DD.' });
+    // The format check alone lets impossible dates (e.g. 2026-13-45) through to
+    // Postgres, which rejects them with an unhandled 500. Round-trip through Date
+    // so only real calendar dates reach the DB.
+    const parsed = new Date(`${endDate}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== endDate) {
+      throw badRequest('Invalid end date.', 'VALIDATION_ERROR', { end_date: 'Must be a valid calendar date.' });
+    }
+  }
 
   return { name, description, endDate };
 };
