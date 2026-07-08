@@ -64,9 +64,10 @@ describe('Auth Store', () => {
         data: { csrfToken: mockCsrfToken, user: mockUser },
       });
 
-      await useAuthStore.getState().login('test@example.com', 'password123');
+      const result = await useAuthStore.getState().login('test@example.com', 'password123');
 
       const state = useAuthStore.getState();
+      expect(result).toEqual({ mfaRequired: false });
       expect(state.user).toEqual(mockUser);
       expect(state.isAuthenticated).toBe(true);
       expect(state.isLoading).toBe(false);
@@ -76,6 +77,21 @@ describe('Auth Store', () => {
         email: 'test@example.com',
         password: 'password123',
       });
+    });
+
+    it('should report mfaRequired without authenticating when the account needs a follow-up OTP (admin)', async () => {
+      mockPost.mockResolvedValueOnce({
+        data: { mfaRequired: true, message: 'Enter the 6-digit code sent to your email.' },
+      });
+
+      const result = await useAuthStore.getState().login('admin@example.com', 'password123');
+
+      const state = useAuthStore.getState();
+      expect(result).toEqual({ mfaRequired: true, message: 'Enter the 6-digit code sent to your email.' });
+      expect(state.user).toBeNull();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.isLoading).toBe(false);
+      expect(mockSetCsrfToken).not.toHaveBeenCalled();
     });
 
     it('should throw and clear loading on login failure', async () => {

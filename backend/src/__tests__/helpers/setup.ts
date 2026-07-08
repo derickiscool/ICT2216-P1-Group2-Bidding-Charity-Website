@@ -91,9 +91,23 @@ export const postJson = (
     body: JSON.stringify(body),
   });
 
+// Admin accounts require password + a follow-up email OTP; every other role
+// completes on the password step alone. Transparently finishes whichever
+// applies so callers don't need to know the target account's role.
 export const loginAs = async (email: string, password = 'S3cure!Pass2026') => {
   const login = await postJson('/api/auth/login', { email, password });
   assert.equal(login.response.status, 200);
+
+  if (login.body.mfaRequired) {
+    const otp = readDevOtpForTest(email);
+    assert.match(String(otp), /^\d{6}$/);
+    const verified = await postJson('/api/auth/login/passwordless/verify', { email, otp });
+    assert.equal(verified.response.status, 200);
+    assert.ok(verified.setCookie);
+    assert.ok(verified.csrf);
+    return { cookie: verified.setCookie!.split(';')[0], csrf: verified.csrf! };
+  }
+
   assert.ok(login.setCookie);
   assert.ok(login.csrf);
   return { cookie: login.setCookie!.split(';')[0], csrf: login.csrf! };
