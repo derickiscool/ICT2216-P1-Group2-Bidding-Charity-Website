@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { startServer, stopServer, postJson, request } from '../helpers/setup';
-import { getAuditEvents } from '../../services/audit.service';
+import { audit, getAuditEvents } from '../../services/audit.service';
 import { query } from '../../utils/db';
 
 beforeAll(startServer);
@@ -81,6 +81,24 @@ describe('FSR16 — Immutable Audit Log', () => {
     // ACCESS_DENIED events are captured when they occur; the absence here only means no
     // access-denied happened in this test — not that the mechanism is broken.
     void accessEvents;
+  });
+
+  test('redacts payment and shipping values from audit payload storage', async () => {
+    const event = await audit(undefined, 'TEST_SENSITIVE_AUDIT_REDACTION', {
+      amount: 123.45,
+      paymentRef: 'BFG-plaintext-ref',
+      nested: {
+        tracking: 'TRACK123456',
+        courier: 'Plain Courier',
+      },
+    });
+
+    assert.equal(event.payload.amount, '[REDACTED]');
+    assert.equal(event.payload.paymentRef, '[REDACTED]');
+    assert.deepEqual(event.payload.nested, {
+      tracking: '[REDACTED]',
+      courier: '[REDACTED]',
+    });
   });
 });
 

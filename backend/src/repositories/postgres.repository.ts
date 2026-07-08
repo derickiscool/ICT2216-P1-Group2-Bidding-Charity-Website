@@ -204,7 +204,9 @@ interface PaymentRow {
   listing_id: number;
   bidder_id: number;
   amount: number | string;
+  amount_encrypted?: string | null;
   payment_ref: string;
+  payment_ref_encrypted?: string | null;
   escrow_state: 'not_held' | 'held' | 'released';
   status: 'pending' | 'successful' | 'expired';
   payment_deadline: DbDate;
@@ -245,6 +247,7 @@ interface ReceiptRow {
   bidder_id: number;
   item_title: string;
   amount: number | string;
+  amount_encrypted?: string | null;
   charity_name: string;
   receipt_ref: string;
   integrity_hash: string;
@@ -254,6 +257,7 @@ interface ReceiptRow {
 }
 
 const USER_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
+const ENCRYPTED_NUMERIC_SENTINEL = 0.01;
 
 const firstRow = async <T>(sql: string, params?: unknown[]): Promise<T | undefined> => {
   const result = await query(sql, params);
@@ -270,6 +274,11 @@ const toDate = (value: DbDate): Date => new Date(value);
 const optionalDate = (value: DbDate | null | undefined): Date | undefined => value ? toDate(value) : undefined;
 const optionalIso = (value: DbDate | null | undefined): string | undefined => value ? toIso(value) : undefined;
 const optionalNumber = (value: number | string | null | undefined): number | undefined => value === null || value === undefined ? undefined : Number(value);
+const encryptedNumberOrLegacy = (encrypted: string | null | undefined, legacy: number | string): number =>
+  encrypted ? Number(decryptText(encrypted)) : Number(legacy);
+const encryptedTextOrLegacy = (encrypted: string | null | undefined, legacy: string): string =>
+  encrypted ? decryptText(encrypted) : decryptText(legacy);
+const encryptedPaymentRefStorage = (paymentRef: string): string => `bfgref:${sha256(paymentRef)}`;
 
 const mapRoles = (roles: unknown): UserRole[] => {
   if (!Array.isArray(roles)) return [];
@@ -434,8 +443,8 @@ const mapPayment = (row: PaymentRow): Payment => ({
   uuid: row.uuid,
   listing_id: Number(row.listing_id),
   bidder_id: Number(row.bidder_id),
-  amount: Number(row.amount),
-  payment_ref: row.payment_ref,
+  amount: encryptedNumberOrLegacy(row.amount_encrypted, row.amount),
+  payment_ref: encryptedTextOrLegacy(row.payment_ref_encrypted, row.payment_ref),
   escrow_state: row.escrow_state,
   status: row.status,
   payment_deadline: toIso(row.payment_deadline),
@@ -449,8 +458,8 @@ const mapDelivery = (row: DeliveryRow): Delivery => ({
   id: Number(row.id),
   uuid: row.uuid,
   listing_id: Number(row.listing_id),
-  tracking_number: row.tracking_number ?? undefined,
-  courier: row.courier ?? undefined,
+  tracking_number: row.tracking_number ? decryptText(row.tracking_number) : undefined,
+  courier: row.courier ? decryptText(row.courier) : undefined,
   shipped_at: optionalIso(row.shipped_at),
   confirmed_at: optionalIso(row.confirmed_at),
   created_at: toIso(row.created_at),
@@ -472,14 +481,14 @@ const mapReceipt = (row: ReceiptRow): Receipt => ({
   payment_id: Number(row.payment_id),
   listing_id: Number(row.listing_id),
   bidder_id: Number(row.bidder_id),
-  item_title: row.item_title,
-  amount: Number(row.amount),
-  charity_name: row.charity_name,
+  item_title: decryptText(row.item_title),
+  amount: encryptedNumberOrLegacy(row.amount_encrypted, row.amount),
+  charity_name: decryptText(row.charity_name),
   receipt_ref: row.receipt_ref,
   integrity_hash: row.integrity_hash,
   generated_at: toIso(row.generated_at),
-  bidder_username: row.bidder_username,
-  payment_ref: row.payment_ref,
+  bidder_username: decryptText(row.bidder_username),
+  payment_ref: decryptText(row.payment_ref),
 });
 
 const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
@@ -496,9 +505,15 @@ const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
   currentHash: row.current_hash,
 });
 
+const redactPayloadValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(redactPayloadValue);
+  if (value && typeof value === 'object') return redactPayload(value as Record<string, unknown>);
+  return value;
+};
+
 const redactPayload = (payload: Record<string, unknown>): Record<string, unknown> => {
-  const sensitive = /password|token|cookie|csrf|secret|otp|authorization/i;
-  return Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, sensitive.test(key) ? '[REDACTED]' : value]));
+  const sensitive = /password|token|cookie|csrf|secret|otp|authorization|amount|payment_?ref|tracking|courier/i;
+  return Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, sensitive.test(key) ? '[REDACTED]' : redactPayloadValue(value)]));
 };
 
 const toPublicUser: BidForGoodRepository['toPublicUser'] = (user) => {
@@ -1214,7 +1229,13 @@ const updateDelivery = async (delivery: Delivery): Promise<void> => {
     `UPDATE deliveries
      SET tracking_number = $2, courier = $3, shipped_at = $4, confirmed_at = $5
      WHERE id = $1`,
-    [delivery.id, delivery.tracking_number ?? null, delivery.courier ?? null, delivery.shipped_at ?? null, delivery.confirmed_at ?? null],
+    [
+      delivery.id,
+      delivery.tracking_number ? encryptText(delivery.tracking_number) : null,
+      delivery.courier ? encryptText(delivery.courier) : null,
+      delivery.shipped_at ?? null,
+      delivery.confirmed_at ?? null,
+    ],
   );
 };
 
@@ -1231,9 +1252,22 @@ const addReceipt = async (input: {
   payment_ref: string;
 }): Promise<Receipt> => {
   const row = await firstRow<ReceiptRow>(
-    `INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash, bidder_username, payment_ref)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-    [input.payment_id, input.listing_id, input.bidder_id, input.item_title, input.amount, input.charity_name, input.receipt_ref, input.integrity_hash, input.bidder_username, input.payment_ref],
+    `INSERT INTO receipts
+       (payment_id, listing_id, bidder_id, item_title, amount, amount_encrypted, charity_name, receipt_ref, integrity_hash, bidder_username, payment_ref)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    [
+      input.payment_id,
+      input.listing_id,
+      input.bidder_id,
+      encryptText(input.item_title),
+      ENCRYPTED_NUMERIC_SENTINEL,
+      encryptText(String(input.amount)),
+      encryptText(input.charity_name),
+      input.receipt_ref,
+      input.integrity_hash,
+      encryptText(input.bidder_username),
+      encryptText(input.payment_ref),
+    ],
   );
   if (!row) throw new Error('Failed to create receipt.');
   return mapReceipt(row);
@@ -1257,14 +1291,16 @@ const getReceiptsByBidder = async (bidderId: number): Promise<Receipt[]> => {
 const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
   const row = await firstRow<PaymentRow>(
     `INSERT INTO payments
-       (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (listing_id, bidder_id, amount, amount_encrypted, payment_ref, payment_ref_encrypted, escrow_state, status, payment_deadline, offered_at, paid_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
       input.listing_id,
       input.bidder_id,
-      input.amount,
-      input.payment_ref,
+      ENCRYPTED_NUMERIC_SENTINEL,
+      encryptText(String(input.amount)),
+      encryptedPaymentRefStorage(input.payment_ref),
+      encryptText(input.payment_ref),
       input.escrow_state,
       input.status,
       input.payment_deadline,
@@ -1279,15 +1315,18 @@ const addPayment = async (input: NewPaymentInput): Promise<Payment> => {
 const updatePayment = async (payment: Payment): Promise<void> => {
   await query(
     `UPDATE payments
-     SET listing_id = $2, bidder_id = $3, amount = $4, payment_ref = $5, escrow_state = $6,
-         status = $7, payment_deadline = $8, offered_at = $9, paid_at = $10, updated_at = NOW()
+     SET listing_id = $2, bidder_id = $3, amount = $4, amount_encrypted = $5,
+         payment_ref = $6, payment_ref_encrypted = $7, escrow_state = $8,
+         status = $9, payment_deadline = $10, offered_at = $11, paid_at = $12, updated_at = NOW()
      WHERE id = $1`,
     [
       payment.id,
       payment.listing_id,
       payment.bidder_id,
-      payment.amount,
-      payment.payment_ref,
+      ENCRYPTED_NUMERIC_SENTINEL,
+      encryptText(String(payment.amount)),
+      encryptedPaymentRefStorage(payment.payment_ref),
+      encryptText(payment.payment_ref),
       payment.escrow_state,
       payment.status,
       payment.payment_deadline,

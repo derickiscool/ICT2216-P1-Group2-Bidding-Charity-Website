@@ -8,6 +8,7 @@ describe('frontend security headers', () => {
     expect(frontendSecurityHeaders['Permissions-Policy']).toContain('camera=()');
     expect(frontendSecurityHeaders['Cross-Origin-Opener-Policy']).toBe('same-origin');
     expect(frontendSecurityHeaders['Cross-Origin-Resource-Policy']).toBe('same-origin');
+    expect(frontendSecurityHeaders['Strict-Transport-Security']).toBe('max-age=31536000; includeSubDomains; preload');
     expect(frontendSecurityHeaders['Content-Security-Policy']).toContain("frame-ancestors 'none'");
     expect(frontendSecurityHeaders['Content-Security-Policy']).toContain("object-src 'none'");
   });

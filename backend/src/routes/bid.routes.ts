@@ -22,6 +22,6 @@ router.get('/auto-bids', asyncHandler(authenticate), requireRole('bidder'), asyn
 router.post('/auto-bids', asyncHandler(authenticate), requireCsrf, requireRole('bidder'), asyncHandler(createAutoBid));
 router.get('/auto-bids/:listingId', asyncHandler(authenticate), requireRole('bidder'), asyncHandler(myAutoBidForListing));
 router.delete('/auto-bids/:listingId', asyncHandler(authenticate), requireCsrf, requireRole('bidder'), asyncHandler(deleteAutoBid));
-router.get('/listings/:listingId', asyncHandler(listListingBids));
+router.get('/listings/:listingId', asyncHandler(authenticate), requireRole('bidder', 'admin'), asyncHandler(listListingBids));
 
 export default router;

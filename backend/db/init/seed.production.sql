@@ -623,56 +623,56 @@ INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, 
 SELECT l.id, (SELECT id FROM users WHERE email = 'bidder1@bidforgood.test'), 750, 'PROD-POCKET-WATCH-001', 'not_held', 'pending',
        NOW() + INTERVAL '22 hours', NOW() - INTERVAL '2 hours'
 FROM listings l WHERE l.title = 'Antique Pocket Watch'
-AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'PROD-POCKET-WATCH-001');
+AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref IN ('PROD-POCKET-WATCH-001', 'bfgref:' || encode(digest('PROD-POCKET-WATCH-001', 'sha256'), 'hex')));
 
 -- PENDING — Ceramic Vase
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at)
 SELECT l.id, (SELECT id FROM users WHERE email = 'bidder1@bidforgood.test'), 320, 'PROD-CERAMIC-VASE-001', 'not_held', 'pending',
        NOW() + INTERVAL '12 hours', NOW() - INTERVAL '12 hours'
 FROM listings l WHERE l.title = 'Handcrafted Ceramic Vase'
-AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'PROD-CERAMIC-VASE-001');
+AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref IN ('PROD-CERAMIC-VASE-001', 'bfgref:' || encode(digest('PROD-CERAMIC-VASE-001', 'sha256'), 'hex')));
 
 -- SUCCESSFUL + HELD — Messenger Bag
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
 SELECT l.id, (SELECT id FROM users WHERE email = 'bidder2@bidforgood.test'), 400, 'PROD-MESSENGER-BAG-001', 'held', 'successful',
        NOW() - INTERVAL '1 day', NOW() - INTERVAL '3 days', NOW() - INTERVAL '2 days'
 FROM listings l WHERE l.title = 'Leather Messenger Bag'
-AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'PROD-MESSENGER-BAG-001');
+AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref IN ('PROD-MESSENGER-BAG-001', 'bfgref:' || encode(digest('PROD-MESSENGER-BAG-001', 'sha256'), 'hex')));
 
 -- SUCCESSFUL + HELD — Bluetooth Speaker
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
 SELECT l.id, (SELECT id FROM users WHERE email = 'bidder3@bidforgood.test'), 180, 'PROD-BT-SPEAKER-001', 'held', 'successful',
        NOW() - INTERVAL '1 day', NOW() - INTERVAL '2 days', NOW() - INTERVAL '1 day'
 FROM listings l WHERE l.title = 'Bluetooth Speaker'
-AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'PROD-BT-SPEAKER-001');
+AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref IN ('PROD-BT-SPEAKER-001', 'bfgref:' || encode(digest('PROD-BT-SPEAKER-001', 'sha256'), 'hex')));
 
 -- SUCCESSFUL + HELD — Gaming Console (shipped)
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
 SELECT l.id, (SELECT id FROM users WHERE email = 'bidder5@bidforgood.test'), 780, 'PROD-GAMING-CONSOLE-001', 'held', 'successful',
        NOW() - INTERVAL '2 days', NOW() - INTERVAL '4 days', NOW() - INTERVAL '3 days'
 FROM listings l WHERE l.title = 'Gaming Console'
-AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'PROD-GAMING-CONSOLE-001');
+AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref IN ('PROD-GAMING-CONSOLE-001', 'bfgref:' || encode(digest('PROD-GAMING-CONSOLE-001', 'sha256'), 'hex')));
 
 -- SUCCESSFUL + HELD — Cookbook Collection (shipped)
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
 SELECT l.id, (SELECT id FROM users WHERE email = 'bidder4@bidforgood.test'), 120, 'PROD-COOKBOOKS-001', 'held', 'successful',
        NOW() - INTERVAL '3 days', NOW() - INTERVAL '5 days', NOW() - INTERVAL '4 days'
 FROM listings l WHERE l.title = 'Cookbook Collection'
-AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'PROD-COOKBOOKS-001');
+AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref IN ('PROD-COOKBOOKS-001', 'bfgref:' || encode(digest('PROD-COOKBOOKS-001', 'sha256'), 'hex')));
 
 -- SUCCESSFUL + RELEASED — Acoustic Guitar (fully completed)
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
 SELECT l.id, (SELECT id FROM users WHERE email = 'bidder1@bidforgood.test'), 550, 'PROD-GUITAR-001', 'released', 'successful',
        NOW() - INTERVAL '5 days', NOW() - INTERVAL '8 days', NOW() - INTERVAL '6 days'
 FROM listings l WHERE l.title = 'Acoustic Guitar'
-AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'PROD-GUITAR-001');
+AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref IN ('PROD-GUITAR-001', 'bfgref:' || encode(digest('PROD-GUITAR-001', 'sha256'), 'hex')));
 
 -- SUCCESSFUL + RELEASED — Fitness Tracker (fully completed)
 INSERT INTO payments (listing_id, bidder_id, amount, payment_ref, escrow_state, status, payment_deadline, offered_at, paid_at)
 SELECT l.id, (SELECT id FROM users WHERE email = 'bidder2@bidforgood.test'), 200, 'PROD-FITNESS-001', 'released', 'successful',
        NOW() - INTERVAL '4 days', NOW() - INTERVAL '7 days', NOW() - INTERVAL '5 days'
 FROM listings l WHERE l.title = 'Fitness Tracker'
-AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref = 'PROD-FITNESS-001');
+AND NOT EXISTS (SELECT 1 FROM payments WHERE payment_ref IN ('PROD-FITNESS-001', 'bfgref:' || encode(digest('PROD-FITNESS-001', 'sha256'), 'hex')));
 
 -- ──────────────────────────────────────────────────────────────────────────
 -- 7. DELIVERIES (4 — 2 shipped, 2 delivered)
@@ -709,7 +709,7 @@ SELECT p.id, l.id, (SELECT id FROM users WHERE email = 'bidder1@bidforgood.test'
        encode(digest('{"receipt_ref":"RCP-PROD-GUITAR-001","amount":550}', 'sha256'), 'hex'),
        NOW() - INTERVAL '6 days', 'bidder1', 'PROD-GUITAR-001'
 FROM payments p, listings l
-WHERE p.payment_ref = 'PROD-GUITAR-001' AND l.title = 'Acoustic Guitar'
+WHERE p.payment_ref IN ('PROD-GUITAR-001', 'bfgref:' || encode(digest('PROD-GUITAR-001', 'sha256'), 'hex')) AND l.title = 'Acoustic Guitar'
 AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.receipt_ref = 'RCP-PROD-GUITAR-001');
 
 INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash, generated_at, bidder_username, payment_ref)
@@ -719,7 +719,7 @@ SELECT p.id, l.id, (SELECT id FROM users WHERE email = 'bidder2@bidforgood.test'
        encode(digest('{"receipt_ref":"RCP-PROD-FITNESS-001","amount":200}', 'sha256'), 'hex'),
        NOW() - INTERVAL '5 days', 'bidder2', 'PROD-FITNESS-001'
 FROM payments p, listings l
-WHERE p.payment_ref = 'PROD-FITNESS-001' AND l.title = 'Fitness Tracker'
+WHERE p.payment_ref IN ('PROD-FITNESS-001', 'bfgref:' || encode(digest('PROD-FITNESS-001', 'sha256'), 'hex')) AND l.title = 'Fitness Tracker'
 AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.receipt_ref = 'RCP-PROD-FITNESS-001');
 
 COMMIT;

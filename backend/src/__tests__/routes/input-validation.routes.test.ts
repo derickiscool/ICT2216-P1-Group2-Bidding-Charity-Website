@@ -7,6 +7,7 @@ afterAll(stopServer);
 
 describe('FSR12 — Path parameter validation: listing bids (F-002)', () => {
   test('rejects non-numeric, negative, and float listingId values', async () => {
+    const { cookie } = await loginAs('bidder@bidforgood.test');
     const cases = [
       { id: 'abc',  label: 'alphabetic' },
       { id: '-1',   label: 'negative' },
@@ -15,15 +16,16 @@ describe('FSR12 — Path parameter validation: listing bids (F-002)', () => {
     ];
 
     for (const { id, label } of cases) {
-      const res = await request(`/api/bids/listings/${id}`);
+      const res = await request(`/api/bids/listings/${id}`, { headers: { cookie } });
       assert.equal(res.response.status, 400, `expected 400 for ${label} listingId "${id}"`);
       assert.equal(res.body.code, 'INVALID_PARAM', `expected INVALID_PARAM for ${label} listingId`);
     }
   });
 
   test('accepts a valid positive integer listingId', async () => {
+    const { cookie } = await loginAs('bidder@bidforgood.test');
     // A non-existent but correctly-formatted ID must reach the DB and return an empty list, not 400
-    const res = await request('/api/bids/listings/99999');
+    const res = await request('/api/bids/listings/99999', { headers: { cookie } });
     // Either 200 (empty) or 404 is acceptable — what must NOT happen is 400 or 500
     assert.ok(
       res.response.status === 200 || res.response.status === 404,

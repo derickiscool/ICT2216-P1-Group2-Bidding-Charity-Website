@@ -20,6 +20,7 @@ describe('OWASP ZAP security headers', () => {
     assert.equal(res.response.headers.get('cross-origin-resource-policy'), 'same-origin');
     assert.equal(res.response.headers.get('cache-control'), 'no-store');
     assert.match(res.response.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
+    assert.equal(res.response.headers.get('strict-transport-security'), 'max-age=31536000; includeSubDomains; preload');
   });
 
   test('production does not expose the diagnostic database endpoint by default', async () => {
