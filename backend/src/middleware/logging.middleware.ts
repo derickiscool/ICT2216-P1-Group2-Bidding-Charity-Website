@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import morgan from 'morgan';
+import { createStream } from 'rotating-file-stream';
 import type { Request, Response } from 'express';
 
 // FSR16 / NFSR10: immutable, time-stamped log records for login attempts,
@@ -12,15 +13,29 @@ import type { Request, Response } from 'express';
 const LOG_DIR = path.resolve(__dirname, '../../../logs');
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
-const accessLogStream = fs.createWriteStream(path.join(LOG_DIR, 'access.log'), { flags: 'a' });
-const bidAuditLogStream = fs.createWriteStream(path.join(LOG_DIR, 'bid-audit.log'), { flags: 'a' });
+// NFSR10: rotate daily and keep 365 files (= 365 days minimum retention).
+// Files are named access-YYYY-MM-DD.log; the symlink access.log always points
+// to today's file so existing tooling that reads access.log continues to work.
+const accessLogStream = createStream('access.log', {
+  interval: '1d',
+  maxFiles: 365,
+  path: LOG_DIR,
+});
+
+const bidAuditLogStream = createStream('bid-audit.log', {
+  interval: '1d',
+  maxFiles: 365,
+  path: LOG_DIR,
+});
 
 morgan.token('user', (req: Request) => req.user?.uuid ?? 'anonymous');
 morgan.token('role', (req: Request) => req.user?.roles?.join('+') ?? '-');
 
 morgan.token('event', (req: Request, res: Response) => {
   const status = res.statusCode;
-  const url = req.path;
+  // req.path is rewritten to be router-relative by the time morgan fires;
+  // req.originalUrl always preserves the full original path.
+  const url = req.originalUrl.split('?')[0];
 
   if (url.startsWith('/api/auth/login')) {
     if (status === 200) return 'AUTH_LOGIN_SUCCESS';

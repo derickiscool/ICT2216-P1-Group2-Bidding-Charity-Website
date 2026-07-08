@@ -11,9 +11,14 @@ const PASSWORD_CHANGE_ALLOWED_PATHS = new Set([
   '/api/auth/force-change-password',
 ]);
 
-const assertPasswordChangeGate = (req: Request): void => {
+const assertPasswordChangeGate = async (req: Request): Promise<void> => {
   if (!req.user?.mustChangePassword) return;
   if (PASSWORD_CHANGE_ALLOWED_PATHS.has(req.originalUrl.split('?')[0])) return;
+  await audit(req, 'PRIVILEGE_ESCALATION_BLOCKED', {
+    path: req.originalUrl,
+    reason: 'must_change_password',
+    userId: req.user.id,
+  }, 'user', req.user.uuid, req.user.id);
   throw forbidden('Password change is required before continuing.', 'PASSWORD_CHANGE_REQUIRED');
 };
 
@@ -44,7 +49,7 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
     req.user = toPublicUser(user);
     req.csrfToken = verified.csrfTokenHash;
     req.sessionId = verified.sid;
-    assertPasswordChangeGate(req);
+    await assertPasswordChangeGate(req);
     next();
   } catch (err) {
     next(err);
@@ -61,7 +66,7 @@ export const authenticateOptional = async (req: Request, _res: Response, next: N
     req.user = toPublicUser(user);
     req.csrfToken = verified.csrfTokenHash;
     req.sessionId = verified.sid;
-    assertPasswordChangeGate(req);
+    await assertPasswordChangeGate(req);
     next();
   } catch {
     next();
