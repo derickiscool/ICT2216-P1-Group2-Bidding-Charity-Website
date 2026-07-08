@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import validator from 'validator';
 
 export const sha256 = (value: string | Buffer): string =>
   crypto.createHash('sha256').update(value).digest('hex');
@@ -7,33 +8,19 @@ export const randomToken = (bytes = 32): string => crypto.randomBytes(bytes).toS
 
 export const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 
+// NFSR11: validation and low-byte sanitization are delegated to the `validator`
+// library. The extra length guard preserves the previous 3-254 char contract.
 export const isValidEmail = (email: string): boolean => {
   const value = email.trim();
   if (value.length < 3 || value.length > 254) return false;
-  if ([...value].some(char => char <= ' ' || char > '~')) return false;
-  const at = value.indexOf('@');
-  if (at <= 0 || at !== value.lastIndexOf('@') || at >= value.length - 1) return false;
-
-  const local = value.slice(0, at);
-  const domain = value.slice(at + 1);
-  if (local.length > 64 || local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
-  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false;
-
-  return domain.split('.').every(label => {
-    if (label.length === 0 || label.length > 63) return false;
-    if (label.startsWith('-') || label.endsWith('-')) return false;
-    return [...label].every(char =>
-      (char >= 'a' && char <= 'z') ||
-      (char >= 'A' && char <= 'Z') ||
-      (char >= '0' && char <= '9') ||
-      char === '-'
-    );
-  });
+  return validator.isEmail(value, { allow_utf8_local_part: false, allow_display_name: false });
 };
 
 export const safeString = (value: unknown, maxLength: number): string => {
   if (typeof value !== 'string') return '';
-  return value.trim().replace(/[\u0000-\u001f\u007f]/g, '').slice(0, maxLength);
+  // stripLow removes the same characters the previous hand-rolled regex did
+  // (ASCII 0x00-0x1F and 0x7F, including newlines).
+  return validator.stripLow(value.trim()).slice(0, maxLength);
 };
 
 export const roundMoney = (value: number): number => Math.round(value * 100) / 100;

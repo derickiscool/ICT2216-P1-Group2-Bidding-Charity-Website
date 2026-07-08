@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import validator from 'validator';
 import argon2 from 'argon2';
 import type { Request } from 'express';
 import {
@@ -47,7 +48,7 @@ export interface ChangePasswordInput {
 
 const cleanTextInput = (value: unknown): string => {
   if (typeof value !== 'string') return '';
-  return value.trim().replace(/[\u0000-\u001f\u007f]/g, '');
+  return validator.stripLow(value.trim());
 };
 
 const hasSubmittedField = (input: UpdateProfileInput, field: keyof UpdateProfileInput): boolean =>
