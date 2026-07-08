@@ -510,7 +510,7 @@ describe('SFR07 — script-like descriptions are rejected, other text is sanitiz
     assert.equal(editWithScript.body.code, 'UNSAFE_TEXT_CONTENT');
   });
 
-  test('non-script markup and metacharacters are stored HTML-escaped', async () => {
+  test('non-script markup and metacharacters are stored as-is', async () => {
     const donor = await loginAs('donor@bidforgood.test');
     const res = await postJson(
       '/api/listings',
@@ -519,8 +519,10 @@ describe('SFR07 — script-like descriptions are rejected, other text is sanitiz
     );
     assert.equal(res.response.status, 201);
     const description = String(res.body.description);
-    assert.ok(!description.includes('<') && !description.includes('"'), `raw metacharacters stored: ${description}`);
-    assert.match(description, /&lt;b&gt;/);
+    // Non-script markup is stored as-is — React JSX auto-escapes on display.
+    assert.ok(description.includes('"'), 'quotes should be stored as-is');
+    assert.ok(description.includes('<b>'), '<b> should not be HTML-escaped');
+    assert.ok(description.includes('&'), 'ampersand should not be HTML-escaped');
   });
 
   test('slash-delimited event handlers are rejected like the other script forms', async () => {

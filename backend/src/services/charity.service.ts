@@ -2,7 +2,7 @@ import type { Request } from 'express';
 import type { CharityOrganisation, Listing } from '../types/domain';
 import { addCharity, getCharityByUuid, getPaymentsForListing, listCampaignsByCharity, listCharities, listListings, updateCharity, deleteCharityByUuid } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
-import { sanitizeText, sha256 } from '../utils/security';
+import { safeString, containsScriptLikeContent, sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';
 
 const ALLOWED_MIME = new Set(['application/pdf', 'image/png', 'image/jpeg']);
@@ -29,8 +29,16 @@ export const registerCharity = async (req: Request): Promise<CharityOrganisation
   }
 
   const file = req.file;
-  const organisationName = sanitizeText(req.body.organisationName ?? req.body.name, 160);
-  const description = sanitizeText(req.body.description, 1000);
+  const nameRaw = safeString(req.body.organisationName ?? req.body.name, 160);
+  if (containsScriptLikeContent(nameRaw)) {
+    throw badRequest('Please remove script-like content from the organisation name.', 'UNSAFE_TEXT_CONTENT', { organisationName: 'Please remove script-like content.' });
+  }
+  const descRaw = safeString(req.body.description, 1000);
+  if (containsScriptLikeContent(descRaw)) {
+    throw badRequest('Please remove script-like content from the description.', 'UNSAFE_TEXT_CONTENT', { description: 'Please remove script-like content.' });
+  }
+  const organisationName = sanitizeText(nameRaw, 160);
+  const description = sanitizeText(descRaw, 1000);
   if (organisationName.length < 2) throw badRequest('Organisation name is required.', 'VALIDATION_ERROR', { organisationName: 'Organisation name is required.' });
   if (description.length < 10) throw badRequest('Description must be at least 10 characters.', 'VALIDATION_ERROR', { description: 'Description must be at least 10 characters.' });
   if (!file || !file.buffer) throw badRequest('Supporting document is required.', 'DOCUMENT_REQUIRED');
@@ -61,7 +69,11 @@ export const reviewCharity = async (uuid: string, decision: 'approved' | 'reject
   record.status = decision;
   record.reviewedBy = req.user?.id;
   record.reviewedAt = new Date().toISOString();
-  record.rejectionReason = decision === 'rejected' ? sanitizeText(reason, 300) : undefined;
+  const reasonText = reason ? safeString(reason, 300) : '';
+  if (decision === 'rejected' && containsScriptLikeContent(reasonText)) {
+    throw badRequest('Please remove script-like content from the rejection reason.', 'UNSAFE_TEXT_CONTENT', { reason: 'Please remove script-like content.' });
+  }
+  record.rejectionReason = decision === 'rejected' ? sanitizeText(reasonText, 300) : undefined;
   await updateCharity(record);
   await audit(req, 'CHARITY_REVIEWED', { decision, reason: record.rejectionReason }, 'charity', record.uuid, req.user?.id);
   return record;

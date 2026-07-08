@@ -10,7 +10,7 @@ import {
   updateListing,
 } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
-import { safeString, sanitizeText } from '../utils/security';
+import { safeString, containsScriptLikeContent, sanitizeText } from '../utils/security';
 import { audit } from './audit.service';
 
 type ListingReviewDecision = 'approved' | 'rejected';
@@ -105,7 +105,11 @@ export const reviewAssignedListing = async (
     throw badRequest('Only listings forwarded by an administrator can be reviewed by the assigned charity.', 'LISTING_NOT_PENDING_REVIEW');
   }
 
-  const reason = sanitizeText(reasonInput, 300);
+  const reasonText = safeString(reasonInput, 300);
+  if (containsScriptLikeContent(reasonText)) {
+    throw badRequest('Please remove script-like content from the reason.', 'UNSAFE_TEXT_CONTENT', { reason: 'Please remove script-like content.' });
+  }
+  const reason = sanitizeText(reasonText, 300);
   if (decision === 'rejected' && reason.length < 5) {
     throw badRequest('A rejection reason of at least 5 characters is required.', 'VALIDATION_ERROR', {
       reason: 'Please explain why this listing was rejected.',
