@@ -159,12 +159,21 @@ describe('FR14 — Payment Deadline Expiry', () => {
     assert.equal(closeRes.response.status, 200);
 
     const firstPayment = await query(
-      `SELECT uuid, bidder_id, amount, status FROM payments WHERE listing_id = $1 ORDER BY id DESC LIMIT 1`,
+      `SELECT uuid, bidder_id, amount, amount_encrypted, payment_ref, payment_ref_encrypted, status
+       FROM payments WHERE listing_id = $1 ORDER BY id DESC LIMIT 1`,
       [listing.id],
     );
     assert.equal(firstPayment.rows.length, 1);
-    assert.equal(Number(firstPayment.rows[0].amount), 500);
+    assert.notEqual(Number(firstPayment.rows[0].amount), 500, 'raw payment amount must not be stored in plaintext');
+    assert.match(String(firstPayment.rows[0].amount_encrypted), /^bfgenc:v1:/);
+    assert.match(String(firstPayment.rows[0].payment_ref), /^bfgref:/);
+    assert.match(String(firstPayment.rows[0].payment_ref_encrypted), /^bfgenc:v1:/);
     assert.equal(firstPayment.rows[0].status, 'pending');
+
+    const bidderOnePayments = await request('/api/payments/mine', { headers: { cookie: bidderOne.cookie } });
+    const bidderOneOffers = (bidderOnePayments.body as Rec).data as Rec[];
+    const currentOffer = bidderOneOffers.find(p => p.listing_uuid === listing.uuid);
+    assert.equal(currentOffer?.amount, 500, 'API/repository should return decrypted payment amount');
 
     // Move the pending payment beyond the 24-hour deadline, then process deadlines.
     await query(`UPDATE payments SET payment_deadline = NOW() - INTERVAL '1 second' WHERE uuid = $1`, [firstPayment.rows[0].uuid]);
@@ -180,9 +189,10 @@ describe('FR14 — Payment Deadline Expiry', () => {
     assert.equal(listingAfter.rows[0].status, 'expired');
     assert.equal(listingAfter.rows[0].winner_id, null);
 
-    const paymentsAfter = await query(`SELECT amount, status FROM payments WHERE listing_id = $1 ORDER BY id ASC`, [listing.id]);
+    const paymentsAfter = await query(`SELECT amount, amount_encrypted, status FROM payments WHERE listing_id = $1 ORDER BY id ASC`, [listing.id]);
     assert.equal(paymentsAfter.rows.length, 1, 'missed payment must not create a second fallback payment offer');
-    assert.equal(Number(paymentsAfter.rows[0].amount), 500);
+    assert.notEqual(Number(paymentsAfter.rows[0].amount), 500);
+    assert.match(String(paymentsAfter.rows[0].amount_encrypted), /^bfgenc:v1:/);
     assert.equal(paymentsAfter.rows[0].status, 'expired');
 
     const secondBidderPayments = await request('/api/payments/mine', { headers: { cookie: bidderTwo.cookie } });
@@ -238,6 +248,19 @@ describe('SFR14 — Digital Donation Receipt', () => {
     assert.equal(receipt.charity_name, 'Test Charity', 'receipt charity must match listing charity name');
     assert.ok(typeof receipt.amount === 'number' && receipt.amount > 0, 'receipt amount must be a positive number');
     assert.ok(typeof receipt.generated_at === 'string', 'receipt must have a generated_at timestamp');
+
+    const raw = await query(
+      `SELECT item_title, amount, amount_encrypted, charity_name, bidder_username, payment_ref
+       FROM receipts WHERE uuid = $1`,
+      [receiptUuid],
+    );
+    assert.match(String(raw.rows[0].item_title), /^bfgenc:v1:/);
+    assert.notEqual(raw.rows[0].item_title, listing.title);
+    assert.notEqual(Number(raw.rows[0].amount), receipt.amount);
+    assert.match(String(raw.rows[0].amount_encrypted), /^bfgenc:v1:/);
+    assert.match(String(raw.rows[0].charity_name), /^bfgenc:v1:/);
+    assert.match(String(raw.rows[0].bidder_username), /^bfgenc:v1:/);
+    assert.match(String(raw.rows[0].payment_ref), /^bfgenc:v1:/);
   });
 
   test('receipt is accessible to admin — 200 (admin override)', async () => {
@@ -364,6 +387,10 @@ describe('FR17 — Shipping & Delivery', () => {
     assert.equal(body.delivery.tracking_number, 'TRK-123456');
     assert.equal(body.delivery.courier, 'FedEx');
     assert.ok(body.delivery.shipped_at, 'shipment should have a shipped_at timestamp');
+
+    const rawDelivery = await query('SELECT tracking_number, courier FROM deliveries WHERE listing_id = $1', [listing.id]);
+    assert.match(String(rawDelivery.rows[0].tracking_number), /^bfgenc:v1:/);
+    assert.match(String(rawDelivery.rows[0].courier), /^bfgenc:v1:/);
   });
 
   test('bidder cannot confirm delivery when shipping not arranged — 400', async () => {

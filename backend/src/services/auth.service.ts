@@ -18,7 +18,7 @@ import { getLoginLockoutState, recordLoginFailure, resetLoginFailures } from './
 const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 };
 const OTP_TTL_MS = 3 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
-const VALID_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
+const PUBLIC_REGISTRATION_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity']);
 const GENERIC_REGISTRATION_MESSAGE = 'If the account can be registered, a verification OTP will be sent to the submitted email address.';
 const PASSWORD_POLICY_MESSAGE = 'Password must be 8-128 characters and must not match known breached, common, or dictionary passwords.';
 const LOGIN_LOCKOUT_MESSAGE = 'Too many failed login attempts. Please try again later.';
@@ -43,25 +43,44 @@ export interface RegisterInput {
   roles?: UserRole[];
 }
 
+const parsePublicRegistrationRoles = (inputRoles: RegisterInput['roles']): { roles: UserRole[]; error?: string } => {
+  if (inputRoles === undefined) return { roles: ['bidder'] };
+  if (!Array.isArray(inputRoles) || inputRoles.length === 0) {
+    return { roles: [], error: 'Select one supported public registration role.' };
+  }
+
+  const publicRoles = inputRoles.filter((role): role is UserRole =>
+    typeof role === 'string' && PUBLIC_REGISTRATION_ROLES.has(role as UserRole));
+
+  if (publicRoles.length !== inputRoles.length || publicRoles.length === 0) {
+    return { roles: [], error: 'Selected role is not available for public registration.' };
+  }
+
+  return { roles: publicRoles.slice(0, 1) };
+};
+
+const hasOnlyPublicRegistrationRoles = (roles: UserRole[]): boolean =>
+  roles.length > 0 && roles.every(role => PUBLIC_REGISTRATION_ROLES.has(role));
+
 export const beginRegistration = async (input: RegisterInput, req?: Request): Promise<{ message: string }> => {
   const email = normalizeEmail(input.email ?? '');
   const fullName = safeString(input.full_name, 120);
   const submittedUsername = safeString(input.username, 40);
-  const roles: UserRole[] = Array.isArray(input.roles) && input.roles.length > 0
-    ? input.roles.filter((r): r is UserRole => VALID_ROLES.has(r)).slice(0, 1)
-    : ['bidder'];
+  const roleSelection = parsePublicRegistrationRoles(input.roles);
+  const roles = roleSelection.roles;
   const password = String(input.password ?? '');
   const generic = { message: GENERIC_REGISTRATION_MESSAGE };
   const usernameManagedByUser = isUsernameManagedRole(roles);
 
   const errors: Record<string, string> = {};
+  if (roleSelection.error) errors.roles = roleSelection.error;
   if (!isValidEmail(email)) errors.email = 'Enter a valid email address.';
   if (fullName.length < 2) errors.full_name = 'Full name is required.';
   if (usernameManagedByUser && !/^[A-Za-z0-9_]{3,40}$/.test(submittedUsername)) {
     errors.username = 'Username must be 3-40 characters using letters, numbers, or underscores.';
   }
   if (!isStrongPassword(password)) errors.password = PASSWORD_POLICY_MESSAGE;
-  if (roles.length === 0) errors.roles = 'At least one valid role is required.';
+  if (roles.length === 0 && !errors.roles) errors.roles = 'At least one valid role is required.';
 
   if (usernameManagedByUser) {
     const existingUsername = await findUserByUsername(submittedUsername);
@@ -119,6 +138,11 @@ export const verifyRegistrationOtp = async (emailInput: string, otpInput: string
       throw tooManyRequests('Too many verification attempts. Please register again.');
     }
     await savePendingRegistration(pending);
+    throw badRequest('Registration verification failed.', 'REGISTRATION_VERIFICATION_FAILED');
+  }
+  if (!hasOnlyPublicRegistrationRoles(pending.roles)) {
+    await removePendingRegistration(email);
+    await audit(req, 'AUTH_REGISTER_VERIFY_REJECTED_PRIVILEGED_ROLE', { email, roles: pending.roles }, 'pending_registration', pending.id);
     throw badRequest('Registration verification failed.', 'REGISTRATION_VERIFICATION_FAILED');
   }
   if (await findUserByEmail(email)) {

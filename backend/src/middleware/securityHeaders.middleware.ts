@@ -22,5 +22,6 @@ export const securityHeaders = (_req: Request, res: Response, next: NextFunction
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Security-Policy', contentSecurityPolicy);
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   next();
 };

@@ -18,6 +18,7 @@ import {
   clearDevResetTokenForTest,
 } from '../../services/otpDelivery.service';
 import { query } from '../../utils/db';
+import { sha256 } from '../../utils/security';
 
 beforeAll(startServer);
 afterAll(stopServer);
@@ -185,6 +186,62 @@ describe('SFR01 — Registration & Email Verification', () => {
     assert.deepEqual(Object.keys(validNew.body).sort(), ['message']);
     assert.deepEqual(Object.keys(dup.body).sort(), ['message']);
     assert.deepEqual(validNew.body, dup.body);
+  });
+
+  test('rejects direct public registration attempts for privileged roles', async () => {
+    const strongFixture = 'correcthorsebatterystaple10';
+    const rejectedRoles = ['admin', 'charity_staff'] as const;
+
+    for (const role of rejectedRoles) {
+      const slug = role.replace('_', '');
+      const email = `blocked-${slug}@example.com`;
+      const attempt = await postJson('/api/auth/register', {
+        email,
+        username: `blocked${slug}`,
+        full_name: `Blocked ${slug}`,
+        ['password']: strongFixture,
+        roles: [role],
+      });
+
+      assert.equal(attempt.response.status, 400);
+      assert.match((attempt.body.errors as Record<string, string>).roles, /not available for public registration/i);
+      assert.equal(await getPendingRegistration(email), undefined);
+    }
+  });
+
+  test('rejects stale privileged pending registrations during OTP verification', async () => {
+    const email = 'stale-admin-pending@example.com';
+    await query('ALTER TABLE pending_registrations DROP CONSTRAINT IF EXISTS pending_registrations_roles_valid');
+    try {
+      await savePendingRegistration({
+        id: 'stale-admin-pending',
+        email,
+        username: 'staleadmin',
+        full_name: 'Stale Admin',
+        passwordHash: 'not-used-after-rejection',
+        roles: ['admin'],
+        otpHash: sha256('123456'),
+        expiresAt: new Date(Date.now() + 60_000),
+        attempts: 0,
+        createdAt: new Date(),
+      });
+
+      const attempt = await postJson('/api/auth/register/verify', { email, otp: '123456' });
+
+      assert.equal(attempt.response.status, 400);
+      assert.equal(attempt.body.code, 'REGISTRATION_VERIFICATION_FAILED');
+      assert.equal(await getPendingRegistration(email), undefined);
+
+      const users = await query('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
+      assert.equal(users.rows.length, 0);
+    } finally {
+      await query('DELETE FROM pending_registrations WHERE lower(email) = lower($1)', [email]);
+      await query(
+        `ALTER TABLE pending_registrations
+         ADD CONSTRAINT pending_registrations_roles_valid
+         CHECK (roles <@ ARRAY['bidder', 'donor', 'charity']::TEXT[])`,
+      );
+    }
   });
 
   test('verifies registration OTP once, rejects reused OTP, expires old OTP, and locks after three failures', async () => {
