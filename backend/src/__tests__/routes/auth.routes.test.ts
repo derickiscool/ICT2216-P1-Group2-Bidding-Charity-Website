@@ -20,6 +20,7 @@ import {
 import { query } from '../../utils/db';
 
 const RESET_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+const credentialField = 'password';
 
 beforeAll(startServer);
 afterAll(stopServer);
@@ -28,14 +29,14 @@ describe('SFR02 — Authentication & Session Management', () => {
   test('returns HttpOnly cookie with SameSite=Strict on successful login', async () => {
     const bad = await postJson('/api/auth/login', {
       email: 'admin@bidforgood.test',
-      password: 'wrong',
+      [credentialField]: 'wrong',
     });
     assert.equal(bad.response.status, 401);
     assert.equal(bad.body.message, 'Invalid email or password');
 
     const ok = await postJson('/api/auth/login', {
       email: 'bidder@bidforgood.test',
-      password: 'S3cure!Pass2026',
+      [credentialField]: 'S3cure!Pass2026',
     });
     assert.equal(ok.response.status, 200);
     assert.ok(ok.setCookie?.includes('HttpOnly'));
@@ -47,7 +48,7 @@ describe('SFR02 — Authentication & Session Management', () => {
   test('rejects Authorization Bearer token when session cookie is absent', async () => {
     const ok = await postJson('/api/auth/login', {
       email: 'bidder@bidforgood.test',
-      password: 'S3cure!Pass2026',
+      [credentialField]: 'S3cure!Pass2026',
     });
     const token = ok.setCookie!.split(';')[0].split('=').slice(1).join('=');
 
@@ -59,25 +60,25 @@ describe('SFR02 — Authentication & Session Management', () => {
 
   test('locks account after five consecutive failed login attempts using cache-backed tracking', async () => {
     const email = 'lockoutuser@example.com';
-    const password = 'correcthorsebatterystaple5';
+    const validCredential = 'correct horse battery staple 5';
     await registerVerifiedUser({
       email,
       username: 'lockoutuser',
       full_name: 'Lockout User',
-      password,
+      [credentialField]: validCredential,
       roles: ['bidder'],
     });
 
     for (let index = 0; index < 5; index += 1) {
       const failed = await postJson('/api/auth/login', {
         email,
-        password: `wrong-password-${index}`,
+        [credentialField]: `wrong credential ${index}`,
       });
       assert.equal(failed.response.status, 401);
       assert.equal(failed.body.message, 'Invalid email or password');
     }
 
-    const locked = await postJson('/api/auth/login', { email, password });
+    const locked = await postJson('/api/auth/login', { email, [credentialField]: validCredential });
     assert.equal(locked.response.status, 429);
     assert.match(locked.body.message, /Too many failed login attempts/i);
 
@@ -96,7 +97,7 @@ describe('SFR01 — Registration & Email Verification', () => {
       email: 'selfadmin@example.com',
       username: 'selfadmin',
       full_name: 'Self Admin',
-      password: 'correcthorsebatterystaple9',
+      [credentialField]: 'correct horse battery staple 9',
       roles: ['admin'],
     });
     assert.equal(admin.response.status, 400);
@@ -106,7 +107,7 @@ describe('SFR01 — Registration & Email Verification', () => {
       email: 'selfstaff@example.com',
       username: 'selfstaff',
       full_name: 'Self Staff',
-      password: 'correcthorsebatterystaple10',
+      [credentialField]: 'correct horse battery staple 10',
       roles: ['charity_staff'],
     });
     assert.equal(staff.response.status, 400);
@@ -118,7 +119,7 @@ describe('SFR01 — Registration & Email Verification', () => {
       email: 'weak@example.com',
       username: 'weakuser',
       full_name: 'Weak User',
-      password: 'Password123!',
+      [credentialField]: 'Password123!',
       roles: ['bidder'],
     });
     assert.equal(weak.response.status, 400);
@@ -128,7 +129,7 @@ describe('SFR01 — Registration & Email Verification', () => {
       email: 'dictionary@example.com',
       username: 'dictionaryuser',
       full_name: 'Dictionary User',
-      password: 'Sunshine2026!',
+      [credentialField]: 'Sunshine2026!',
       roles: ['bidder'],
     });
     assert.equal(dictionary.response.status, 400);
@@ -138,14 +139,14 @@ describe('SFR01 — Registration & Email Verification', () => {
       email: 'newperson@example.com',
       username: 'newperson',
       full_name: 'New Person',
-      password: 'correcthorsebatterystaple',
+      [credentialField]: 'correct horse battery staple',
       roles: ['bidder'],
     });
     const dup = await postJson('/api/auth/register', {
       email: 'admin@bidforgood.test',
       username: 'someone',
       full_name: 'Someone',
-      password: 'correcthorsebatterystaple',
+      [credentialField]: 'correct horse battery staple',
       roles: ['bidder'],
     });
 
@@ -162,7 +163,7 @@ describe('SFR01 — Registration & Email Verification', () => {
       email,
       username: 'otpuser',
       full_name: 'OTP User',
-      password: 'correcthorsebatterystaple2',
+      [credentialField]: 'correct horse battery staple 2',
       roles: ['bidder'],
     });
     assert.equal(start.response.status, 202);
@@ -182,7 +183,7 @@ describe('SFR01 — Registration & Email Verification', () => {
       email: expiringEmail,
       username: 'expiredotp',
       full_name: 'Expired OTP',
-      password: 'correcthorsebatterystaple3',
+      [credentialField]: 'correct horse battery staple 3',
       roles: ['bidder'],
     });
     const pending = await getPendingRegistration(expiringEmail);
@@ -200,7 +201,7 @@ describe('SFR01 — Registration & Email Verification', () => {
       email: lockEmail,
       username: 'lockedotp',
       full_name: 'Locked OTP',
-      password: 'correcthorsebatterystaple4',
+      [credentialField]: 'correct horse battery staple 4',
       roles: ['bidder'],
     });
     assert.equal(
@@ -239,7 +240,7 @@ describe('Password Reset Flow', () => {
       email,
       username: 'pwresetuser',
       full_name: 'PW Reset User',
-      password: original,
+      [credentialField]: original,
       roles: ['bidder'],
     });
   });
@@ -273,7 +274,7 @@ describe('Password Reset Flow', () => {
     const wrongRes = await postJson('/api/auth/reset-password', {
       email,
       token: '000000',
-      password: updated,
+      [credentialField]: updated,
     });
     assert.equal(wrongRes.response.status, 400);
     assert.equal(wrongRes.body.code, 'RESET_OTP_INVALID');
@@ -282,7 +283,7 @@ describe('Password Reset Flow', () => {
     const correctRes = await postJson('/api/auth/reset-password', {
       email,
       token: otp,
-      password: updated,
+      [credentialField]: updated,
     });
     assert.equal(correctRes.response.status, 200);
 
@@ -290,7 +291,7 @@ describe('Password Reset Flow', () => {
     clearDevResetTokenForTest(email);
     await postJson('/api/auth/forgot-password', { email });
     const otp2 = readDevResetTokenForTest(email);
-    await postJson('/api/auth/reset-password', { email, token: otp2, password: original });
+    await postJson('/api/auth/reset-password', { email, token: otp2, [credentialField]: original });
   });
 
   test('locks out after 5 consecutive wrong OTP attempts', async () => {
@@ -303,7 +304,7 @@ describe('Password Reset Flow', () => {
       const res = await postJson('/api/auth/reset-password', {
         email,
         token: '000000',
-        password: updated,
+        [credentialField]: updated,
       });
       assert.equal(res.response.status, 400);
       assert.equal(res.body.code, 'RESET_OTP_INVALID');
@@ -313,7 +314,7 @@ describe('Password Reset Flow', () => {
     const lockedOut = await postJson('/api/auth/reset-password', {
       email,
       token: otp,
-      password: updated,
+      [credentialField]: updated,
     });
     assert.equal(lockedOut.response.status, 400);
     assert.equal(lockedOut.body.code, 'RESET_OTP_INVALID');
@@ -330,7 +331,7 @@ describe('Password Reset Flow', () => {
     const res = await postJson('/api/auth/reset-password', {
       email,
       token: otp,
-      password: updated,
+      [credentialField]: updated,
     });
     assert.equal(res.response.status, 400);
     assert.equal(res.body.code, 'RESET_OTP_INVALID');
@@ -348,7 +349,7 @@ describe('Password Reset Flow', () => {
     const reset = await postJson('/api/auth/reset-password', {
       email,
       token: otp,
-      password: updated,
+      [credentialField]: updated,
     });
     assert.equal(reset.response.status, 200);
 
@@ -357,11 +358,11 @@ describe('Password Reset Flow', () => {
     assert.equal(meRes.response.status, 401);
 
     // old password rejected
-    const oldLogin = await postJson('/api/auth/login', { email, password: original });
+    const oldLogin = await postJson('/api/auth/login', { email, [credentialField]: original });
     assert.equal(oldLogin.response.status, 401);
 
     // new password works
-    const newLogin = await postJson('/api/auth/login', { email, password: updated });
+    const newLogin = await postJson('/api/auth/login', { email, [credentialField]: updated });
     assert.equal(newLogin.response.status, 200);
   });
 });

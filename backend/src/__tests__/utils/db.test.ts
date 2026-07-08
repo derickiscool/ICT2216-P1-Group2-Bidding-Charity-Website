@@ -56,7 +56,7 @@ describe('Database Connection', () => {
       // Assert
       expect(result.success).toBe(false);
       expect(result.message).toContain('Database connection failed');
-      expect(result.message).toContain('Connection refused');
+      expect(result.message).toBe('Database connection failed');
     });
 
     it('should handle non-Error exceptions gracefully', async () => {
@@ -69,7 +69,7 @@ describe('Database Connection', () => {
 
       // Assert
       expect(result.success).toBe(false);
-      expect(result.message).toBe('Database connection failed: Unknown error');
+      expect(result.message).toBe('Database connection failed');
     });
   });
 
