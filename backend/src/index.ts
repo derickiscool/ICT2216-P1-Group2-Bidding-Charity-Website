@@ -40,8 +40,8 @@ const startPaymentDeadlineWorker = () => {
 
 if (process.env.NODE_ENV !== 'test') startPaymentDeadlineWorker();
 
-const PORT = process.env.PORT || 5000;
-httpServer.listen(PORT, () => {
+const PORT = Number(process.env.PORT || 5000);
+httpServer.listen(PORT, '127.0.0.1', () => {
   console.log(`Server running on http://localhost:${PORT}`);
   // NFR08: In production, this app must be deployed behind a TLS-terminating reverse
   // proxy (e.g. nginx, Caddy) for HTTPS. The `trust proxy` setting in app.ts handles

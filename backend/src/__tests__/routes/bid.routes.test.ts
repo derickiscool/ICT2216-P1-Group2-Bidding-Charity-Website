@@ -10,6 +10,11 @@ import {
   createActiveListing,
 } from '../helpers/setup';
 
+test('requires authentication before listing bid history can be viewed', async () => {
+  const res = await request('/api/bids/listings/1');
+  assert.equal(res.response.status, 401);
+});
+
 beforeAll(startServer);
 afterAll(stopServer);
 
@@ -163,10 +168,12 @@ describe('FR12 — Auto-Bidding', () => {
     assert.equal(manualBidBody.currentBid, 175);
     assert.equal(manualBidBody.bids.some(bid => bid.is_auto_bid), true);
 
-    const publicBids = await request(`/api/bids/listings/${listing.body.id}`);
-    assert.equal(publicBids.response.status, 200);
-    assert.equal(publicBids.body.data, undefined);
-    assert.equal(JSON.stringify(publicBids.body).includes('max_amount'), false);
+    const listingBids = await request(`/api/bids/listings/${listing.body.id}`, {
+      headers: { cookie: bidderOne.cookie },
+    });
+    assert.equal(listingBids.response.status, 200);
+    assert.equal(listingBids.body.data, undefined);
+    assert.equal(JSON.stringify(listingBids.body).includes('max_amount'), false);
   });
 
   test('same maximum auto-bids stop when the next legal bid would exceed the shared max', async () => {
@@ -229,9 +236,11 @@ describe('FR12 — Auto-Bidding', () => {
     assert.equal(secondAutoBidBody.result.bids[secondAutoBidBody.result.bids.length - 1]?.bidder_username, 'bidder');
     assert.equal(secondAutoBidBody.result.bids.every(bid => bid.is_auto_bid), true);
 
-    const publicBids = await request(`/api/bids/listings/${listing.body.id}`);
-    assert.equal(publicBids.response.status, 200);
-    assert.equal(JSON.stringify(publicBids.body).includes('max_amount'), false);
+    const listingBids = await request(`/api/bids/listings/${listing.body.id}`, {
+      headers: { cookie: bidderOne.cookie },
+    });
+    assert.equal(listingBids.response.status, 200);
+    assert.equal(JSON.stringify(listingBids.body).includes('max_amount'), false);
   });
 
 });
