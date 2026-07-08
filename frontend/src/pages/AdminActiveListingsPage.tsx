@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Package, Loader2, AlertCircle, ExternalLink, Gavel, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Package, Loader2, AlertCircle, ExternalLink, Gavel, CheckCircle, X } from 'lucide-react'
 import api from '../services/api'
 import type { Listing, ApiError } from '../types'
 
@@ -25,6 +25,7 @@ export default function AdminActiveListingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [closing, setClosing] = useState<string | null>(null)
+  const [confirmClose, setConfirmClose] = useState<{ uuid: string; title: string } | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   const load = async () => {
@@ -48,6 +49,7 @@ export default function AdminActiveListingsPage() {
     try {
       await api.post(`/listings/${uuid}/force-close`)
       setListings(prev => prev.filter(l => l.uuid !== uuid))
+      setConfirmClose(null)
       setSuccess(`"${title}" closed successfully`)
       setTimeout(() => setSuccess(null), 3000)
     } catch (err) {
@@ -124,7 +126,7 @@ export default function AdminActiveListingsPage() {
                             style={{ color: C.emerald, border: '1px solid', borderColor: C.emerald }}>
                             <ExternalLink className="w-3 h-3" /> View
                           </Link>
-                          <button onClick={() => handleForceClose(l.uuid!, l.title)} disabled={closing === l.uuid}
+                          <button onClick={() => setConfirmClose({ uuid: l.uuid!, title: l.title })} disabled={closing === l.uuid}
                             className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                             style={{ background: C.danger }}>
                             {closing === l.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <Gavel className="w-3 h-3" />}
@@ -136,6 +138,52 @@ export default function AdminActiveListingsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Admin-only confirmation: the backend route is protected by requireRole('admin'),
+            but the UI still asks for confirmation because force close immediately ends
+            an active auction and creates/updates payment deadline state. */}
+        {confirmClose && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: 'rgba(0,0,0,0.55)' }}
+            onClick={() => setConfirmClose(null)}>
+            <div className="rounded-2xl bg-white w-full max-w-md mx-4 overflow-hidden shadow-xl"
+              style={{ border: '1px solid', borderColor: C.beige }}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: C.beige }}>
+                <div>
+                  <h2 className="font-black text-base" style={{ color: C.slate }}>Confirm Close Auction</h2>
+                  <p className="text-xs mt-1" style={{ color: C.muted }}>Admin action required</p>
+                </div>
+                <button type="button" onClick={() => setConfirmClose(null)} aria-label="Close confirmation">
+                  <X className="w-5 h-5" style={{ color: C.muted }} />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-3">
+                <p className="text-sm" style={{ color: C.slate }}>
+                  Are you sure you want to close <strong>{confirmClose.title}</strong>?
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: C.muted }}>
+                  This ends the auction immediately. If there is a valid highest bid, the winner receives a payment deadline. If there are no bids, the auction expires.
+                </p>
+              </div>
+
+              <div className="px-6 pb-5 flex gap-3">
+                <button type="button" onClick={() => setConfirmClose(null)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                  style={{ border: '1px solid', borderColor: C.beige, color: C.slate }}>
+                  Cancel
+                </button>
+                <button type="button" onClick={() => handleForceClose(confirmClose.uuid, confirmClose.title)}
+                  disabled={closing === confirmClose.uuid}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ background: C.danger }}>
+                  {closing === confirmClose.uuid ? 'Closing…' : 'Confirm Close'}
+                </button>
+              </div>
             </div>
           </div>
         )}

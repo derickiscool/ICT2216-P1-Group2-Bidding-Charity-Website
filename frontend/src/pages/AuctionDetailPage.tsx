@@ -121,6 +121,7 @@ export default function AuctionDetailPage() {
   const [selectedImage, setSelectedImage] = useState(0)
   const [autoBidOn, setAutoBidOn]   = useState(false)
   const [maxAutoBid, setMaxAutoBid] = useState('')
+  const [autoBidIncrement, setAutoBidIncrement] = useState('')
   const [savedAutoBidActive, setSavedAutoBidActive] = useState(false)
   const [autoBidSaving, setAutoBidSaving] = useState(false)
   const [campaignModalOpen, setCampaignModalOpen] = useState(false)
@@ -167,7 +168,9 @@ export default function AuctionDetailPage() {
         const listRes = await api.get<Listing>(`/listings/${id}`)
         setListing(listRes.data)
         const base = listRes.data.current_bid || listRes.data.starting_price
-        setAmount(String(base + (listRes.data.min_increment ?? 1)))
+        const minimumIncrement = listRes.data.min_increment ?? 1
+        setAmount(String(base + minimumIncrement))
+        setAutoBidIncrement(String(minimumIncrement))
       } catch (err) {
         setPageError((err as { message?: string }).message || 'Listing not found')
       }
@@ -197,6 +200,7 @@ export default function AuctionDetailPage() {
       setAutoBidOn(false)
       setSavedAutoBidActive(false)
       setMaxAutoBid('')
+      setAutoBidIncrement(String(listingRef.current?.min_increment ?? 1))
     }
 
     if (!listing?.id || !isBidderUser) {
@@ -215,6 +219,7 @@ export default function AuctionDetailPage() {
           setAutoBidOn(true)
           setSavedAutoBidActive(true)
           setMaxAutoBid(String(res.data.max_amount))
+          setAutoBidIncrement(String(res.data.auto_increment))
         } else {
           resetAutoBidState()
         }
@@ -278,20 +283,25 @@ export default function AuctionDetailPage() {
     setBidError(null); setBidMessage(null)
 
     const max = Number(maxAutoBid)
+    const increment = Number(autoBidIncrement)
     const min = listing.winner_id === user?.id ? listing.current_bid : minNextBid
+    const listingMinimumIncrement = listing.min_increment ?? 1
     if (new Date(listing.end_time).getTime() <= now) { setBidError('This auction has ended.'); return }
     if (listing.donor_id === user?.id)                      { setBidError('You cannot auto-bid on your own listing.'); return }
     if (isNaN(max) || max < min)                            { setBidError(`Maximum auto-bid must be at least $${min.toLocaleString()}.`); return }
+    if (isNaN(increment) || increment < listingMinimumIncrement) { setBidError(`Auto-bid increment must be at least $${listingMinimumIncrement.toLocaleString()}.`); return }
+    if (increment > max)                                    { setBidError('Auto-bid increment cannot be higher than your maximum auto-bid.'); return }
 
     setAutoBidSaving(true)
     try {
-      const res = await api.post<AutoBidResponse>('/bids/auto-bids', { listing_id: listing.id, max_amount: max })
+      const res = await api.post<AutoBidResponse>('/bids/auto-bids', { listing_id: listing.id, max_amount: max, auto_increment: increment })
       res.data.result.bids.forEach(applyAcceptedBid)
       setListing(prev => prev ? { ...prev, current_bid: res.data.result.currentBid, winner_id: res.data.result.winnerId } : prev)
       setSavedAutoBidActive(res.data.autoBid.is_active)
       setAutoBidOn(true)
       setMaxAutoBid(String(res.data.autoBid.max_amount))
-      setBidMessage('Auto-bid saved. Your maximum stays private.')
+      setAutoBidIncrement(String(res.data.autoBid.auto_increment))
+      setBidMessage('Auto-bid saved. Your maximum and increment stay private.')
     } catch (err) {
       setBidError((err as { message?: string }).message || 'Auto-bid failed. Please try again.')
     } finally {
@@ -308,6 +318,7 @@ export default function AuctionDetailPage() {
       setSavedAutoBidActive(false)
       setAutoBidOn(false)
       setMaxAutoBid('')
+      setAutoBidIncrement(String(listing.min_increment ?? 1))
       setBidMessage('Auto-bid cancelled.')
     } catch (err) {
       setBidError((err as { message?: string }).message || 'Could not cancel auto-bid.')
@@ -387,7 +398,7 @@ export default function AuctionDetailPage() {
               {/* ── Admin preview banner ───────────────────────────── */}
               {user?.roles?.includes('admin') && listing.status !== 'active' && (
                 <div className="mb-5 px-5 py-3 rounded-xl flex items-center gap-3"
-                  style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', color: '#92400E' }}>
+                  style={{ background: '#FEF9C3', border: '1px solid #CA8A04', color: '#713F12' }}>
                   <Shield className="w-4 h-4 flex-shrink-0" />
                   <div>
                     <p className="text-sm font-bold">Preview — {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)} Review</p>
@@ -642,7 +653,7 @@ export default function AuctionDetailPage() {
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--bfg-slate)' }}>Auto-Bid</p>
-                          <p className="text-[10px] mt-0.5" style={{ color: 'var(--bfg-text-muted)' }}>Bid automatically up to a limit</p>
+                          <p className="text-[10px] mt-0.5" style={{ color: 'var(--bfg-text-muted)' }}>Keeps bidding automatically up to your private limit</p>
                         </div>
                         {/* Toggle — pure CSS, no translate issues */}
                         <button
@@ -674,6 +685,27 @@ export default function AuctionDetailPage() {
                               style={{ color: 'var(--bfg-slate)' }}
                             />
                           </div>
+                          <div>
+                            <label className="block text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: 'var(--bfg-text-muted)' }}>
+                              Auto-bid Increment
+                            </label>
+                            <div className="flex items-center rounded-xl border overflow-hidden" style={{ borderColor: 'var(--bfg-beige)', background: '#fff' }}>
+                              <span className="pl-3 text-sm font-bold" style={{ color: 'var(--bfg-text-muted)' }}>$</span>
+                              <input
+                                type="number"
+                                min={listing.min_increment ?? 1}
+                                placeholder={`Min ${(listing.min_increment ?? 1).toLocaleString()}`}
+                                value={autoBidIncrement}
+                                onChange={e => setAutoBidIncrement(e.target.value)}
+                                className="flex-1 py-2.5 pr-3 text-sm bg-transparent outline-none"
+                                style={{ color: 'var(--bfg-slate)' }}
+                              />
+                            </div>
+                            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: 'var(--bfg-text-muted)' }}>
+                              Must be at least the listing minimum increment. Auto-bids only continue when the next
+                              generated bid can still meet the donor-defined minimum increment.
+                            </p>
+                          </div>
                           <button
                             type="button"
                             onClick={submitAutoBid}
@@ -683,7 +715,8 @@ export default function AuctionDetailPage() {
                             {autoBidSaving ? 'Saving Auto-Bid…' : savedAutoBidActive ? 'Update Auto-Bid' : 'Save Auto-Bid'}
                           </button>
                           <p className="text-[10px] leading-relaxed" style={{ color: 'var(--bfg-text-muted)' }}>
-                            Your maximum is only visible to you. Other bidders only see public bid amounts.
+                            Your maximum and increment are only visible to you. Auto-bid responses move by your increment,
+                            capped by your maximum, and stop once the next legal bid would exceed that maximum.
                           </p>
                         </div>
                       )}
@@ -698,18 +731,7 @@ export default function AuctionDetailPage() {
                           {autoBidSaving ? 'Cancelling…' : 'Cancel Saved Auto-Bid'}
                         </button>
                       )}
-                    </div>
-
-                    {listing.buy_now_price && (
-                      <button
-                        className="w-full py-3 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all"
-                        style={{ background: 'var(--bfg-slate)' }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#000'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'var(--bfg-slate)'}>
-                        Buy Now — ${listing.buy_now_price.toLocaleString()}
-                      </button>
-                    )}
-                  </>
+                    </div>                  </>
                 ) : !isAuthenticated ? (
                   <div className="rounded-xl px-4 py-5 text-center" style={{ background: 'var(--bfg-linen)', border: '1px solid var(--bfg-beige)' }}>
                     <p className="text-xs font-medium mb-3" style={{ color: 'var(--bfg-text-muted)' }}>

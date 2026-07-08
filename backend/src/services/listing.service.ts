@@ -16,11 +16,13 @@ const LOCKED_FIELDS = new Set([
   'charityName', 'charity_name'
 ]);
 
+// `draft` is no longer part of the donor-facing FR10 flow. New submissions go straight to
+// `pending`, and legacy drafts are hidden from the tracking dashboard.
 // `charity_review` is intentionally NOT editable — the listing is locked while the charity reviews it.
-// `rejected` is intentionally NOT editable — reject is a terminal decision (SFR09). A donor who wants
-// another attempt must create a new listing; the fixable path is `changes_requested` (request-changes).
-export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested'];
-export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['draft', 'pending', 'changes_requested', 'rejected', 'expired', 'cancelled'];
+// `rejected` is editable for the donor-facing resubmission path: once the donor updates the
+// listing, it is moved back to `pending` for the admin → charity review workflow again.
+export const DONOR_EDITABLE_STATUSES: ListingStatus[] = ['pending', 'changes_requested', 'rejected'];
+export const DONOR_DELETABLE_STATUSES: ListingStatus[] = ['pending', 'changes_requested', 'rejected', 'expired', 'cancelled'];
 const SAFE_IMAGE_URL = /^(data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+|\/api\/[^\s<>"']+|https?:\/\/[^\s<>"']+)$/i;
 
 // SFR07: reject (not just escape) title/description text containing script-like content,
@@ -108,52 +110,46 @@ const ensureOwnerOrAdmin = (listing: Listing, req: Request): void => {
   if (!isAdmin && listing.donor_id !== req.user?.id) throw forbidden('Access denied');
 };
 
+const campaignEndOfDayMs = (endDate: string | undefined): number | undefined => {
+  if (!endDate) return undefined;
+  // Campaigns store an end date, not a precise timestamp. For this Singapore-based
+  // project, treat that date as valid until 23:59:59.999 SGT so donors do not
+  // accidentally attach an auction that ends after the beneficiary campaign closes.
+  const dateOnly = endDate.slice(0, 10);
+  const value = Date.parse(`${dateOnly}T23:59:59.999+08:00`);
+  return Number.isFinite(value) ? value : undefined;
+};
+
+const ensureCampaignCoversAuctionWindow = (campaignEndDate: string | undefined, auctionEnd: Date): void => {
+  const campaignEnd = campaignEndOfDayMs(campaignEndDate);
+  if (campaignEnd !== undefined && auctionEnd.getTime() > campaignEnd) {
+    throw badRequest('The selected campaign ends before the auction ends. Please select a campaign that is still active for the full auction duration.', 'VALIDATION_ERROR', {
+      campaign_id: 'This campaign ends before the auction end date.',
+    });
+  }
+};
+
 export const createListing = async (body: Record<string, unknown>, req: Request): Promise<Listing> => {
   if (!req.user) throw forbidden();
   const starting = roundMoney(Number(body.starting_price ?? body.startingPrice));
-  const minIncrement = roundMoney(Number(body.min_increment ?? body.minIncrement ?? 5));
+  const rawMinIncrement = body.min_increment ?? body.minIncrement;
+  const minIncrement = roundMoney(Number(rawMinIncrement));
   const durationHours = Number(body.durationHours ?? 24);
-  if (!Number.isFinite(starting) || starting < 1) throw badRequest('Starting price must be at least 1.');
-  if (!Number.isFinite(minIncrement) || minIncrement < 1) throw badRequest('Minimum bid increment must be at least 1.');
-  if (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 720) throw badRequest('Auction duration must be 1 to 720 hours.');
 
-  // Parse optional price fields
-  const reserveRaw = body.reserve_price ?? body.reservePrice;
-  const buyNowRaw = body.buy_now_price ?? body.buyNowPrice;
-  const reservePrice = reserveRaw !== undefined && reserveRaw !== '' ? roundMoney(Number(reserveRaw)) : undefined;
-  const buyNowPrice = buyNowRaw !== undefined && buyNowRaw !== '' ? roundMoney(Number(buyNowRaw)) : undefined;
-  if (reservePrice !== undefined && (!Number.isFinite(reservePrice) || reservePrice < starting)) throw badRequest('Reserve price must be a valid number greater than or equal to the starting price.');
-  if (buyNowPrice !== undefined && (!Number.isFinite(buyNowPrice) || buyNowPrice <= starting)) throw badRequest('Buy-Now price must be greater than the starting price.');
+  if (!Number.isFinite(starting) || starting < 1) throw badRequest('Starting price must be at least 1.');
+  // FR08: the donor must explicitly set the minimum bid increment. Do not silently
+  // default it, otherwise different auctions can behave inconsistently.
+  if (rawMinIncrement === undefined || rawMinIncrement === '' || !Number.isFinite(minIncrement) || minIncrement < 1) {
+    throw badRequest('Minimum bid increment is required and must be at least 1.', 'VALIDATION_ERROR', {
+      min_increment: 'Minimum bid increment is required and must be at least 1.',
+    });
+  }
+  if (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 720) throw badRequest('Auction duration must be 1 to 720 hours.');
 
   const title = sanitizeListingText(body.title, 120, 'title');
   const description = sanitizeListingText(body.description, 1200, 'description');
   const category = sanitizeText(body.category, 60);
   if (title.length < 3 || description.length < 10 || category.length < 2) throw badRequest('Listing title, description, and category are required.');
-
-  // Validate campaign_id and resolve the charity name from the DB.
-  // In production, we strictly require a valid campaign ID.
-  // For legacy tests that still pass 'charityName' directly, we provide a fallback.
-  let campaignId = Number(body.campaign_id);
-  let charityName = '';
-
-  if (Number.isInteger(campaignId) && campaignId >= 1) {
-    const campaign = await getCampaignById(campaignId);
-    if (!campaign || campaign.status !== 'active') throw badRequest('The selected campaign is not active or does not exist.');
-    const parentCharity = await getCharityById(campaign.charity_id);
-    if (!parentCharity || parentCharity.status !== 'approved') throw badRequest('The charity linked to this campaign is not approved.');
-    charityName = parentCharity.organisationName;
-  } else if (process.env.NODE_ENV === 'test' && body.charityName) {
-    // Legacy fallback for test suite
-    campaignId = 1;
-    charityName = sanitizeText(String(body.charityName), 160);
-  } else {
-    throw badRequest('A valid campaign must be selected.');
-  }
-
-  // Every donor submission enters the two-stage review pipeline (SFR09). There is no admin
-  // shortcut to 'active' — admins cannot create listings (enforced at the route), preserving
-  // separation of duties between authoring and moderating.
-  const status: ListingStatus = 'pending';
 
   // Use explicit start/end times from the request if provided and valid; fall back to durationHours.
   const now = new Date();
@@ -171,6 +167,32 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
   const actualDuration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
   if (actualDuration > 720) throw badRequest('Auction duration cannot exceed 30 days (720 hours).');
 
+  // Validate campaign_id and resolve the charity name from the DB.
+  // In production, we strictly require a valid campaign ID.
+  // For legacy tests that still pass 'charityName' directly, we provide a fallback.
+  let campaignId = Number(body.campaign_id);
+  let charityName = '';
+
+  if (Number.isInteger(campaignId) && campaignId >= 1) {
+    const campaign = await getCampaignById(campaignId);
+    if (!campaign || campaign.status !== 'active') throw badRequest('The selected campaign is not active or does not exist.');
+    const parentCharity = await getCharityById(campaign.charity_id);
+    if (!parentCharity || parentCharity.status !== 'approved') throw badRequest('The charity linked to this campaign is not approved.');
+    ensureCampaignCoversAuctionWindow(campaign.end_date, endTime);
+    charityName = parentCharity.organisationName;
+  } else if (process.env.NODE_ENV === 'test' && body.charityName) {
+    // Legacy fallback for test suite
+    campaignId = 1;
+    charityName = sanitizeText(String(body.charityName), 160);
+  } else {
+    throw badRequest('A valid campaign must be selected.');
+  }
+
+  // Every donor submission enters the two-stage review pipeline (SFR09). There is no admin
+  // shortcut to 'active' — admins cannot create listings (enforced at the route), preserving
+  // separation of duties between authoring and moderating.
+  const status: ListingStatus = 'pending';
+
   const images = imagesFromUploads(req);
 
   const listing = await addListing({
@@ -182,15 +204,13 @@ export const createListing = async (body: Record<string, unknown>, req: Request)
     category,
     images,
     starting_price: starting,
-    reserve_price: reservePrice,
-    buy_now_price: buyNowPrice,
     status,
     start_time: startTime.toISOString(),
     end_time: endTime.toISOString(),
     charityName,
     min_increment: minIncrement
   });
-  await audit(req, 'LISTING_CREATED', { title, status, reservePrice, buyNowPrice, charityName, imageCount: images.length }, 'listing', listing.uuid, req.user.id);
+  await audit(req, 'LISTING_CREATED', { title, status, charityName, imageCount: images.length, minIncrement }, 'listing', listing.uuid, req.user.id);
   return listing;
 };
 
@@ -202,7 +222,7 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
   const isAdmin = req.user?.roles.includes('admin') ?? false;
   if (!isAdmin && !DONOR_EDITABLE_STATUSES.includes(listing.status)) {
     await audit(req, 'LISTING_EDIT_REJECTED_BY_STATUS', { status: listing.status }, 'listing', listing.uuid, req.user?.id);
-    throw forbidden('Only draft, pending, or changes-requested listings can be edited by the donor.');
+    throw forbidden('Only pending, changes-requested, or rejected listings can be edited by the donor.');
   }
 
   if (listing.status === 'active') {
@@ -224,15 +244,23 @@ export const updateListingDetails = async (uuid: string, body: Record<string, un
   if (body.condition && ['new', 'like_new', 'good', 'fair'].includes(String(body.condition))) listing.condition = String(body.condition) as Listing['condition'];
   listing.images = buildUpdatedImages(listing, body, req);
 
-  // A donor editing a changes-requested listing is resubmitting it: move it back into the admin
-  // review queue and clear the stale reviewer note, otherwise the admin pending list never surfaces
-  // it again and the edit is moot. `rejected` is terminal and never reaches here (not editable).
-  if (!isAdmin && listing.status === 'changes_requested') {
+  // A donor editing a changes-requested or rejected listing is resubmitting it.
+  // Move it back into the admin review queue and clear the stale reviewer note,
+  // otherwise the admin pending list never surfaces the updated listing again.
+  if (!isAdmin && (listing.status === 'changes_requested' || listing.status === 'rejected')) {
     const previousStatus = listing.status;
+    const previousReviewStage = listing.review_stage;
     listing.status = 'pending';
     listing.review_note = undefined;
     listing.review_stage = undefined;
-    await audit(req, 'LISTING_RESUBMITTED_FOR_REVIEW', { uuid, previousStatus }, 'listing', listing.uuid, req.user?.id);
+    await audit(
+      req,
+      'LISTING_RESUBMITTED_FOR_REVIEW',
+      { uuid, previousStatus, previousReviewStage },
+      'listing',
+      listing.uuid,
+      req.user?.id,
+    );
   }
 
   await updateListing(listing);
@@ -264,7 +292,11 @@ export const listMyListings = async (req: Request): Promise<Listing[]> => {
 
   const all = await listListings();
   if (req.user.roles.includes('admin')) return all;
-  return all.filter(listing => listing.donor_id === req.user?.id);
+
+  // FR10 change: donor-facing listing views no longer surface draft records.
+  // Keeping the database value avoids breaking older rows, but the UI/API now treats
+  // submission as pending-first instead of draft-first.
+  return all.filter(listing => listing.donor_id === req.user?.id && listing.status !== 'draft');
 };
 
 // SFR09 stage 1 (admin gate): approving does NOT publish — it forwards the listing to the
@@ -330,9 +362,17 @@ export const provideTracking = async (uuid: string, trackingNumber: string, cour
   const heldPayment = payments.find(p => p.escrow_state === 'held');
   if (!heldPayment) throw badRequest('Payment must be completed before providing shipping details.', 'SHIPPING_PAYMENT_NOT_HELD');
 
+  // Validate format before sanitizing — reject garbage early with a user-readable message
+  const TRACKING_RE = /^[A-Za-z0-9 \-]{4,50}$/;
+  const COURIER_RE = /^[A-Za-z0-9 \-\.&]{2,60}$/;
+  const rawTracking = String(trackingNumber ?? '').trim();
+  const rawCourier = String(courier ?? '').trim();
+  if (!TRACKING_RE.test(rawTracking)) throw badRequest('Tracking number must be 4–50 alphanumeric characters, hyphens, or spaces.', 'TRACKING_INVALID_FORMAT');
+  if (!COURIER_RE.test(rawCourier)) throw badRequest('Courier name must be 2–60 alphanumeric characters, spaces, hyphens, periods, or ampersands.', 'COURIER_INVALID_FORMAT');
+
   // Sanitize inputs to prevent stored XSS
-  const cleanedTracking = sanitizeText(trackingNumber, 120);
-  const cleanedCourier = sanitizeText(courier, 60);
+  const cleanedTracking = sanitizeText(rawTracking, 50);
+  const cleanedCourier = sanitizeText(rawCourier, 60);
   if (!cleanedTracking || !cleanedCourier) throw badRequest('Tracking number and courier name are required.');
 
   let delivery = await getDeliveryByListingId(listing.id);
@@ -342,6 +382,9 @@ export const provideTracking = async (uuid: string, trackingNumber: string, cour
   delivery.courier = cleanedCourier;
   delivery.shipped_at = new Date().toISOString();
   await updateDelivery(delivery);
+
+  listing.status = 'shipped';
+  await updateListing(listing);
 
   await audit(req, 'LISTING_SHIPPED', { uuid, tracking: cleanedTracking, courier: cleanedCourier }, 'listing', listing.uuid, req.user?.id);
   return { delivery, listing };
@@ -361,6 +404,9 @@ export const confirmDelivery = async (uuid: string, req: Request): Promise<{ del
   delivery.confirmed_at = new Date().toISOString();
   await updateDelivery(delivery);
 
+  listing.status = 'delivered';
+  await updateListing(listing);
+
   // Release escrow to charity
   await releaseEscrowForListing(listing.id, req);
 
@@ -371,7 +417,32 @@ export const confirmDelivery = async (uuid: string, req: Request): Promise<{ del
 const ALLOWED_SORTS = new Set(['ending_soon', 'newest', 'price_low', 'price_high']);
 const ALLOWED_CONDITIONS = new Set(['new', 'like_new', 'good', 'fair']);
 
-export const searchPublicListings = async (query: Record<string, unknown>): Promise<Listing[]> => {
+const isPubliclyBiddableNow = (listing: Listing, nowMs = Date.now()): boolean => {
+  const startMs = new Date(listing.start_time).getTime();
+  const endMs = new Date(listing.end_time).getTime();
+
+  // A listing is only public/biddable after the start time and before the end time.
+  // This keeps approved future auctions out of /auctions while still letting donors
+  // track them as UPCOMING in FR10.
+  return listing.status === 'active'
+    && Number.isFinite(startMs)
+    && Number.isFinite(endMs)
+    && startMs <= nowMs
+    && endMs > nowMs;
+};
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+
+export const searchPublicListings = async (query: Record<string, unknown>): Promise<PaginatedResult<Listing>> => {
   const q = sanitizeText(query.q ?? query.search, 80);
   const category = sanitizeText(query.category, 60);
   if (q && !isSafeSearchQuery(q)) throw badRequest('Search query was rejected because it contained malformed or unsafe syntax.', 'UNSAFE_SEARCH_QUERY');
@@ -384,14 +455,19 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   const condition = typeof query.condition === 'string' && ALLOWED_CONDITIONS.has(query.condition) ? query.condition : undefined;
   const sort = typeof query.sort === 'string' && ALLOWED_SORTS.has(query.sort) ? query.sort : 'ending_soon';
 
+  // NFR01: Parse pagination params with sensible bounds to keep response size predictable.
+  const page = Math.max(1, Number(query.page) || 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(query.pageSize) || DEFAULT_PAGE_SIZE));
+
   if (priceMin !== undefined && !Number.isFinite(priceMin)) throw badRequest('Invalid minimum price.');
   if (priceMax !== undefined && !Number.isFinite(priceMax)) throw badRequest('Invalid maximum price.');
   if (priceMin !== undefined && priceMax !== undefined && priceMin > priceMax) throw badRequest('Minimum price cannot exceed maximum price.');
   if (campaignId !== undefined && (!Number.isInteger(campaignId) || campaignId < 1)) throw badRequest('Invalid campaign filter.');
 
-  // SFR: listActiveListings() only returns status='active' — draft, pending, rejected,
-  // cancelled, expired and sold listings are never included in search results.
-  const active = await listActiveListings();
+  // SFR/FR10: listActiveListings() only returns status='active'. The extra time-window
+  // check ensures UPCOMING active listings are approved but not yet publicly listed/biddable.
+  const nowMs = Date.now();
+  const active = (await listActiveListings()).filter(listing => isPubliclyBiddableNow(listing, nowMs));
 
   const results = active.filter(l => {
     const matchesQ = !q || `${l.title} ${l.description} ${l.charityName}`.toLowerCase().includes(q.toLowerCase());
@@ -409,13 +485,25 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   else if (sort === 'price_high') results.sort((a, b) => b.current_bid - a.current_bid);
   else results.sort((a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime());
 
-  return results;
+  const total = results.length;
+  const totalPages = Math.ceil(total / pageSize) || 1;
+  const startIndex = (page - 1) * pageSize;
+  const data = results.slice(startIndex, startIndex + pageSize);
+
+  return { data, total, page, pageSize, totalPages };
 };
 
 export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
-  if (!isAdmin && listing.status !== 'active') throw notFound('Listing not found');
+
+  // Allow viewing of resolved listing statuses (sold, shipped, delivered, expired)
+  // so that bidders can see their won/ended auctions. Active listings still require
+  // the time window check (future auctions remain hidden until they start).
+  const terminalStatuses = new Set<Listing['status']>(['sold', 'shipped', 'delivered', 'expired']);
+  if (!isAdmin && !terminalStatuses.has(listing.status) && !isPubliclyBiddableNow(listing)) {
+    throw notFound('Listing not found');
+  }
 
   // Attach campaign details (includes total_raised, description) for the auction detail page.
   let campaign: import('../types/domain').Campaign | undefined;
@@ -433,7 +521,11 @@ export const getAdminListings = async (status?: string): Promise<Listing[]> => {
 };
 
 export const getDonorListings = async (donorId: number): Promise<{ listings: Array<Listing & { can_ship?: boolean; payment_held?: boolean; has_shipped?: boolean; payment_released?: boolean }>; stats: DonorStats }> => {
-  const listings = await listListingsByDonor(donorId);
+  const allListings = await listListingsByDonor(donorId);
+
+  // FR10 change: hide legacy draft records from donor management. New listings are created
+  // directly as pending, so this only affects older seeded/local data.
+  const listings = allListings.filter(listing => listing.status !== 'draft');
 
   // For sold listings, check escrow state (held/released) and shipping status
   const paymentPromises = listings
@@ -468,7 +560,7 @@ export const getDonorListings = async (donorId: number): Promise<{ listings: Arr
     active: listings.filter(l => l.status === 'active').length,
     sold: listings.filter(l => l.status === 'sold').length,
     pending: listings.filter(l => l.status === 'pending').length,
-    draft: listings.filter(l => l.status === 'draft').length,
+    draft: 0,
     totalRaised: listings.filter(l => l.status === 'sold').reduce((sum, l) => sum + l.current_bid, 0),
   };
   return { listings: listingsWithPayment, stats };

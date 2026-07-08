@@ -116,8 +116,6 @@ export interface Listing {
   category: string;
   images: string[];
   starting_price: number;
-  reserve_price?: number;
-  buy_now_price?: number;
   current_bid: number;
   bid_count: number;
   status: ListingStatus;
@@ -136,10 +134,13 @@ export interface Listing {
 
 export interface DonorListingStatusSummary {
   total: number;
+  // Draft listings are intentionally hidden from the FR10 donor tracking view.
   draft: number;
   pending: number;
   changes_requested: number;
   charity_review: number;
+  // Upcoming is a derived display bucket: status='active' but start_time is still in the future.
+  upcoming: number;
   active: number;
   sold: number;
   shipped: number;
@@ -152,6 +153,9 @@ export interface DonorListingStatusSummary {
 export interface DonorListingTrackingItem extends Listing {
   // Backend-owned user interface hints for FR10. The frontend can display these
   // directly without reimplementing auction status rules in the browser.
+  // For example, an approved listing whose start time is still in the future remains
+  // status='active' in the database, but is grouped as 'upcoming' for donor tracking.
+  trackingFilterStatus: 'pending' | 'upcoming' | 'active' | 'sold' | 'expired' | 'rejected' | 'cancelled' | 'other';
   statusLabel: string;
   statusMessage: string;
   timelineLabel: string;
@@ -185,6 +189,9 @@ export interface AutoBidSetting {
   bidder_id: number;
   bidder_username: string;
   max_amount: number;
+  // FR12: bidder-selected public step used when the backend places automatic response bids.
+  // The value is stored with the private max_amount, but only the owner/admin views it.
+  auto_increment: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -230,10 +237,12 @@ export interface Receipt {
   receipt_ref: string;
   integrity_hash: string;
   generated_at: string;
+  bidder_username: string;
+  payment_ref: string;
 }
 
-export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired';
-export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded';
+export type PaymentStatus = 'pending' | 'successful' | 'expired';
+export type EscrowState = 'not_held' | 'held' | 'released';
 
 export interface Payment {
   id: number;
@@ -259,6 +268,7 @@ export interface PaymentWithListing extends Payment {
   charity_name: string;
   has_shipping: boolean;
   listing_image?: string;
+  listing_status?: ListingStatus;
 }
 
 export interface PasswordResetToken {

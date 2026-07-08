@@ -74,11 +74,13 @@ function ReceiptModal({ receipt, onClose }: { receipt: Receipt; onClose: () => v
         {/* body */}
         <div className="px-6 py-5 space-y-4">
           <div className="rounded-xl p-4 space-y-3" style={{ background: C.linen, border: `1px solid ${C.beige}` }}>
+            <Row label="Donor" value={receipt.bidder_username} />
             <Row label="Item" value={receipt.item_title} />
             <Row label="Beneficiary" value={receipt.charity_name} />
             <Row label="Amount Paid" value={money(receipt.amount)} highlight />
             <Row label="Generated" value={new Date(receipt.generated_at).toLocaleString()} />
             <Row label="Receipt ID" value={receipt.uuid} mono />
+            <Row label="Payment Ref" value={receipt.payment_ref} mono />
           </div>
           <p className="text-xs text-center" style={{ color: C.muted }}>
             This receipt is immutable and cannot be modified after generation.
@@ -242,8 +244,7 @@ export default function PaymentDeadlinesPage() {
     setLoading(true)
     try {
       const res = await api.get<{ data: PaymentWithListing[]; total: number }>('/payments/mine')
-      // Only show pending payments — exclude successful/expired ones
-      setPayments(res.data.data.filter(p => p.status === 'pending'))
+      setPayments(res.data.data)
       setError(null)
     } catch (err) {
       setError((err as { message?: string }).message || 'Failed to load payment deadlines')
@@ -269,7 +270,7 @@ export default function PaymentDeadlinesPage() {
     setMessage(null)
     try {
       await api.post(`/payments/${uuid}/complete`)
-      setMessage('Payment completed successfully. The funds are now marked as held in escrow.')
+      setMessage('Payment completed successfully. Your donation receipt is now available.')
       await loadPayments()
     } catch (err) {
       setError((err as { message?: string }).message || 'Payment could not be completed')
@@ -299,7 +300,7 @@ export default function PaymentDeadlinesPage() {
     setError(null)
     setMessage(null)
     try {
-      await api.post(`/listings/${payment.listing_uuid}/deliver`)
+      await api.post(`/listings/${payment.listing_uuid}/confirm-delivery`)
       setMessage('Delivery confirmed. The escrow has been released to the charity.')
       await loadPayments()
     } catch (err) {
@@ -320,7 +321,7 @@ export default function PaymentDeadlinesPage() {
             </div>
             <h1 className="text-3xl font-black" style={{ color: C.slate }}>Payment Deadlines</h1>
             <p className="mt-2" style={{ color: C.muted }}>
-              Complete payment before the deadline. Missed payments are automatically reassigned to the next valid bidder.
+              Complete payment before the deadline. If payment is missed, the auction expires instead of being reassigned to another bidder.
             </p>
           </div>
           <button type="button" onClick={loadPayments}

@@ -44,31 +44,27 @@ const buildPaymentRef = (listingId: number): string => {
 
 const isDeadlineOver = (payment: Payment): boolean => new Date(payment.payment_deadline).getTime() <= Date.now();
 
-const uniqueHighestValidBid = (bids: Bid[], excludedBidderIds: Set<number>): Bid | undefined => {
+const uniqueHighestBid = (bids: Bid[]): Bid | undefined => {
   const seen = new Set<number>();
 
   for (const bid of bids) {
     if (seen.has(bid.bidder_id)) continue;
     seen.add(bid.bidder_id);
 
-    // A bidder becomes invalid for this listing only after missing/failing a payment
-    // offer for the same auction. This gives the next highest bidder a fair chance.
-    if (!excludedBidderIds.has(bid.bidder_id)) return bid;
+    // Bids are returned highest amount first by the repository. Keeping only the
+    // first bid per bidder prevents a single bidder's repeated bids from crowding
+    // out other users while still selecting the highest valid winner.
+    return bid;
   }
 
   return undefined;
-};
-
-const invalidBidderIdsForListing = (payments: Payment[]): Set<number> => {
-  const invalidStatuses = new Set<Payment['status']>(['expired', 'failed']);
-  return new Set(payments.filter(payment => invalidStatuses.has(payment.status)).map(payment => payment.bidder_id));
 };
 
 const createPaymentOffer = async (
   listing: Listing,
   winningBid: Bid,
   req: Request | undefined,
-  action: 'PAYMENT_OFFER_CREATED' | 'PAYMENT_OFFER_REASSIGNED',
+  action: 'PAYMENT_OFFER_CREATED',
   extraPayload: Record<string, unknown> = {},
 ): Promise<Payment> => {
   const payment = await addPayment({
@@ -83,7 +79,8 @@ const createPaymentOffer = async (
   });
 
   // The listing stays as sold while payment is pending. The current winner_id points
-  // to whoever currently owns the payment offer, not necessarily the original top bid.
+  // to the original winning bidder only. Missed payment deadlines now expire the
+  // auction instead of reassigning it, which avoids collusion-friendly fallback offers.
   listing.status = 'sold';
   listing.winner_id = winningBid.bidder_id;
   listing.current_bid = payment.amount;
@@ -110,7 +107,7 @@ const createPaymentOffer = async (
 const expireListingWithoutWinner = async (
   listing: Listing,
   req: Request | undefined,
-  action: 'AUCTION_EXPIRED_NO_BIDS' | 'AUCTION_EXPIRED_NO_VALID_BIDDERS',
+  action: 'AUCTION_EXPIRED_NO_BIDS' | 'AUCTION_EXPIRED_NO_VALID_BIDDERS' | 'AUCTION_EXPIRED_PAYMENT_DEADLINE_MISSED',
   payload: Record<string, unknown> = {},
 ): Promise<void> => {
   listing.status = 'expired';
@@ -132,8 +129,7 @@ const closeEndedActiveListing = async (listingId: number, req?: Request, force =
     if (existingPending) return false;
 
     const bids = await getBidsForListing(listing.id);
-    const payments = await getPaymentsForListing(listing.id);
-    const winningBid = uniqueHighestValidBid(bids, invalidBidderIdsForListing(payments));
+    const winningBid = uniqueHighestBid(bids);
 
     if (!winningBid) {
       await expireListingWithoutWinner(listing, req, 'AUCTION_EXPIRED_NO_BIDS');
@@ -144,7 +140,7 @@ const closeEndedActiveListing = async (listingId: number, req?: Request, force =
     return true;
   });
 
-const expireOverduePaymentAndOfferNext = async (payment: Payment, req?: Request): Promise<boolean> => {
+const expireOverduePaymentAndListing = async (payment: Payment, req?: Request): Promise<boolean> => {
   if (payment.status !== 'pending' || !isDeadlineOver(payment)) return false;
 
   const listing = await getListingById(payment.listing_id);
@@ -168,21 +164,17 @@ const expireOverduePaymentAndOfferNext = async (payment: Payment, req?: Request)
     req?.user?.id,
   );
 
-  const bids = await getBidsForListing(payment.listing_id);
-  const payments = await getPaymentsForListing(payment.listing_id);
-  const nextBid = uniqueHighestValidBid(bids, invalidBidderIdsForListing(payments));
-
-  if (!nextBid) {
-    await expireListingWithoutWinner(listing, req, 'AUCTION_EXPIRED_NO_VALID_BIDDERS', {
-      expiredPaymentUuid: payment.uuid,
-    });
-    return true;
-  }
-
-  await createPaymentOffer(listing, nextBid, req, 'PAYMENT_OFFER_REASSIGNED', {
-    previousPaymentUuid: payment.uuid,
-    previousBidderId: payment.bidder_id,
+  // FR14 change: do not offer the item to the next highest bidder after a missed
+  // payment. Reassignment can be abused by colluding bidders: one account can bid
+  // very high, intentionally miss the deadline, and let a second account receive
+  // the item at a much lower price. Expiring the auction is simpler, safer, and
+  // keeps the closing result accountable.
+  await expireListingWithoutWinner(listing, req, 'AUCTION_EXPIRED_PAYMENT_DEADLINE_MISSED', {
+    expiredPaymentUuid: payment.uuid,
+    expiredBidderId: payment.bidder_id,
+    expiredAmount: payment.amount,
   });
+
   return true;
 };
 
@@ -190,7 +182,7 @@ const processOverduePaymentForListing = async (listingId: number, req?: Request)
   withListingLock(listingId, async () => {
     const pendingPayment = await getPendingPaymentForListing(listingId);
     if (!pendingPayment) return false;
-    return expireOverduePaymentAndOfferNext(pendingPayment, req);
+    return expireOverduePaymentAndListing(pendingPayment, req);
   });
 
 export const processAuctionDeadlines = async (req?: Request): Promise<{ processed: number }> => {
@@ -203,8 +195,8 @@ export const processAuctionDeadlines = async (req?: Request): Promise<{ processe
     }
   }
 
-  // Sold listings may still have pending payments. When one is overdue, move the
-  // offer to the next valid bidder or expire the listing when nobody is left.
+  // Sold listings may still have pending payments. When one is overdue, expire
+  // both the payment offer and auction instead of reassigning to the next bidder.
   const listings = await listListings();
   for (const listing of listings.filter(item => item.status === 'sold')) {
     if (await processOverduePaymentForListing(listing.id, req)) processed += 1;
@@ -239,8 +231,8 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
     if (payment.status !== 'pending') throw badRequest('This payment offer is no longer pending.', 'PAYMENT_NOT_PENDING');
 
     if (isDeadlineOver(payment)) {
-      await expireOverduePaymentAndOfferNext(payment, req);
-      throw badRequest('Payment deadline has passed. The offer has been moved to the next valid bidder.', 'PAYMENT_DEADLINE_PASSED');
+      await expireOverduePaymentAndListing(payment, req);
+      throw badRequest('Payment deadline has passed. The auction has expired.', 'PAYMENT_DEADLINE_PASSED');
     }
 
     const listing = await getListingById(payment.listing_id);
@@ -260,6 +252,11 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
     listing.status = 'sold';
     await updateListing(listing);
 
+    // Generate receipt immediately when payment is completed — the bidder gets
+    // their donation receipt right away instead of waiting for delivery confirmation.
+    const { generateReceipt: genReceipt } = await import('./receipt.service');
+    await genReceipt(payment, listing, req.user?.username ?? 'bidder');
+
     await audit(
       req,
       'PAYMENT_COMPLETED',
@@ -274,17 +271,10 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
 };
 
 export const releaseEscrowForListing = async (listingId: number, req: Request): Promise<void> => {
-  const { getPaymentsForListing: getPayments, updatePayment: updPayment, getListingById: getListing } = await import('../repositories');
+  const { getPaymentsForListing: getPayments, updatePayment: updPayment } = await import('../repositories');
   const payments = await getPayments(listingId);
   const heldPayment = payments.find(p => p.escrow_state === 'held');
   if (!heldPayment) return;
-
-  // Generate receipt BEFORE releasing escrow — no receipt, no payout
-  const { generateReceipt: genReceipt } = await import('./receipt.service');
-  const listing = await getListing(listingId);
-  if (listing) {
-    await genReceipt(heldPayment, listing, req.user?.username ?? 'bidder');
-  }
 
   heldPayment.escrow_state = 'released';
   await updPayment(heldPayment);

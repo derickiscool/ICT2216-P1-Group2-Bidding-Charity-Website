@@ -141,8 +141,6 @@ interface ListingRow {
   category: string;
   images: string[];
   starting_price: number | string;
-  reserve_price: number | string | null;
-  buy_now_price: number | string | null;
   current_bid: number | string;
   bid_count: number;
   status: ListingStatus;
@@ -185,6 +183,7 @@ interface AutoBidRow {
   bidder_id: number;
   bidder_username: string;
   max_amount: number | string;
+  auto_increment: number | string;
   is_active: boolean;
   created_at: DbDate;
   updated_at: DbDate;
@@ -205,8 +204,8 @@ interface PaymentRow {
   bidder_id: number;
   amount: number | string;
   payment_ref: string;
-  escrow_state: 'not_held' | 'held' | 'released' | 'refunded';
-  status: 'pending' | 'successful' | 'failed' | 'expired';
+  escrow_state: 'not_held' | 'held' | 'released';
+  status: 'pending' | 'successful' | 'expired';
   payment_deadline: DbDate;
   offered_at: DbDate;
   paid_at: DbDate | null;
@@ -220,6 +219,7 @@ interface PaymentWithListingRow extends PaymentRow {
   charity_name?: string;
   has_shipping?: boolean;
   listing_image?: string;
+  listing_status?: ListingStatus;
 }
 
 interface AuditEventRow {
@@ -248,6 +248,8 @@ interface ReceiptRow {
   receipt_ref: string;
   integrity_hash: string;
   generated_at: DbDate;
+  bidder_username: string;
+  payment_ref: string;
 }
 
 const USER_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
@@ -380,8 +382,6 @@ const mapListing = (row: ListingRow): Listing => ({
   category: row.category,
   images: Array.isArray(row.images) ? row.images : [],
   starting_price: Number(row.starting_price),
-  reserve_price: optionalNumber(row.reserve_price),
-  buy_now_price: optionalNumber(row.buy_now_price),
   current_bid: Number(row.current_bid),
   bid_count: Number(row.bid_count),
   status: row.status,
@@ -413,6 +413,7 @@ const mapAutoBid = (row: AutoBidRow): AutoBidSetting => ({
   bidder_id: Number(row.bidder_id),
   bidder_username: row.bidder_username,
   max_amount: Number(row.max_amount),
+  auto_increment: Number(row.auto_increment),
   is_active: row.is_active,
   created_at: toIso(row.created_at),
   updated_at: toIso(row.updated_at),
@@ -461,6 +462,7 @@ const mapPaymentWithListing = (row: PaymentWithListingRow): PaymentWithListing =
   charity_name: row.charity_name ?? '',
   has_shipping: row.has_shipping ?? false,
   listing_image: row.listing_image ?? undefined,
+  listing_status: row.listing_status ?? undefined,
 });
 
 const mapReceipt = (row: ReceiptRow): Receipt => ({
@@ -475,6 +477,8 @@ const mapReceipt = (row: ReceiptRow): Receipt => ({
   receipt_ref: row.receipt_ref,
   integrity_hash: row.integrity_hash,
   generated_at: toIso(row.generated_at),
+  bidder_username: row.bidder_username,
+  payment_ref: row.payment_ref,
 });
 
 const mapAuditEvent = (row: AuditEventRow): AuditEvent => ({
@@ -786,6 +790,10 @@ const updateCharity = async (record: CharityOrganisation): Promise<void> => {
   );
 };
 
+const deleteCharityByUuid = async (uuid: string): Promise<void> => {
+  await query('DELETE FROM charities WHERE uuid = $1', [uuid]);
+};
+
 const getCharityById = async (id: number): Promise<CharityOrganisation | undefined> => {
   const row = await firstRow<CharityRow>('SELECT * FROM charities WHERE id = $1 LIMIT 1', [id]);
   return row ? mapCharity(row) : undefined;
@@ -945,9 +953,9 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
   const row = await firstRow<ListingRow>(
     `INSERT INTO listings
        (donor_id, campaign_id, title, description, condition, category, images, starting_price,
-        reserve_price, buy_now_price, current_bid, bid_count, status, start_time, end_time,
-        charity_name, min_increment, review_note, review_stage)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, 0, $11, $12, $13, $14, $15, $16, $17)
+        current_bid, bid_count, status, start_time, end_time, charity_name, min_increment,
+        review_note, review_stage)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, 0, $9, $10, $11, $12, $13, $14, $15)
      RETURNING *`,
     [
       input.donor_id,
@@ -958,8 +966,6 @@ const addListing = async (input: NewListingInput): Promise<Listing> => {
       input.category,
       input.images,
       input.starting_price,
-      input.reserve_price ?? null,
-      input.buy_now_price ?? null,
       input.status,
       input.start_time,
       input.end_time,
@@ -987,10 +993,10 @@ const updateListing = async (listing: Listing): Promise<void> => {
   await query(
     `UPDATE listings
      SET donor_id = $2, campaign_id = $3, title = $4, description = $5, condition = $6,
-         category = $7, images = $8, starting_price = $9, reserve_price = $10,
-         buy_now_price = $11, current_bid = $12, bid_count = $13, status = $14,
-         start_time = $15, end_time = $16, winner_id = $17, charity_name = $18,
-         min_increment = $19, review_note = $20, review_stage = $21
+         category = $7, images = $8, starting_price = $9, current_bid = $10,
+         bid_count = $11, status = $12, start_time = $13, end_time = $14,
+         winner_id = $15, charity_name = $16, min_increment = $17, review_note = $18,
+         review_stage = $19
      WHERE id = $1`,
     [
       listing.id,
@@ -1002,8 +1008,6 @@ const updateListing = async (listing: Listing): Promise<void> => {
       listing.category,
       listing.images,
       listing.starting_price,
-      listing.reserve_price ?? null,
-      listing.buy_now_price ?? null,
       listing.current_bid,
       listing.bid_count,
       listing.status,
@@ -1122,15 +1126,16 @@ const getBidsByBidder = async (bidderId: number): Promise<BidWithListing[]> => {
 
 const upsertAutoBid = async (input: NewAutoBidInput): Promise<AutoBidSetting> => {
   const row = await firstRow<AutoBidRow>(
-    `INSERT INTO auto_bids (listing_id, bidder_id, bidder_username, max_amount, is_active)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO auto_bids (listing_id, bidder_id, bidder_username, max_amount, auto_increment, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (listing_id, bidder_id) DO UPDATE SET
        bidder_username = EXCLUDED.bidder_username,
        max_amount = EXCLUDED.max_amount,
+       auto_increment = EXCLUDED.auto_increment,
        is_active = EXCLUDED.is_active,
        updated_at = NOW()
      RETURNING *`,
-    [input.listing_id, input.bidder_id, input.bidder_username, input.max_amount, input.is_active],
+    [input.listing_id, input.bidder_id, input.bidder_username, input.max_amount, input.auto_increment, input.is_active],
   );
   if (!row) throw new Error('Failed to save auto-bid setting.');
   return mapAutoBid(row);
@@ -1221,11 +1226,13 @@ const addReceipt = async (input: {
   charity_name: string;
   receipt_ref: string;
   integrity_hash: string;
+  bidder_username: string;
+  payment_ref: string;
 }): Promise<Receipt> => {
   const row = await firstRow<ReceiptRow>(
-    `INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [input.payment_id, input.listing_id, input.bidder_id, input.item_title, input.amount, input.charity_name, input.receipt_ref, input.integrity_hash],
+    `INSERT INTO receipts (payment_id, listing_id, bidder_id, item_title, amount, charity_name, receipt_ref, integrity_hash, bidder_username, payment_ref)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [input.payment_id, input.listing_id, input.bidder_id, input.item_title, input.amount, input.charity_name, input.receipt_ref, input.integrity_hash, input.bidder_username, input.payment_ref],
   );
   if (!row) throw new Error('Failed to create receipt.');
   return mapReceipt(row);
@@ -1233,6 +1240,11 @@ const addReceipt = async (input: {
 
 const getReceiptByUuid = async (uuid: string): Promise<Receipt | undefined> => {
   const row = await firstRow<ReceiptRow>('SELECT * FROM receipts WHERE uuid = $1 LIMIT 1', [uuid]);
+  return row ? mapReceipt(row) : undefined;
+};
+
+const getReceiptByPaymentId = async (paymentId: number): Promise<Receipt | undefined> => {
+  const row = await firstRow<ReceiptRow>('SELECT * FROM receipts WHERE payment_id = $1 LIMIT 1', [paymentId]);
   return row ? mapReceipt(row) : undefined;
 };
 
@@ -1308,12 +1320,13 @@ const getPendingPaymentForListing = async (listingId: number): Promise<Payment |
 const listPaymentsByBidder = async (bidderId: number): Promise<PaymentWithListing[]> => {
   const rows = await allRows<PaymentWithListingRow>(
     `SELECT
-       p.*,
-       l.uuid AS listing_uuid,
-       l.title AS listing_title,
-       l.charity_name AS charity_name,
-       (d.tracking_number IS NOT NULL) AS has_shipping,
-       l.images[1] AS listing_image
+        p.*,
+        l.uuid AS listing_uuid,
+        l.title AS listing_title,
+        l.charity_name AS charity_name,
+        (d.tracking_number IS NOT NULL) AS has_shipping,
+        l.images[1] AS listing_image,
+        l.status AS listing_status
      FROM payments p
      INNER JOIN listings l ON l.id = p.listing_id
      LEFT JOIN deliveries d ON d.listing_id = p.listing_id
@@ -1379,6 +1392,7 @@ export const seedDemoData = async (): Promise<void> => {
     { email: 'donor@bidforgood.test', username: 'donor', full_name: 'Demo Donor', roles: ['donor'] },
     { email: 'bidder@bidforgood.test', username: 'bidder', full_name: 'Demo Bidder', roles: ['bidder'] },
     { email: 'charity@bidforgood.test', username: 'charity', full_name: 'Demo Charity', roles: ['charity'] },
+    { email: 'charity3@bidforgood.test', username: 'charity3', full_name: 'Demo Charity Three', roles: ['charity'] },
   ];
   const userIds: Record<string, number> = {};
   for (const demoUser of demoUsers) {
@@ -1474,6 +1488,7 @@ export const postgresRepository: BidForGoodRepository = {
   getCharityByOwnerUserId,
   listCharities,
   updateCharity,
+  deleteCharityByUuid,
 
   addCampaign,
   getCampaignById,
@@ -1512,6 +1527,7 @@ export const postgresRepository: BidForGoodRepository = {
 
   addReceipt,
   getReceiptByUuid,
+  getReceiptByPaymentId,
   getReceiptsByBidder,
 
   addPayment,

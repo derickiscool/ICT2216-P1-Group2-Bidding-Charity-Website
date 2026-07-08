@@ -31,7 +31,14 @@ const assertActiveBiddableListing = async (listingId: number, bidderId: number):
 
   const listing = await getListingById(listingId);
   if (!listing || listing.status !== 'active') throw notFound('Active listing not found');
-  if (new Date(listing.end_time).getTime() <= Date.now()) {
+
+  const now = Date.now();
+  if (new Date(listing.start_time).getTime() > now) {
+    // Approved future auctions are visible to the donor as UPCOMING, but cannot receive bids
+    // or be surfaced publicly until their start time arrives.
+    throw badRequest('Auction has not started yet.', 'AUCTION_NOT_STARTED');
+  }
+  if (new Date(listing.end_time).getTime() <= now) {
     await closeExpiredAuctions();
     throw badRequest('Auction has ended.');
   }
@@ -53,72 +60,111 @@ interface AutoBidCandidate {
   bidderId: number;
   bidderUsername: string;
   maxAmount: number;
+  autoIncrement: number;
   updatedAt: number;
-  source: 'auto' | 'public';
 }
 
-// Calculates the public bid needed to keep the highest auto-bidder in front.
-// The private max_amount is used only inside the backend and is never returned
-// through the public listing/bid-history APIs, which keeps FR12 fair.
+const compareAutoBidPriority = (a: AutoBidCandidate, b: AutoBidCandidate): number => {
+  // Higher private maximum wins. If the maximums match, the earlier setting
+  // keeps priority, so bidders cannot probe another user's maximum by trying
+  // the same value later.
+  if (b.maxAmount !== a.maxAmount) return b.maxAmount - a.maxAmount;
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt - b.updatedAt;
+  return a.bidderId - b.bidderId;
+};
+
+const canTakeTiePriority = (
+  candidate: AutoBidCandidate,
+  currentBid: number,
+  currentWinner: AutoBidCandidate | undefined,
+): boolean => {
+  if (candidate.maxAmount !== currentBid) return false;
+
+  // If the current public winner has no auto-bid setting, they are normally the
+  // manual bidder who just matched an existing auto-bid maximum. In that case,
+  // the existing auto-bidder keeps the tie priority at the same amount.
+  if (!currentWinner) return true;
+
+  return compareAutoBidPriority(candidate, currentWinner) < 0;
+};
+
+// Resolve automatic bidding until the auction reaches a stable winner.
+//
+// This mirrors proxy-style bidding while still respecting the donor-defined
+// listing minimum increment for every public bid:
+// - a bidder's maximum remains private;
+// - same maximums are allowed so bidders cannot probe another user's setting;
+// - the highest maximum wins;
+// - if maximums match, the earlier auto-bid keeps priority;
+// - every auto-response must either meet the next legal public bid
+//   (current bid + listing minimum increment), or perform a same-price
+//   tie-priority handover for an earlier auto-bidder whose max was matched.
+//
+// Example with current bid 110, listing min increment 10, and two bidders both
+// having max=200/increment=25:
+// B enters at 120 → A responds 145 → B responds 170 → A responds 195.
+// B cannot respond with 200 because the next legal bid after 195 is 205,
+// which exceeds B's private maximum. A therefore wins at 195 without exposing
+// the exact 200 maximum.
 const resolveAutoBids = async (listing: Listing): Promise<Bid[]> => {
   const autoBids = await listActiveAutoBidsForListing(listing.id);
-  const candidates = new Map<number, AutoBidCandidate>();
+  const candidates: AutoBidCandidate[] = autoBids.map(autoBid => ({
+    bidderId: autoBid.bidder_id,
+    bidderUsername: autoBid.bidder_username,
+    maxAmount: roundMoney(autoBid.max_amount),
+    // Use at least the listing minimum so old rows created before this FR12
+    // bug fix cannot place an automatic response that undercuts the auction rule.
+    autoIncrement: roundMoney(Math.max(autoBid.auto_increment, listing.min_increment)),
+    updatedAt: new Date(autoBid.updated_at).getTime(),
+  }));
 
-  for (const autoBid of autoBids) {
-    candidates.set(autoBid.bidder_id, {
-      bidderId: autoBid.bidder_id,
-      bidderUsername: autoBid.bidder_username,
-      maxAmount: roundMoney(autoBid.max_amount),
-      updatedAt: new Date(autoBid.updated_at).getTime(),
-      source: 'auto',
+  const responses: Bid[] = [];
+
+  // Safety guard against accidental non-progress caused by future code changes.
+  // In normal operation the loop finishes naturally because every response either
+  // raises the public amount or performs one final same-price tie-priority handover.
+  for (let guard = 0; guard < 10_000; guard += 1) {
+    const currentBid = roundMoney(listing.current_bid);
+    const currentWinner = candidates.find(candidate => candidate.bidderId === listing.winner_id);
+
+    const nextLegalBid = roundMoney(currentBid + listing.min_increment);
+
+    const nextCandidate = [...candidates]
+      .filter(candidate => candidate.bidderId !== listing.winner_id)
+      // A normal auto-response must still be a legal public bid. For example,
+      // when the current bid is 195 and the listing minimum increment is 10,
+      // a bidder capped at 200 cannot respond because the next legal bid is 205.
+      // The tie-priority exception is only for an earlier auto-bidder whose
+      // private maximum has just been matched by the current public bid.
+      .filter(candidate => candidate.maxAmount >= nextLegalBid || canTakeTiePriority(candidate, currentBid, currentWinner))
+      .sort(compareAutoBidPriority)[0];
+
+    if (!nextCandidate) return responses;
+
+    const isTiePriorityMove = canTakeTiePriority(nextCandidate, currentBid, currentWinner);
+    const targetAmount = isTiePriorityMove
+      ? currentBid
+      : roundMoney(Math.min(nextCandidate.maxAmount, currentBid + nextCandidate.autoIncrement));
+
+    if (targetAmount < currentBid) return responses;
+    if (!isTiePriorityMove && targetAmount < nextLegalBid) return responses;
+    if (targetAmount === currentBid && !isTiePriorityMove) return responses;
+
+    const bid = await recordBid(listing, {
+      listing_id: listing.id,
+      bidder_id: nextCandidate.bidderId,
+      bidder_username: nextCandidate.bidderUsername,
+      amount: targetAmount,
+      is_auto_bid: true,
     });
+
+    responses.push(bid);
   }
 
-  if (listing.winner_id) {
-    const existing = candidates.get(listing.winner_id);
-    const publicCandidate: AutoBidCandidate = {
-      bidderId: listing.winner_id,
-      bidderUsername: existing?.bidderUsername ?? 'bidder',
-      maxAmount: roundMoney(Math.max(existing?.maxAmount ?? 0, listing.current_bid)),
-      // Existing auto-bids keep priority on exact ties; the current public bid is
-      // treated as the latest candidate.
-      updatedAt: existing?.updatedAt ?? Date.now(),
-      source: existing?.source ?? 'public',
-    };
-    candidates.set(listing.winner_id, publicCandidate);
-  }
-
-  const ranked = [...candidates.values()].sort((a, b) => {
-    if (b.maxAmount !== a.maxAmount) return b.maxAmount - a.maxAmount;
-    if (a.updatedAt !== b.updatedAt) return a.updatedAt - b.updatedAt;
-    return a.bidderId - b.bidderId;
-  });
-
-  const winner = ranked[0];
-  if (!winner) return [];
-
-  const second = ranked.find(candidate => candidate.bidderId !== winner.bidderId);
-  const targetAmount = roundMoney(
-    second
-      ? Math.max(listing.current_bid, Math.min(winner.maxAmount, second.maxAmount + listing.min_increment))
-      : listing.current_bid,
-  );
-
-  const shouldInsertAutoBid =
-    winner.source === 'auto' &&
-    (winner.bidderId !== listing.winner_id || targetAmount > listing.current_bid);
-
-  if (!shouldInsertAutoBid) return [];
-
-  const bid = await recordBid(listing, {
-    listing_id: listing.id,
-    bidder_id: winner.bidderId,
-    bidder_username: winner.bidderUsername,
-    amount: targetAmount,
-    is_auto_bid: true,
-  });
-
-  return [bid];
+  // Returning partial responses is safer than throwing after bids were already
+  // recorded. The guard should never be reached unless a future change breaks
+  // the progress rules above.
+  return responses;
 };
 
 export interface BidPlacementResult {
@@ -162,7 +208,7 @@ export const placeBid = async (listingIdInput: number, amountInput: number, req:
   });
 };
 
-export const setAutoBid = async (listingIdInput: number, maxAmountInput: number, req: Request): Promise<{ autoBid: AutoBidSetting; result: BidPlacementResult }> => {
+export const setAutoBid = async (listingIdInput: number, maxAmountInput: number, autoIncrementInput: unknown, req: Request): Promise<{ autoBid: AutoBidSetting; result: BidPlacementResult }> => {
   const user = assertBidder(req);
   const listingId = Number(listingIdInput);
   const maxAmount = roundMoney(Number(maxAmountInput));
@@ -174,6 +220,16 @@ export const setAutoBid = async (listingIdInput: number, maxAmountInput: number,
     const listing = await assertActiveBiddableListing(listingId, user.id);
     const minimum = nextMinimumBid(listing);
     const userIsWinning = listing.winner_id === user.id;
+    // Existing clients that do not yet send auto_increment continue to work by
+    // defaulting to the listing's donor-defined minimum bid increment.
+    const autoIncrement = roundMoney(Number(autoIncrementInput ?? listing.min_increment));
+
+    if (!Number.isFinite(autoIncrement) || autoIncrement < listing.min_increment) {
+      throw badRequest(`Auto-bid increment must be at least ${listing.min_increment.toFixed(2)}.`, 'AUTO_BID_INCREMENT_TOO_LOW');
+    }
+    if (autoIncrement > maxAmount) {
+      throw badRequest('Auto-bid increment cannot be higher than your maximum auto-bid amount.', 'AUTO_BID_INCREMENT_TOO_HIGH');
+    }
 
     if (!userIsWinning && maxAmount < minimum) {
       throw badRequest(`Maximum auto-bid must be at least ${minimum.toFixed(2)}.`, 'AUTO_BID_TOO_LOW');
@@ -187,6 +243,7 @@ export const setAutoBid = async (listingIdInput: number, maxAmountInput: number,
       bidder_id: user.id,
       bidder_username: user.username,
       max_amount: maxAmount,
+      auto_increment: autoIncrement,
       is_active: true,
     });
 
@@ -208,7 +265,7 @@ export const setAutoBid = async (listingIdInput: number, maxAmountInput: number,
     await audit(
       req,
       'AUTO_BID_SET',
-      { listingId, autoBidId: autoBid.uuid, maxAmount: '[MASKED]', generatedPublicBids: acceptedBids.length },
+      { listingId, autoBidId: autoBid.uuid, maxAmount: '[MASKED]', autoIncrement, generatedPublicBids: acceptedBids.length },
       'listing',
       listing.uuid,
       user.id,

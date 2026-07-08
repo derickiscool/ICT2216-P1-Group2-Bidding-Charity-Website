@@ -73,11 +73,13 @@ function ReceiptModal({ receipt, onClose }: { receipt: Receipt; onClose: () => v
         </div>
         <div className="px-6 py-5 space-y-4">
           <div className="rounded-xl p-4 space-y-3" style={{ background: C.linen, border: `1px solid ${C.beige}` }}>
+            <Row label="Donor" value={receipt.bidder_username} />
             <Row label="Item" value={receipt.item_title} />
             <Row label="Beneficiary" value={receipt.charity_name} />
             <Row label="Amount Paid" value={money(receipt.amount)} highlight />
             <Row label="Generated" value={new Date(receipt.generated_at).toLocaleString()} />
             <Row label="Receipt ID" value={receipt.uuid} mono />
+            <Row label="Payment Ref" value={receipt.payment_ref} mono />
           </div>
           <p className="text-xs text-center" style={{ color: C.muted }}>
             This receipt is immutable and cannot be modified after generation.
@@ -110,24 +112,29 @@ function Row({ label, value, highlight, mono }: { label: string; value: string; 
 // ─── Auto-Bid Modal ──────────────────────────────────────────────────────────
 
 function AutoBidModal({
-  listingTitle, currentMax, onSave, onClose,
+  listingTitle, currentMax, currentIncrement, onSave, onClose,
 }: {
   listingTitle: string
   currentMax: number
-  onSave: (amount: number) => Promise<void>
+  currentIncrement: number
+  onSave: (amount: number, increment: number) => Promise<void>
   onClose: () => void
 }) {
   const [amount, setAmount] = useState(currentMax.toString())
+  const [increment, setIncrement] = useState(currentIncrement.toString())
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const handleSave = async () => {
     const val = parseFloat(amount)
-    if (isNaN(val) || val <= 0) { setErr('Enter a valid amount'); return }
+    const step = parseFloat(increment)
+    if (isNaN(val) || val <= 0) { setErr('Enter a valid maximum amount'); return }
+    if (isNaN(step) || step <= 0) { setErr('Enter a valid auto-bid increment'); return }
+    if (step > val) { setErr('Increment cannot be higher than your maximum amount'); return }
     setSaving(true)
     setErr(null)
     try {
-      await onSave(val)
+      await onSave(val, step)
       onClose()
     } catch (e) {
       setErr((e as ApiError).message || 'Failed to save')
@@ -158,6 +165,20 @@ function AutoBidModal({
                 className="w-full rounded-xl py-2.5 pl-8 pr-4 text-sm font-bold outline-none"
                 style={{ border: `1px solid ${C.beige}`, background: C.linen, color: C.slate }} />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold" style={{ color: C.muted }}>Auto-Bid Increment</label>
+            <div className="relative mt-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold" style={{ color: C.muted }}>$</span>
+              <input type="number" step="0.01" min="0.01" value={increment}
+                onChange={e => setIncrement(e.target.value)}
+                className="w-full rounded-xl py-2.5 pl-8 pr-4 text-sm font-bold outline-none"
+                style={{ border: `1px solid ${C.beige}`, background: C.linen, color: C.slate }} />
+            </div>
+            <p className="text-[11px] mt-1 leading-relaxed" style={{ color: C.muted }}>
+              The backend rejects increments below the listing minimum. Auto-bids keep responding using your
+              configured increment, but only while the next legal bid can still fit within your private maximum.
+            </p>
           </div>
           {err && <p className="text-xs font-bold" style={{ color: C.danger }}>{err}</p>}
         </div>
@@ -237,7 +258,7 @@ export default function BidderDashboard() {
   const [completingUuid, setCompletingUuid] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [receiptLoading, setReceiptLoading] = useState(false)
-  const [autoBidModal, setAutoBidModal] = useState<{ listingId: number; listingTitle: string; currentMax: number } | null>(null)
+  const [autoBidModal, setAutoBidModal] = useState<{ listingId: number; listingTitle: string; currentMax: number; currentIncrement: number } | null>(null)
   const [nowMs, setNowMs] = useState(0)
 
   // ─── Derived data ───────────────────────────────────────────────────────
@@ -329,7 +350,7 @@ export default function BidderDashboard() {
     setConfirming(listingUuid)
     try {
       await api.post(`/listings/${listingUuid}/confirm-delivery`)
-      setMessage('Delivery confirmed!')
+      setMessage('Item received! The escrow has been released to the charity.')
       await loadData()
     } catch (err) {
       setError((err as ApiError).message || 'Failed to confirm delivery.')
@@ -342,7 +363,7 @@ export default function BidderDashboard() {
     setCompletingUuid(uuid)
     try {
       await api.post(`/payments/${uuid}/complete`)
-      setMessage('Payment completed successfully.')
+      setMessage('Payment completed successfully. Your donation receipt is now available.')
       await loadData()
     } catch (err) {
       setError((err as ApiError).message || 'Payment could not be completed')
@@ -363,8 +384,8 @@ export default function BidderDashboard() {
     }
   }
 
-  const saveAutoBid = async (listingId: number, amount: number) => {
-    await api.post('/bids/auto-bids', { listingId, maxAmount: amount })
+  const saveAutoBid = async (listingId: number, amount: number, increment: number) => {
+    await api.post('/bids/auto-bids', { listingId, maxAmount: amount, autoIncrement: increment })
     const res = await api.get<AutoBid[]>('/bids/auto-bids')
     setAutoBids(res.data)
   }
@@ -579,7 +600,7 @@ export default function BidderDashboard() {
                               </td>
                               <td className="px-6 py-4 text-center">
                                 <span className="text-xs font-bold" style={{ color: autoBid ? C.emerald : C.muted }}>
-                                  {autoBid ? `On (${money(autoBid.max_amount)})` : 'Off'}
+                                  {autoBid ? `On (${money(autoBid.max_amount)} / +${money(autoBid.auto_increment)})` : 'Off'}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-right">
@@ -595,6 +616,7 @@ export default function BidderDashboard() {
                                     listingId: bid.listing_id,
                                     listingTitle: bid.listingTitle || `Listing #${bid.listing_id}`,
                                     currentMax: autoBid?.max_amount ?? 0,
+                                    currentIncrement: autoBid?.auto_increment ?? 1,
                                   })}
                                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
                                     style={{ border: `1px solid ${C.beige}`, color: C.emerald }}>
@@ -697,15 +719,15 @@ export default function BidderDashboard() {
                     </div>
                   )}
 
-                  {/* Paid / delivered items */}
-                  {payments.filter(p => p.status === 'successful').length > 0 && (
+                  {/* Paid items (escrow held, not yet released) */}
+                  {payments.filter(p => p.escrow_state === 'held').length > 0 && (
                     <div>
                       <div className="flex items-center gap-2 mb-4">
                         <CheckCircle className="w-4 h-4" style={{ color: C.emerald }} />
                         <h2 className="font-bold text-sm" style={{ color: C.slate }}>Paid Items</h2>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {payments.filter(p => p.status === 'successful').map(payment => (
+                        {payments.filter(p => p.escrow_state === 'held').map(payment => (
                           <div key={payment.uuid} className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
                             <div className="h-40 flex items-center justify-center overflow-hidden"
                               style={{ background: C.linen }}>
@@ -731,23 +753,16 @@ export default function BidderDashboard() {
                                   <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: C.muted }}>Winning Bid</p>
                                   <p className="text-lg font-black font-mono" style={{ color: C.emerald }}>{money(payment.amount)}</p>
                                 </div>
-                                {payment.listing_status === 'delivered' ? (
-                                  <button type="button"
-                                    onClick={() => viewReceipt(payment.uuid)}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest"
-                                    style={{ background: C.emeraldLight, color: C.emerald }}>
-                                    <FileText className="w-3 h-3" /> Receipt
-                                  </button>
-                                ) : payment.listing_status === 'shipped' ? (
+                                {payment.has_shipping ? (
                                   <button type="button"
                                     onClick={() => confirmDelivery(payment.listing_uuid)}
                                     disabled={confirming === payment.listing_uuid}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                                    style={{ background: '#5B21B6' }}>
+                                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    style={{ background: C.emerald }}>
                                     {confirming === payment.listing_uuid
-                                      ? <Loader2 className="w-3 h-3 animate-spin" />
-                                      : <PackageCheck className="w-3 h-3" />}
-                                    {confirming === payment.listing_uuid ? '…' : 'Item Received'}
+                                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                                      : <PackageCheck className="w-4 h-4" />}
+                                    {confirming === payment.listing_uuid ? 'Confirming…' : 'Item Received'}
                                   </button>
                                 ) : (
                                   <div className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full"
@@ -825,8 +840,16 @@ export default function BidderDashboard() {
                               </td>
                               <td className="px-6 py-4 text-sm" style={{ color: C.slate }}>{payment.charity_name}</td>
                               <td className="px-6 py-4 text-center">
-                                {isPaid && payment.listing_status === 'delivered' ? (
-                                  <button onClick={() => viewReceipt(payment.uuid)}
+                                  {isPaid ? (
+                                  <button onClick={async () => {
+                                    try {
+                                      const res = await api.get<Receipt>(`/receipts/by-payment/${payment.uuid}`)
+                                      window.location.href = `/receipts/${res.data.uuid}`
+                                    } catch {
+                                      // fallback: try the modal
+                                      viewReceipt(payment.uuid)
+                                    }
+                                  }}
                                     className="text-xs font-bold underline underline-offset-2 transition-colors"
                                     style={{ color: C.emerald }}>
                                     View PDF
@@ -843,7 +866,7 @@ export default function BidderDashboard() {
                                   }}>
                                   {isPaid ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
                                   {isPaid ? (
-                                    payment.listing_status === 'delivered' ? 'Delivered' : 'Paid'
+                                    payment.escrow_state === 'released' ? 'Delivered' : 'Paid'
                                   ) : (
                                     'Pending'
                                   )}
@@ -894,7 +917,8 @@ export default function BidderDashboard() {
         <AutoBidModal
           listingTitle={autoBidModal.listingTitle}
           currentMax={autoBidModal.currentMax}
-          onSave={async (amount) => saveAutoBid(autoBidModal.listingId, amount)}
+          currentIncrement={autoBidModal.currentIncrement}
+          onSave={async (amount, increment) => saveAutoBid(autoBidModal.listingId, amount, increment)}
           onClose={() => setAutoBidModal(null)}
         />
       )}

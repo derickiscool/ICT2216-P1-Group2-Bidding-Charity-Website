@@ -34,6 +34,7 @@ export const {
   getCharityByOwnerUserId,
   listCharities,
   updateCharity,
+  deleteCharityByUuid,
   addCampaign,
   getCampaignById,
   getCampaignByUuid,
@@ -68,6 +69,7 @@ export const {
 
   addReceipt,
   getReceiptByUuid,
+  getReceiptByPaymentId,
   getReceiptsByBidder,
 
   addPayment,

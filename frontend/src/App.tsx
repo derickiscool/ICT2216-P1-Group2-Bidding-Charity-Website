@@ -83,17 +83,18 @@ import DashboardPage from './pages/DashboardPage'
 import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
 import NotFoundPage from './pages/NotFoundPage'
-import CreateListingPage from './pages/CreateListingPage'
 import AdminCharitiesPage from './pages/AdminCharitiesPage'
 import AdminListingsPage from './pages/AdminListingsPage'
 import AdminAuditPage from './pages/AdminAuditPage'
 import AdminUsersPage from './pages/AdminUsersPage'
-import DonorListingsPage from './pages/DonorListingsPage'
 import CharityListingReviewPage from './pages/CharityListingReviewPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ReceiptPage from './pages/ReceiptPage'
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage'
+import AboutPage from './pages/AboutPage'
+import TermsPage from './pages/TermsPage'
+import PrivacyPage from './pages/PrivacyPage'
 
 export default function App() {
   const { fetchMe } = useAuthStore()
@@ -115,6 +116,9 @@ export default function App() {
           <Route path="/auctions/:id" element={<AuctionDetailPage />} />
           <Route path="/charities" element={<CharitiesPage />} />
           <Route path="/register/charity" element={<RegisterCharityPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
@@ -143,14 +147,10 @@ export default function App() {
             <Route path="/payments" element={<DashboardPage />} />
           </Route>
 
-          {/* ── Donor only: authoring a listing (separation of duties — admins moderate, they don't create) ── */}
-          <Route element={<RoleProtectedRoute allowedRoles={['donor']} />}>
-            <Route path="/listings/create" element={<CreateListingPage />} />
-          </Route>
-
-          {/* ── Donor + admin: manage/track listings ── */}
+          {/* ── Donor + admin: manage/track listings (embedded in dashboard sidebar) ── */}
           <Route element={<RoleProtectedRoute allowedRoles={['donor', 'admin']} />}>
-            <Route path="/listings/manage" element={<DonorListingsPage />} />
+            <Route path="/listings/create" element={<DashboardPage />} />
+            <Route path="/listings/manage" element={<DashboardPage />} />
           </Route>
 
           {/* ── Admin only ── */}

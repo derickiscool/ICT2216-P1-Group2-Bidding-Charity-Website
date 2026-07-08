@@ -68,8 +68,6 @@ export interface Listing {
   category: string
   images: string[]
   starting_price: number
-  reserve_price?: number
-  buy_now_price?: number
   current_bid: number
   min_increment?: number
   bid_count: number
@@ -87,18 +85,23 @@ export interface Listing {
 
 export interface DonorListingStatusSummary {
   total: number
+  // Drafts are retained in the backend model for compatibility, but hidden from FR10 tracking.
   draft: number
   pending: number
   changes_requested: number
   charity_review: number
+  upcoming: number
   active: number
   sold: number
+  shipped: number
+  delivered: number
   expired: number
   cancelled: number
   rejected: number
 }
 
 export interface DonorListingTrackingItem extends Listing {
+  trackingFilterStatus: 'pending' | 'upcoming' | 'active' | 'sold' | 'expired' | 'rejected' | 'cancelled' | 'other'
   statusLabel: string
   statusMessage: string
   timelineLabel: string
@@ -144,6 +147,7 @@ export interface AutoBid {
   bidder_id: number
   bidder_username: string
   max_amount: number
+  auto_increment: number
   is_active: boolean
   created_at: string
   updated_at: string
@@ -161,8 +165,8 @@ export interface AutoBidResponse {
 
 // ─── Payments & Receipts ─────────────────────────────────────────────────────
 
-export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired'
-export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded'
+export type PaymentStatus = 'pending' | 'successful' | 'expired'
+export type EscrowState = 'not_held' | 'held' | 'released'
 
 export interface Payment {
   id: number
@@ -187,17 +191,6 @@ export interface PaymentWithListing extends Payment {
   has_shipping: boolean
   listing_status?: string
   listing_image?: string
-}
-
-export interface Receipt {
-  id: number
-  payment_id: number
-  listing_title: string
-  amount_paid: number
-  charity_name: string
-  charity_registration: string
-  receipt_number: string
-  created_at: string
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
@@ -300,6 +293,8 @@ export interface Receipt {
   receipt_ref: string
   integrity_hash: string
   generated_at: string
+  bidder_username: string
+  payment_ref: string
 }
 
 export interface AuditEvent {

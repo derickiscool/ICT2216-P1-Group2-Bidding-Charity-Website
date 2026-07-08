@@ -33,7 +33,12 @@ export const createBid = async (req: Request, res: Response): Promise<void> => {
 };
 
 export const createAutoBid = async (req: Request, res: Response): Promise<void> => {
-  const payload = await setAutoBid(Number(req.body.listing_id ?? req.body.listingId), Number(req.body.max_amount ?? req.body.maxAmount), req);
+  const payload = await setAutoBid(
+    Number(req.body.listing_id ?? req.body.listingId),
+    Number(req.body.max_amount ?? req.body.maxAmount),
+    req.body.auto_increment ?? req.body.autoIncrement,
+    req,
+  );
   emitBidUpdates(req, payload.result.bids);
   res.status(201).json(payload);
 };

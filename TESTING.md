@@ -226,7 +226,7 @@ SFR14 — Digital Donation Receipt
 SFR15 — Shipping Verification & Delivery Confirmation
   ✓ donor cannot confirm shipping when listing is not yet sold — status guard
   ✓ non-donor role cannot submit shipping details — 403
-  ✓ XSS payloads in shipping fields are sanitized before storage
+  ✓ XSS payloads in shipping fields are rejected by input validation
   ✓ valid shipping confirmation transitions listing status to shipped
   ✓ bidder cannot confirm delivery when listing is not yet shipped — forced delivery rejected
   ✓ non-winner bidder cannot confirm delivery — 403
@@ -237,7 +237,7 @@ SFR15 — Shipping Verification & Delivery Confirmation
 |---|---|
 | status guard on ship | `POST /:uuid/ship` on an active (not yet sold) listing returns 400 `INVALID_LISTING_STATUS` — shipping cannot be confirmed before payment |
 | role guard on ship | A bidder session on `POST /:uuid/ship` returns 403 — only donors may confirm shipping |
-| XSS sanitization | `<script>alert(1)</script>` in `trackingNumber`, `carrier`, and `notes` is HTML-escaped by `sanitizeText` before storage; the raw tag never reaches the DB |
+| XSS rejection | `<script>alert(1)</script>` in `courier` returns `400 COURIER_INVALID_FORMAT` — `<`, `>`, `/` are outside the allowed whitelist so the payload is rejected before sanitization or DB write |
 | ship transitions status | After `POST /:uuid/ship` returns 200, the DB row shows `status = 'shipped'` |
 | forced delivery rejected | `POST /:uuid/deliver` on a `sold` (not yet `shipped`) listing returns 400 `INVALID_LISTING_STATUS` — the `delivered` state cannot be reached without passing through `shipped` |
 | non-winner delivery blocked | A non-bidder session (admin) on `POST /:uuid/deliver` returns 403 |
