@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Clock, CheckCircle, Plus, Loader2, AlertCircle,
   Truck, RefreshCw, X,
@@ -59,12 +58,6 @@ interface TabNavItem {
   badge?: number
 }
 
-const tabFromPath = (pathname: string): Tab | null => {
-  if (pathname === '/listings/create') return 'create-listing'
-  if (pathname === '/listings/manage') return 'my-listings'
-  return null
-}
-
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 function Sidebar({ tabs, activeTab, onTabChange }: {
@@ -107,15 +100,7 @@ function Sidebar({ tabs, activeTab, onTabChange }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function DonorDashboard() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const [selectedTab, setSelectedTab] = useState<Tab>('my-listings')
-
-  // Derive route-backed tabs directly from the URL instead of syncing URL -> state in
-  // useEffect. This avoids React's set-state-in-effect lint rule and still lets
-  // /listings/create render the create form immediately.
-  const routeTab = tabFromPath(location.pathname)
-  const activeTab = routeTab ?? selectedTab
+  const [activeTab, setActiveTab] = useState<Tab>('my-listings')
 
   // Data
   const [listings, setListings] = useState<Listing[]>([])
@@ -174,28 +159,8 @@ export default function DonorDashboard() {
 
   useEffect(() => { const id = window.setTimeout(() => { void loadData() }, 0); return () => window.clearTimeout(id) }, [loadData])
 
-  // Keep dashboard navigation inside React Router. Using a plain <a> tag here
-  // caused the browser to reload /listings/create, which rendered the dashboard
-  // again because that route points to DashboardPage.
   const handleTabChange = (tab: Tab) => {
-    setSelectedTab(tab)
-
-    if (tab === 'create-listing') {
-      if (location.pathname !== '/listings/create') navigate('/listings/create')
-      return
-    }
-
-    if (tab === 'my-listings') {
-      if (location.pathname !== '/listings/manage') navigate('/listings/manage')
-      return
-    }
-
-    // Shipping and donation proceeds are dashboard-only tabs. If the user is
-    // currently on a route-backed tab, move back to /dashboard so the selected
-    // dashboard tab is not overridden by the URL.
-    if (location.pathname === '/listings/create' || location.pathname === '/listings/manage') {
-      navigate('/dashboard')
-    }
+    setActiveTab(tab)
   }
 
   // ─── Actions ───────────────────────────────────────────────────────────
