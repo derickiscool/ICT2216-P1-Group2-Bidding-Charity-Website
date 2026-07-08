@@ -186,7 +186,6 @@ npm audit --audit-level=high: PASS
 All demo accounts use the password `S3cure!Pass2026`. Loaded automatically on first `docker compose up` (fresh volume), or on demand with `npm run seed` (from `backend/`) — see `backend/db/init/seed.sql`.
 
 ```text
-ssdp1g2@gmail.com       (admin)
 donor1@bidforgood.test  (donor)
 donor2@bidforgood.test  (donor)
 donor3@bidforgood.test  (donor)   
