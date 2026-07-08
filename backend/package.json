@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
-    "seed:admin": "node scripts/seed-admin.js"
+    "seed:admin": "node scripts/seed-admin.js",
+    "seed:production": "node scripts/seed-production.js"
   },
   "dependencies": {
     "argon2": "^0.44.0",

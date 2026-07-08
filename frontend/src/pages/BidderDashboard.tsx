@@ -73,11 +73,13 @@ function ReceiptModal({ receipt, onClose }: { receipt: Receipt; onClose: () => v
         </div>
         <div className="px-6 py-5 space-y-4">
           <div className="rounded-xl p-4 space-y-3" style={{ background: C.linen, border: `1px solid ${C.beige}` }}>
+            <Row label="Donor" value={receipt.bidder_username} />
             <Row label="Item" value={receipt.item_title} />
             <Row label="Beneficiary" value={receipt.charity_name} />
             <Row label="Amount Paid" value={money(receipt.amount)} highlight />
             <Row label="Generated" value={new Date(receipt.generated_at).toLocaleString()} />
             <Row label="Receipt ID" value={receipt.uuid} mono />
+            <Row label="Payment Ref" value={receipt.payment_ref} mono />
           </div>
           <p className="text-xs text-center" style={{ color: C.muted }}>
             This receipt is immutable and cannot be modified after generation.
@@ -348,12 +350,7 @@ export default function BidderDashboard() {
     setConfirming(listingUuid)
     try {
       await api.post(`/listings/${listingUuid}/confirm-delivery`)
-      // Find the payment UUID to show receipt
-      const payment = payments.find(p => p.listing_uuid === listingUuid)
-      if (payment) {
-        await viewReceipt(payment.uuid)
-      }
-      setMessage('Item received! Check Payment History for your receipt.')
+      setMessage('Item received! The escrow has been released to the charity.')
       await loadData()
     } catch (err) {
       setError((err as ApiError).message || 'Failed to confirm delivery.')
@@ -366,7 +363,7 @@ export default function BidderDashboard() {
     setCompletingUuid(uuid)
     try {
       await api.post(`/payments/${uuid}/complete`)
-      setMessage('Payment completed successfully.')
+      setMessage('Payment completed successfully. Your donation receipt is now available.')
       await loadData()
     } catch (err) {
       setError((err as ApiError).message || 'Payment could not be completed')
@@ -843,7 +840,7 @@ export default function BidderDashboard() {
                               </td>
                               <td className="px-6 py-4 text-sm" style={{ color: C.slate }}>{payment.charity_name}</td>
                               <td className="px-6 py-4 text-center">
-                                  {isPaid && payment.escrow_state === 'released' ? (
+                                  {isPaid ? (
                                   <button onClick={async () => {
                                     try {
                                       const res = await api.get<Receipt>(`/receipts/by-payment/${payment.uuid}`)

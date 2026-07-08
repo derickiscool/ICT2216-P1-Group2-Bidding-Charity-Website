@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Eye, EyeOff, AlertCircle, Loader2, Gavel } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
-import type { ApiError } from '../types'
+import type { ApiError, Listing } from '../types'
+import api from '../services/api'
+import { useEffect } from 'react'
 
 const C = {
   slate: '#2D3A3A', emerald: '#047857', emeraldDark: '#035c43',
@@ -34,6 +36,34 @@ export default function LoginPage() {
   const [step, setStep]         = useState<'request' | 'verify'>('request')
   const [otp, setOtp]           = useState('')
   const [infoMsg, setInfoMsg]   = useState<string | null>(null)
+
+  const [stats, setStats] = useState({
+    activeAuctions: '0',
+    verifiedCharities: '0',
+    totalRaised: '$0',
+    endingSoon: '0'
+  })
+
+  useEffect(() => {
+    Promise.all([
+      api.get<{ data: Listing[] }>('/listings').catch(() => ({ data: { data: [] as Listing[] } })),
+      api.get<{ totalRaised?: number }[]>('/charities/public').catch(() => ({ data: [] }))
+    ]).then(([listingsRes, charitiesRes]) => {
+      const allListings = listingsRes.data?.data || []
+      const charities = charitiesRes.data || []
+      const active = allListings.length
+      const endingSoon = allListings.filter(
+        l => new Date(l.end_time).getTime() - Date.now() < 24 * 60 * 60 * 1000
+      ).length
+      const raised = charities.reduce((sum, c: { totalRaised?: number }) => sum + (c.totalRaised || 0), 0)
+      setStats({
+        activeAuctions: active.toString(),
+        verifiedCharities: charities.length.toString(),
+        totalRaised: '$' + raised.toLocaleString(),
+        endingSoon: endingSoon.toString(),
+      })
+    })
+  }, [])
 
   const from = (location.state as { from?: string })?.from || '/dashboard'
 
@@ -94,7 +124,7 @@ export default function LoginPage() {
         </div>
 
         <div className="relative grid grid-cols-2 gap-3">
-          {[['124', 'Active Auctions'], ['43', 'Verified Charities'], ['$2.4M', 'Total Raised'], ['892', 'Bidders Online']].map(([v, l]) => (
+          {[[stats.activeAuctions, 'Active Auctions'], [stats.verifiedCharities, 'Verified Charities'], [stats.totalRaised, 'Total Raised'], [stats.endingSoon, 'Ending Soon']].map(([v, l]) => (
             <div key={l} className="rounded-xl p-4"
               style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
               <p className="text-xl font-bold text-white">{v}</p>

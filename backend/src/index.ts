@@ -43,4 +43,11 @@ if (process.env.NODE_ENV !== 'test') startPaymentDeadlineWorker();
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  // NFR08: In production, this app must be deployed behind a TLS-terminating reverse
+  // proxy (e.g. nginx, Caddy) for HTTPS. The `trust proxy` setting in app.ts handles
+  // correct IP forwarding. All other security measures (argon2id password hashing,
+  // CSRF tokens, RBAC, rate limiting, input sanitization) are built in.
+  if (process.env.NODE_ENV === 'production') {
+    console.log('NFR08: Production deployment — ensure HTTPS is terminated at the reverse proxy.');
+  }
 });

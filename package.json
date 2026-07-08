@@ -14,7 +14,8 @@
     "lint": "npm run lint -w backend && npm run lint -w frontend",
     "test": "npm test -w backend && npm test -w frontend",
     "audit:high": "npm audit --workspaces --audit-level=high",
-    "db:reset": "cd backend/db && docker compose down -v && docker compose up -d && cd ../.. && sleep 3 && npm run migrate -w backend && npm run seed -w backend",
+    "db:reset": "cd backend/db && docker compose down -v && docker compose up -d && cd ../.. && sleep 5 && npm run migrate -w backend && npm run seed -w backend",
+    "db:reset:prod": "cd backend/db && docker compose down -v && docker compose up -d && cd ../.. && sleep 5 && npm run migrate -w backend && npm run seed:production -w backend",
     "prepare": "husky"
   },
   "lint-staged": {

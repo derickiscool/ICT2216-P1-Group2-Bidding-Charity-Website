@@ -227,8 +227,8 @@ CREATE TABLE IF NOT EXISTS payments (
   bidder_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
   payment_ref TEXT NOT NULL UNIQUE,
-  escrow_state TEXT NOT NULL DEFAULT 'not_held' CHECK (escrow_state IN ('not_held', 'held', 'released', 'refunded')),
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'successful', 'failed', 'expired')),
+  escrow_state TEXT NOT NULL DEFAULT 'not_held' CHECK (escrow_state IN ('not_held', 'held', 'released')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'successful', 'expired')),
   payment_deadline TIMESTAMPTZ NOT NULL,
   offered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   paid_at TIMESTAMPTZ,
@@ -297,6 +297,11 @@ CREATE TABLE IF NOT EXISTS receipts (
 );
 
 CREATE INDEX IF NOT EXISTS receipts_bidder_id_idx ON receipts (bidder_id);
+
+-- Payment loop closure: bidder_username identifies the donor on the receipt,
+-- payment_ref links back to the payment record for full traceability.
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS bidder_username TEXT NOT NULL DEFAULT '';
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS payment_ref TEXT NOT NULL DEFAULT '';
 
 -- Shipping verification records (SFR15 — donor provides tracking after payment)
 CREATE TABLE IF NOT EXISTS shipping_verifications (

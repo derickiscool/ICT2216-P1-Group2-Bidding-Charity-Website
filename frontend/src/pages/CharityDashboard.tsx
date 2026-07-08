@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Package, Loader2, AlertCircle, Info,
+  Package, Loader2, AlertCircle,
   CheckCircle, Clock, Plus, ExternalLink, RefreshCw, X, Edit3, Upload,
   HeartHandshake, Users, DollarSign, ListOrdered,
   CalendarDays, Target, Eye, Flag, ImageIcon, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
-import type { Listing, CharityStats, ApiError, Campaign } from '../types'
+import type { Listing, CharityStats, ApiError, Campaign, CharityOrganisation } from '../types'
 
 // Listing enriched with payment flags from backend
 interface SoldListingWithPayment extends Listing {
@@ -36,8 +36,13 @@ const statusPill = (status: string, label?: string) => {
     ['active', { bg: C.emeraldLight, text: C.emerald }],
     ['closed', { bg: '#F3F4F6', text: '#6B7280' }],
     ['pending', { bg: '#FEF3C7', text: '#92400E' }],
+    ['charity_review', { bg: '#ECFDF5', text: '#047857' }],
+    ['changes_requested', { bg: '#FFFBEB', text: '#92400E' }],
+    ['upcoming', { bg: '#E0F2FE', text: '#0369A1' }],
     ['draft', { bg: '#F3F4F6', text: '#6B7280' }],
     ['sold', { bg: '#DBEAFE', text: '#1E40AF' }],
+    ['shipped', { bg: '#F5F3FF', text: '#6D28D9' }],
+    ['delivered', { bg: '#ECFDF5', text: '#047857' }],
     ['expired', { bg: '#FEE2E2', text: '#991B1B' }],
     ['cancelled', { bg: '#FEE2E2', text: '#991B1B' }],
     ['rejected', { bg: '#FEE2E2', text: '#991B1B' }],
@@ -51,6 +56,27 @@ const statusPill = (status: string, label?: string) => {
   )
 }
 
+
+const isUpcomingListing = (listing: Listing, referenceMs: number) => {
+  const startMs = Date.parse(listing.start_time)
+  return listing.status === 'active' && Number.isFinite(startMs) && startMs > referenceMs
+}
+
+const isLiveActiveListing = (listing: Listing, referenceMs: number) => (
+  listing.status === 'active' && !isUpcomingListing(listing, referenceMs)
+)
+
+const listingStatusDisplay = (listing: Listing, referenceMs: number) => {
+  if (isUpcomingListing(listing, referenceMs)) return { status: 'upcoming', label: 'Upcoming' }
+
+  const labels = new Map<string, string>([
+    ['pending', 'Admin Review'],
+    ['charity_review', 'Charity Review'],
+    ['changes_requested', 'Changes Requested'],
+  ])
+
+  return { status: listing.status, label: labels.get(listing.status) }
+}
 
 const formatDashboardEndDate = (value?: string) => {
   if (!value) return 'No end date'
@@ -128,7 +154,9 @@ function readImageAsDataUrl(file: File, onReady: (value: string) => void) {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Tab = 'campaigns' | 'staff' | 'proceeds' | 'listings'
+type Tab = 'campaigns' | 'staff' | 'proceeds' | 'listings' | 'create-campaign' | 'create-staff';
+
+type ListingNotice = { type: 'success' | 'error'; text: string } | null;
 
 interface TabNavItem {
   id: Tab
@@ -583,7 +611,7 @@ export default function CharityDashboard() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [canManageCampaigns, setCanManageCampaigns] = useState(false)
   const [staff, setStaff] = useState<StaffAccount[]>([])
-  const [notRegistered, setNotRegistered] = useState(false)
+  const [charityDetails, setCharityDetails] = useState<CharityOrganisation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [listingsFilter, setListingsFilter] = useState<string>('all')
@@ -593,6 +621,19 @@ export default function CharityDashboard() {
   const [editCampaignForm, setEditCampaignForm] = useState<CampaignForm>(emptyCampaignForm)
   const [editCampaignErrors, setEditCampaignErrors] = useState<CampaignFormErrors>({})
   const [savingCampaignEdit, setSavingCampaignEdit] = useState(false)
+  const [dashboardNowMs, setDashboardNowMs] = useState(0)
+  const [listingNotice, setListingNotice] = useState<ListingNotice>(null)
+  const [reviewingListingUuid, setReviewingListingUuid] = useState<string | null>(null)
+  const [rejectingListingUuid, setRejectingListingUuid] = useState<string | null>(null)
+  const [listingRejectReason, setListingRejectReason] = useState('')
+
+  // Inline creation form states
+  const [newCampaignForm, setNewCampaignForm] = useState<CampaignForm>(emptyCampaignForm)
+  const [newCampaignErrors, setNewCampaignErrors] = useState<CampaignFormErrors>({})
+  const [creatingCampaign, setCreatingCampaign] = useState(false)
+  const [staffForm, setStaffForm] = useState({ full_name: '', email: '', temporary_password: '' })
+  const [staffFormErrors, setStaffFormErrors] = useState<Record<string, string>>({})
+  const [creatingStaff, setCreatingStaff] = useState(false)
 
   const isOwner = user?.roles?.includes('charity')
 
@@ -600,7 +641,7 @@ export default function CharityDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const dashRes = api.get<{ charity: Record<string, unknown> | null; listings: Listing[]; stats: CharityStats }>('/charities/dashboard')
+      const dashRes = api.get<{ charity: CharityOrganisation | null; listings: Listing[]; stats: CharityStats }>('/charities/dashboard')
       const campRes = api.get<CampaignListResponse>('/charities/campaigns').catch(() => ({ data: { campaigns: [] as Campaign[], canManageCampaigns: false } }))
       const staffRes = isOwner
         ? api.get<{ staff: StaffAccount[] }>('/charities/staff').catch(() => ({ data: { staff: [] as StaffAccount[] } }))
@@ -608,9 +649,18 @@ export default function CharityDashboard() {
 
       const [dash, camps, staffData] = await Promise.all([dashRes, campRes, staffRes])
 
-      if (!dash.data.charity) setNotRegistered(true)
+      if (!dash.data.charity) {
+        // A charity role account without a linked organisation should not happen
+        // in normal registration flow — fall through to the pending-status checks.
+        setCharityDetails(null)
+      } else {
+        setCharityDetails(dash.data.charity)
+      }
       setListings(dash.data.listings)
       setStats(dash.data.stats)
+      // Timestamp used for display-only Upcoming vs Active grouping. It is updated
+      // after every dashboard refresh instead of calling Date.now() during render.
+      setDashboardNowMs(new Date().getTime())
       setCampaigns(camps.data.campaigns ?? [])
       // Backend returns canManageCampaigns=false if the charity account exists
       // but is not approved yet. Keep dashboard actions locked in that case.
@@ -624,6 +674,73 @@ export default function CharityDashboard() {
   }, [isOwner])
 
   useEffect(() => { const id = window.setTimeout(() => { void loadData() }, 0); return () => window.clearTimeout(id) }, [loadData])
+
+  // ─── Inline campaign creation ──────────────────────────────────────────
+
+  const saveCreateCampaign = async (e: FormEvent) => {
+    e.preventDefault()
+    const errors: CampaignFormErrors = {}
+    if (!newCampaignForm.name.trim()) errors.name = 'Name is required.'
+    else if (newCampaignForm.name.trim().length < 3) errors.name = 'Name must be at least 3 characters.'
+    if (!newCampaignForm.description.trim()) errors.description = 'Description is required.'
+    else if (newCampaignForm.description.trim().length < 10) errors.description = 'Description must be at least 10 characters.'
+    setNewCampaignErrors(errors)
+    if (Object.keys(errors).length > 0) return
+
+    const fd = new FormData()
+    fd.append('name', newCampaignForm.name.trim())
+    fd.append('description', newCampaignForm.description.trim())
+    if (newCampaignForm.end_date) fd.append('end_date', newCampaignForm.end_date)
+    if (newCampaignForm.image_file) fd.append('image', newCampaignForm.image_file)
+    setCreatingCampaign(true)
+    try {
+      const res = await api.post<Campaign>('/charities/campaigns', fd)
+      setCampaigns(prev => [res.data, ...prev])
+      setNewCampaignForm(emptyCampaignForm)
+      setNewCampaignErrors({})
+      setActiveTab('campaigns')
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setNewCampaignErrors(ae.errors as CampaignFormErrors)
+      else setError(ae.message || 'Failed to create campaign.')
+    } finally {
+      setCreatingCampaign(false)
+    }
+  }
+
+  // ─── Inline staff creation ─────────────────────────────────────────────
+
+  const saveCreateStaff = async (e: FormEvent) => {
+    e.preventDefault()
+    const errors: Record<string, string> = {}
+    if (!staffForm.full_name.trim()) errors.full_name = 'Full name is required.'
+    else if (staffForm.full_name.trim().length < 2) errors.full_name = 'Full name must be at least 2 characters.'
+    if (!staffForm.email.trim()) errors.email = 'Work email is required.'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(staffForm.email.trim())) errors.email = 'Enter a valid email address.'
+    if (!staffForm.temporary_password) errors.temporary_password = 'Temporary password is required.'
+    else if (staffForm.temporary_password.length < 8) errors.temporary_password = 'Temporary password must be at least 8 characters.'
+    setStaffFormErrors(errors)
+    if (Object.keys(errors).length > 0) return
+
+    setCreatingStaff(true)
+    try {
+      const res = await api.post('/charities/staff', {
+        full_name: staffForm.full_name.trim(),
+        email: staffForm.email.trim(),
+        temporary_password: staffForm.temporary_password,
+      })
+      setStaff(prev => [res.data, ...prev])
+      setStaffForm({ full_name: '', email: '', temporary_password: '' })
+      setStaffFormErrors({})
+      setActiveTab('staff')
+    } catch (err) {
+      const ae = err as ApiError
+      if (ae.errors) setStaffFormErrors(ae.errors)
+      else setError(ae.message || 'Failed to create staff account.')
+    } finally {
+      setCreatingStaff(false)
+    }
+  }
 
   // ─── Derived data ───────────────────────────────────────────────────────
 
@@ -654,15 +771,18 @@ export default function CharityDashboard() {
   }, [campaigns, safeCampaignPage])
   const activeStaff = useMemo(() => staff.filter(s => s.is_active), [staff])
 
-  const pendingReviewCount = useMemo(() =>
-    listings.filter(l => l.status === 'pending').length,
+  const charityReviewCount = useMemo(() =>
+    listings.filter(l => l.status === 'charity_review').length,
     [listings],
   )
 
   const filteredListings = useMemo(() => {
     if (listingsFilter === 'all') return listings
+    if (listingsFilter === 'charity_review') return listings.filter(l => l.status === 'charity_review')
+    if (listingsFilter === 'upcoming') return listings.filter(l => isUpcomingListing(l, dashboardNowMs))
+    if (listingsFilter === 'active') return listings.filter(l => isLiveActiveListing(l, dashboardNowMs))
     return listings.filter(l => l.status === listingsFilter)
-  }, [listings, listingsFilter])
+  }, [dashboardNowMs, listings, listingsFilter])
 
   // Stats for proceeds
   const totalRaised = stats?.totalRaised ?? 0
@@ -808,6 +928,52 @@ export default function CharityDashboard() {
     }
   }
 
+  async function approveDashboardListing(listing: Listing) {
+    if (!listing.uuid) return
+    setReviewingListingUuid(listing.uuid)
+    setListingNotice(null)
+    try {
+      // FR09 stage 2: the charity approval is the publishing gate. The backend
+      // changes the listing to active, while future start times are displayed as Upcoming.
+      await api.post<Listing>(`/listings/${listing.uuid}/charity-review`, { decision: 'approved' })
+      setListingNotice({ type: 'success', text: `“${listing.title}” was approved and moved to the auction schedule.` })
+      await loadData()
+    } catch (e) {
+      setListingNotice({ type: 'error', text: (e as ApiError).message || 'Failed to approve listing.' })
+    } finally {
+      setReviewingListingUuid(null)
+    }
+  }
+
+  async function rejectDashboardListing(listing: Listing) {
+    if (!listing.uuid) return
+    const reason = listingRejectReason.trim()
+    if (reason.length < 5) {
+      setListingNotice({ type: 'error', text: 'Please enter a rejection reason of at least 5 characters.' })
+      return
+    }
+
+    setReviewingListingUuid(listing.uuid)
+    setListingNotice(null)
+    try {
+      await api.post<Listing>(`/listings/${listing.uuid}/charity-review`, { decision: 'rejected', reason })
+      setRejectingListingUuid(null)
+      setListingRejectReason('')
+      setListingNotice({ type: 'success', text: `“${listing.title}” was rejected and returned to the donor with your reason.` })
+      await loadData()
+    } catch (e) {
+      setListingNotice({ type: 'error', text: (e as ApiError).message || 'Failed to reject listing.' })
+    } finally {
+      setReviewingListingUuid(null)
+    }
+  }
+
+  function cancelDashboardListingReject() {
+    setRejectingListingUuid(null)
+    setListingRejectReason('')
+    setListingNotice(null)
+  }
+
   // ─── Loading / Error / Not Registered ──────────────────────────────────
 
   if (loading) {
@@ -829,20 +995,42 @@ export default function CharityDashboard() {
     )
   }
 
-  if (notRegistered) {
+  if (charityDetails && charityDetails.status === 'pending') {
     return (
       <div className="min-h-[calc(100vh-64px)] flex items-center justify-center" style={{ background: C.linen }}>
-        <div className="text-center max-w-md mx-auto p-8">
-          <Info className="w-12 h-12 mx-auto mb-4" style={{ color: '#92400E' }} />
-          <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>No Charity Organisation Registered</h2>
-          <p className="text-sm mb-6" style={{ color: C.muted }}>
-            Your account hasn't been linked to a charity organisation yet.
-            Register your charity first to start viewing donations and auction items.
+        <div className="text-center max-w-md mx-auto p-8 rounded-2xl bg-white shadow-sm border" style={{ borderColor: C.beige }}>
+          <Clock className="w-12 h-12 mx-auto mb-4 animate-pulse" style={{ color: '#92400E' }} />
+          <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>Registration Pending Review</h2>
+          <p className="text-sm mb-4" style={{ color: C.muted }}>
+            Your charity registration for <span className="font-bold text-slate-800">{charityDetails.organisationName}</span> is currently pending administrator review.
           </p>
+          <p className="text-xs" style={{ color: C.muted }}>
+            We are reviewing your application and supporting document. Please check back later.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (charityDetails && charityDetails.status === 'rejected') {
+    return (
+      <div className="min-h-[calc(100vh-64px)] flex items-center justify-center" style={{ background: C.linen }}>
+        <div className="text-center max-w-lg mx-auto p-8 rounded-2xl bg-white shadow-sm border" style={{ borderColor: C.dangerBorder }}>
+          <AlertCircle className="w-12 h-12 mx-auto mb-4" style={{ color: C.danger }} />
+          <h2 className="text-xl font-bold mb-2" style={{ color: C.slate }}>Charity Registration Rejected</h2>
+          <p className="text-sm mb-4" style={{ color: C.muted }}>
+            Your registration for <span className="font-bold text-slate-800">{charityDetails.organisationName}</span> was rejected by the administrator.
+          </p>
+          {charityDetails.rejectionReason && (
+            <div className="mb-6 p-4 rounded-xl text-left border" style={{ background: C.dangerLight, borderColor: C.dangerBorder, color: C.danger }}>
+              <p className="text-xs font-black uppercase tracking-wider mb-1">Rejection Reason:</p>
+              <p className="text-sm leading-relaxed">{charityDetails.rejectionReason}</p>
+            </div>
+          )}
           <Link to="/register/charity"
-            className="inline-block px-6 py-3 rounded-xl text-white font-semibold"
+            className="inline-block px-6 py-3 rounded-xl text-white font-semibold transition-opacity hover:opacity-90"
             style={{ background: C.emerald }}>
-            Register Charity →
+            Reapply for Registration
           </Link>
         </div>
       </div>
@@ -855,7 +1043,7 @@ export default function CharityDashboard() {
     { id: 'campaigns', label: 'Campaigns', icon: <HeartHandshake className="w-4 h-4" />, badge: activeCampaigns.length },
     ...(isOwner ? [{ id: 'staff' as Tab, label: 'Staff Accounts', icon: <Users className="w-4 h-4" />, badge: activeStaff.length }] : []),
     { id: 'proceeds', label: 'Donation Proceeds', icon: <DollarSign className="w-4 h-4" /> },
-    { id: 'listings', label: 'Listings', icon: <ListOrdered className="w-4 h-4" />, badge: pendingReviewCount },
+    { id: 'listings', label: 'Listings', icon: <ListOrdered className="w-4 h-4" />, badge: charityReviewCount },
   ]
 
   return (
@@ -880,11 +1068,11 @@ export default function CharityDashboard() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>Campaigns</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>Manage your fundraising campaigns and track progress</p>
                 </div>
-                <Link to="/charity/campaigns"
+                <button type="button" onClick={() => setActiveTab('create-campaign')}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                   style={{ background: C.emerald }}>
                   <Plus className="w-4 h-4" /> Create New Campaign
-                </Link>
+                </button>
               </div>
 
               <DashboardCampaignOverview
@@ -900,11 +1088,11 @@ export default function CharityDashboard() {
                   <HeartHandshake className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
                   <p className="font-bold" style={{ color: C.slate }}>No campaigns yet</p>
                   <p className="text-sm mt-1 mb-4" style={{ color: C.muted }}>Create your first fundraising campaign to start accepting auction donations.</p>
-                  <Link to="/charity/campaigns"
+                  <button type="button" onClick={() => setActiveTab('create-campaign')}
                     className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                     style={{ background: C.emerald }}>
                     <Plus className="w-4 h-4" /> Create Campaign
-                  </Link>
+                  </button>
                 </div>
               ) : (
                 <section className="rounded-2xl bg-white shadow-sm" style={{ border: `1px solid ${C.beige}` }}>
@@ -953,11 +1141,11 @@ export default function CharityDashboard() {
                   <h1 className="text-2xl font-black" style={{ color: C.slate }}>Staff Accounts</h1>
                   <p className="text-sm mt-1" style={{ color: C.muted }}>Create, deactivate, and reactivate staff accounts for your organisation</p>
                 </div>
-                <Link to="/charity/staff"
+                <button type="button" onClick={() => setActiveTab('create-staff')}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                   style={{ background: C.emerald }}>
                   <Plus className="w-4 h-4" /> Add Staff Account
-                </Link>
+                </button>
               </div>
 
               {staff.length === 0 ? (
@@ -965,11 +1153,11 @@ export default function CharityDashboard() {
                   <Users className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
                   <p className="font-bold" style={{ color: C.slate }}>No staff accounts yet</p>
                   <p className="text-sm mt-1 mb-4" style={{ color: C.muted }}>Add staff members to help manage your campaigns and listings.</p>
-                  <Link to="/charity/staff"
+                  <button type="button" onClick={() => setActiveTab('create-staff')}
                     className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
                     style={{ background: C.emerald }}>
                     <Plus className="w-4 h-4" /> Add Staff
-                  </Link>
+                  </button>
                 </div>
               ) : (
                 <div className="rounded-2xl bg-white overflow-hidden" style={{ border: `1px solid ${C.beige}` }}>
@@ -1040,6 +1228,106 @@ export default function CharityDashboard() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ───────────── CREATE CAMPAIGN (inline) ───────────── */}
+          {activeTab === 'create-campaign' && (
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h1 className="text-2xl font-black" style={{ color: C.slate }}>Create New Campaign</h1>
+                  <p className="text-sm mt-1" style={{ color: C.muted }}>Set up a new fundraising campaign for your charity organisation</p>
+                </div>
+                <button type="button" onClick={() => { setNewCampaignForm(emptyCampaignForm); setNewCampaignErrors({}); setActiveTab('campaigns') }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                  style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                  Back to Campaigns
+                </button>
+              </div>
+
+              <form onSubmit={saveCreateCampaign} noValidate className="rounded-2xl bg-white p-6 space-y-5 shadow-sm" style={{ border: `1px solid ${C.beige}` }}>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Campaign Name *</label>
+                  <input value={newCampaignForm.name} onChange={e => setNewCampaignForm(p => ({ ...p, name: e.target.value }))}
+                    placeholder="e.g. Winter Fundraising 2026" style={dashboardInputStyle(!!newCampaignErrors.name)} />
+                  {newCampaignErrors.name && <p className="text-xs mt-1" style={{ color: C.danger }}>{newCampaignErrors.name}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Description *</label>
+                  <textarea rows={4} value={newCampaignForm.description} onChange={e => setNewCampaignForm(p => ({ ...p, description: e.target.value }))}
+                    placeholder="Describe the campaign and its fundraising goals" style={dashboardInputStyle(!!newCampaignErrors.description, { resize: 'none' })} />
+                  {newCampaignErrors.description && <p className="text-xs mt-1" style={{ color: C.danger }}>{newCampaignErrors.description}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>End Date (optional)</label>
+                  <input type="date" value={newCampaignForm.end_date} onChange={e => setNewCampaignForm(p => ({ ...p, end_date: e.target.value }))}
+                    style={dashboardInputStyle(false)} />
+                  <p className="text-xs mt-1" style={{ color: C.muted }}>{END_DATE_HELP_TEXT}</p>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="submit" disabled={creatingCampaign}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-50"
+                    style={{ background: C.emerald }}>
+                    {creatingCampaign ? 'Creating…' : 'Create Campaign'}
+                  </button>
+                  <button type="button" onClick={() => { setNewCampaignForm(emptyCampaignForm); setNewCampaignErrors({}); setActiveTab('campaigns') }}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold"
+                    style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* ───────────── CREATE STAFF (inline) ───────────── */}
+          {activeTab === 'create-staff' && (
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h1 className="text-2xl font-black" style={{ color: C.slate }}>Add Staff Account</h1>
+                  <p className="text-sm mt-1" style={{ color: C.muted }}>Create a new staff account for your charity organisation</p>
+                </div>
+                <button type="button" onClick={() => { setStaffForm({ full_name: '', email: '', temporary_password: '' }); setStaffFormErrors({}); setActiveTab('staff') }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                  style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                  Back to Staff
+                </button>
+              </div>
+
+              <form onSubmit={saveCreateStaff} noValidate className="rounded-2xl bg-white p-6 space-y-5 shadow-sm" style={{ border: `1px solid ${C.beige}` }}>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Full Name *</label>
+                  <input value={staffForm.full_name} onChange={e => setStaffForm(p => ({ ...p, full_name: e.target.value }))}
+                    placeholder="e.g. Jane Doe" style={dashboardInputStyle(!!staffFormErrors.full_name)} />
+                  {staffFormErrors.full_name && <p className="text-xs mt-1" style={{ color: C.danger }}>{staffFormErrors.full_name}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Work Email *</label>
+                  <input type="email" value={staffForm.email} onChange={e => setStaffForm(p => ({ ...p, email: e.target.value }))}
+                    placeholder="e.g. jane@charity.org" style={dashboardInputStyle(!!staffFormErrors.email)} />
+                  {staffFormErrors.email && <p className="text-xs mt-1" style={{ color: C.danger }}>{staffFormErrors.email}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: C.slate }}>Temporary Password *</label>
+                  <input type="password" value={staffForm.temporary_password} onChange={e => setStaffForm(p => ({ ...p, temporary_password: e.target.value }))}
+                    placeholder="Set an initial password (min 8 characters)" style={dashboardInputStyle(!!staffFormErrors.temporary_password)} />
+                  {staffFormErrors.temporary_password && <p className="text-xs mt-1" style={{ color: C.danger }}>{staffFormErrors.temporary_password}</p>}
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="submit" disabled={creatingStaff}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-50"
+                    style={{ background: C.emerald }}>
+                    {creatingStaff ? 'Creating…' : 'Create Staff Account'}
+                  </button>
+                  <button type="button" onClick={() => { setStaffForm({ full_name: '', email: '', temporary_password: '' }); setStaffFormErrors({}); setActiveTab('staff') }}
+                    className="px-6 py-2.5 rounded-xl text-sm font-bold"
+                    style={{ border: `1px solid ${C.beige}`, color: C.muted }}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 
@@ -1180,12 +1468,29 @@ export default function CharityDashboard() {
                 </button>
               </div>
 
+              {listingNotice && (
+                <div className="mb-5 flex items-start gap-3 rounded-xl px-4 py-3"
+                  style={{
+                    background: listingNotice.type === 'success' ? C.emeraldLight : C.dangerLight,
+                    border: `1px solid ${listingNotice.type === 'success' ? 'rgba(4,120,87,0.2)' : C.dangerBorder}`,
+                  }}>
+                  {listingNotice.type === 'success'
+                    ? <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: C.emerald }} />
+                    : <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: C.danger }} />}
+                  <p className="text-sm font-semibold flex-1" style={{ color: listingNotice.type === 'success' ? C.emerald : C.danger }}>{listingNotice.text}</p>
+                  <button type="button" onClick={() => setListingNotice(null)} className="p-0.5 rounded-lg" aria-label="Dismiss listing message">
+                    <X className="w-4 h-4" style={{ color: listingNotice.type === 'success' ? C.emerald : C.danger }} />
+                  </button>
+                </div>
+              )}
+
               {/* Filter tabs */}
               <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
                 {[
                   { value: 'all', label: 'All', count: listings.length },
-                  { value: 'pending', label: 'Pending', count: listings.filter(l => l.status === 'pending').length },
-                  { value: 'active', label: 'Active', count: listings.filter(l => l.status === 'active').length },
+                  { value: 'charity_review', label: 'Pending Review', count: charityReviewCount },
+                  { value: 'upcoming', label: 'Upcoming', count: listings.filter(l => isUpcomingListing(l, dashboardNowMs)).length },
+                  { value: 'active', label: 'Active', count: listings.filter(l => isLiveActiveListing(l, dashboardNowMs)).length },
                   { value: 'sold', label: 'Sold', count: listings.filter(l => l.status === 'sold').length },
                   { value: 'expired', label: 'Expired', count: listings.filter(l => l.status === 'expired').length },
                 ].map(opt => (
@@ -1206,8 +1511,8 @@ export default function CharityDashboard() {
                   <Package className="w-12 h-12 mx-auto mb-3" style={{ color: C.beige }} />
                   <p className="font-bold" style={{ color: C.slate }}>No listings found</p>
                   <p className="text-sm mt-1 mb-4" style={{ color: C.muted }}>
-                    {listingsFilter === 'pending'
-                      ? 'No pending listings to review.'
+                    {listingsFilter === 'charity_review'
+                      ? 'No listings are waiting for charity approval.'
                       : 'All auction listings linked to this charity organisation appear here.'}
                   </p>
                   <Link to="/auctions"
@@ -1224,46 +1529,122 @@ export default function CharityDashboard() {
                         <tr style={{ background: C.linen }}>
                           <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Item Title</th>
                           <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Donor</th>
-                          <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Current Bid</th>
-                          <th className="text-center px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Status</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest hidden md:table-cell" style={{ color: C.muted }}>Charity</th>
+                          <th className="text-left px-6 py-3 font-bold text-[10px] uppercase tracking-widest hidden lg:table-cell" style={{ color: C.muted }}>Start / End</th>
                           <th className="text-right px-6 py-3 font-bold text-[10px] uppercase tracking-widest" style={{ color: C.muted }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredListings.map(l => (
-                          <tr key={l.uuid ?? l.id} className="border-t" style={{ borderColor: C.beige }}>
-                            <td className="px-6 py-4">
-                              <p className="font-medium" style={{ color: C.slate }}>{l.title}</p>
-                            </td>
-                            <td className="px-6 py-4 text-xs" style={{ color: C.muted }}>
-                              Donor #{l.donor_id}
-                            </td>
-                            <td className="px-6 py-4 text-right font-bold font-mono" style={{ color: C.emerald }}>
-                              {money(l.current_bid)}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              {statusPill(l.status)}
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                {l.status === 'pending' && (
-                                  <Link to="/charity/listing-reviews"
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90"
-                                    style={{ background: C.emerald }}>
-                                    Review
-                                  </Link>
+                        {filteredListings.map(l => {
+                          const displayStatus = listingStatusDisplay(l, dashboardNowMs)
+                          const isReviewRow = l.status === 'charity_review' && Boolean(l.uuid)
+                          const isRejectingThisListing = rejectingListingUuid === l.uuid
+                          const isReviewingThisListing = reviewingListingUuid === l.uuid
+                          const reviewActionsDisabled = reviewingListingUuid !== null
+
+                          return (
+                            <tr key={l.uuid ?? l.id} className="border-t" style={{ borderColor: C.beige }}>
+                              <td className="px-6 py-4">
+                                <p className="font-medium" style={{ color: C.slate }}>{l.title}</p>
+                                {l.review_note && (
+                                  <p className="text-xs mt-1" style={{ color: C.muted }}>Latest note: {l.review_note}</p>
                                 )}
-                                {l.uuid && l.status === 'active' && (
-                                  <Link to={`/auctions/${l.uuid}`} target="_blank"
-                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-                                    style={{ color: C.muted }} title="View listing">
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </Link>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                              <td className="px-6 py-4 text-xs" style={{ color: C.muted }}>
+                                Donor #{l.donor_id}
+                              </td>
+                              <td className="px-6 py-4 hidden md:table-cell text-xs" style={{ color: C.muted }}>
+                                {l.charityName || '—'}
+                              </td>
+                              <td className="px-6 py-4 hidden lg:table-cell text-xs" style={{ color: C.muted }}>
+                                {new Date(l.start_time).toLocaleDateString()} → {new Date(l.end_time).toLocaleDateString()}
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  {isReviewRow && !isRejectingThisListing && (
+                                    <>
+                                      <Link to="/charity/listing-reviews"
+                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+                                        style={{ color: C.muted }} title="Open full charity review page">
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                      </Link>
+                                      <button
+                                        type="button"
+                                        onClick={() => { void approveDashboardListing(l) }}
+                                        disabled={reviewActionsDisabled}
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                                        style={{ background: C.emerald }}>
+                                        {isReviewingThisListing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                        {isReviewingThisListing ? 'Approving...' : 'Approve'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { setRejectingListingUuid(l.uuid ?? null); setListingRejectReason(''); setListingNotice(null) }}
+                                        disabled={reviewActionsDisabled}
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
+                                        style={{ color: C.danger, border: `1px solid ${C.dangerBorder}`, background: C.dangerLight }}>
+                                        Reject
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {isReviewRow && isRejectingThisListing && (
+                                    <form
+                                      onSubmit={(e) => { e.preventDefault(); void rejectDashboardListing(l) }}
+                                      className="flex items-start justify-end gap-2">
+                                      <div className="flex flex-col text-left">
+                                        <input
+                                          type="text"
+                                          value={listingRejectReason}
+                                          autoFocus
+                                          onChange={(e) => setListingRejectReason(e.target.value)}
+                                          placeholder="Reason shown to donor"
+                                          className="w-56 px-2 py-1 text-xs rounded-lg outline-none"
+                                          style={{ border: `1px solid ${C.danger}`, background: C.dangerLight, color: C.slate }}
+                                        />
+                                        <span className="text-[10px] mt-0.5" style={{ color: listingRejectReason.trim().length < 5 ? C.danger : C.muted }}>
+                                          {listingRejectReason.trim().length < 5
+                                            ? `${5 - listingRejectReason.trim().length} more character(s) required`
+                                            : 'Reason will be visible to the donor.'}
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="submit"
+                                        disabled={listingRejectReason.trim().length < 5 || isReviewingThisListing}
+                                        className="px-2 py-1 text-xs font-bold rounded-lg text-white disabled:opacity-50"
+                                        style={{ background: isReviewingThisListing ? C.muted : C.danger }}>
+                                        {isReviewingThisListing ? '...' : 'Confirm'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={cancelDashboardListingReject}
+                                        disabled={isReviewingThisListing}
+                                        className="px-2 py-1 text-xs rounded-lg"
+                                        style={{ color: C.muted }}>
+                                        Cancel
+                                      </button>
+                                    </form>
+                                  )}
+
+                                  {!isReviewRow && l.uuid && isLiveActiveListing(l, dashboardNowMs) && (
+                                    <Link to={`/auctions/${l.uuid}`} target="_blank"
+                                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+                                      style={{ color: C.muted }} title="View listing">
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </Link>
+                                  )}
+
+                                  {!isReviewRow && !isLiveActiveListing(l, dashboardNowMs) && (
+                                    <span className="text-[10px] font-bold px-2 py-1 rounded-full"
+                                      style={{ background: C.linen, color: C.muted }}>
+                                      {displayStatus.label || displayStatus.status.charAt(0).toUpperCase() + displayStatus.status.slice(1)}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

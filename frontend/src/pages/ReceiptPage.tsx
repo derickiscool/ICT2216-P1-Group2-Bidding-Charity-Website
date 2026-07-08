@@ -92,11 +92,21 @@ export default function ReceiptPage() {
               <p className="text-base font-semibold" style={{ color: C.slate }}>{receipt.item_title}</p>
             </div>
 
+            {/* Donor */}
+            <div className="pb-4">
+              <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: C.muted }}>Donor</p>
+              <p className="text-base font-semibold" style={{ color: C.slate }}>{receipt.bidder_username}</p>
+            </div>
+
             {/* Receipt details */}
             <div className="grid grid-cols-2 gap-4 pt-4 border-t" style={{ borderColor: C.beige }}>
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: C.muted }}>Receipt Reference</p>
                 <p className="text-sm font-mono" style={{ color: C.slate }}>{receipt.receipt_ref}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: C.muted }}>Payment Reference</p>
+                <p className="text-sm font-mono" style={{ color: C.slate }}>{receipt.payment_ref}</p>
               </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: C.muted }}>Date Issued</p>

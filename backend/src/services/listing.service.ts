@@ -307,9 +307,12 @@ export const approveListing = async (uuid: string, req: Request): Promise<Listin
   if (listing.status !== 'pending') throw badRequest('Only pending listings can be approved.');
   listing.status = 'charity_review';
   listing.review_note = undefined;
-  listing.review_stage = undefined;
+  // Mark the current reviewer stage explicitly so dashboards and donor tracking
+  // can show that this listing has passed admin review and is now waiting for
+  // the assigned charity organisation.
+  listing.review_stage = 'charity';
   await updateListing(listing);
-  await audit(req, 'LISTING_FORWARDED_TO_CHARITY', { uuid }, 'listing', listing.uuid, req.user?.id);
+  await audit(req, 'LISTING_FORWARDED_TO_CHARITY', { uuid, nextStage: 'charity' }, 'listing', listing.uuid, req.user?.id);
   return listing;
 };
 
@@ -383,6 +386,9 @@ export const provideTracking = async (uuid: string, trackingNumber: string, cour
   delivery.shipped_at = new Date().toISOString();
   await updateDelivery(delivery);
 
+  listing.status = 'shipped';
+  await updateListing(listing);
+
   await audit(req, 'LISTING_SHIPPED', { uuid, tracking: cleanedTracking, courier: cleanedCourier }, 'listing', listing.uuid, req.user?.id);
   return { delivery, listing };
 };
@@ -400,6 +406,9 @@ export const confirmDelivery = async (uuid: string, req: Request): Promise<{ del
 
   delivery.confirmed_at = new Date().toISOString();
   await updateDelivery(delivery);
+
+  listing.status = 'delivered';
+  await updateListing(listing);
 
   // Release escrow to charity
   await releaseEscrowForListing(listing.id, req);
@@ -425,7 +434,18 @@ const isPubliclyBiddableNow = (listing: Listing, nowMs = Date.now()): boolean =>
     && endMs > nowMs;
 };
 
-export const searchPublicListings = async (query: Record<string, unknown>): Promise<Listing[]> => {
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+
+export const searchPublicListings = async (query: Record<string, unknown>): Promise<PaginatedResult<Listing>> => {
   const q = sanitizeText(query.q ?? query.search, 80);
   const category = sanitizeText(query.category, 60);
   if (q && !isSafeSearchQuery(q)) throw badRequest('Search query was rejected because it contained malformed or unsafe syntax.', 'UNSAFE_SEARCH_QUERY');
@@ -437,6 +457,10 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   const endBefore = typeof query.end_before === 'string' && query.end_before ? new Date(query.end_before) : undefined;
   const condition = typeof query.condition === 'string' && ALLOWED_CONDITIONS.has(query.condition) ? query.condition : undefined;
   const sort = typeof query.sort === 'string' && ALLOWED_SORTS.has(query.sort) ? query.sort : 'ending_soon';
+
+  // NFR01: Parse pagination params with sensible bounds to keep response size predictable.
+  const page = Math.max(1, Number(query.page) || 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(query.pageSize) || DEFAULT_PAGE_SIZE));
 
   if (priceMin !== undefined && !Number.isFinite(priceMin)) throw badRequest('Invalid minimum price.');
   if (priceMax !== undefined && !Number.isFinite(priceMax)) throw badRequest('Invalid maximum price.');
@@ -464,13 +488,31 @@ export const searchPublicListings = async (query: Record<string, unknown>): Prom
   else if (sort === 'price_high') results.sort((a, b) => b.current_bid - a.current_bid);
   else results.sort((a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime());
 
-  return results;
+  const total = results.length;
+  const totalPages = Math.ceil(total / pageSize) || 1;
+  const startIndex = (page - 1) * pageSize;
+  const data = results.slice(startIndex, startIndex + pageSize);
+
+  return { data, total, page, pageSize, totalPages };
 };
 
-export const getPublicListing = async (uuid: string, isAdmin = false): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
+export const getPublicListing = async (
+  uuid: string,
+  isAdmin = false,
+  viewerUserId?: number,
+): Promise<Listing & { campaign?: import('../types/domain').Campaign }> => {
   const listing = await getListingByUuid(uuid);
   if (!listing) throw notFound('Listing not found');
-  if (!isAdmin && !isPubliclyBiddableNow(listing)) throw notFound('Listing not found');
+
+  // The listing detail route is used by public browsing, admin review, and donor dashboards.
+  // Public users may only see currently biddable or terminal listings. Admins and the donor
+  // who created the listing may still open pending/charity_review/rejected listings for review
+  // or tracking without accidentally publishing them to everyone else.
+  const terminalStatuses = new Set<Listing['status']>(['sold', 'shipped', 'delivered', 'expired']);
+  const isOwner = viewerUserId !== undefined && listing.donor_id === viewerUserId;
+  if (!isAdmin && !isOwner && !terminalStatuses.has(listing.status) && !isPubliclyBiddableNow(listing)) {
+    throw notFound('Listing not found');
+  }
 
   // Attach campaign details (includes total_raised, description) for the auction detail page.
   let campaign: import('../types/domain').Campaign | undefined;

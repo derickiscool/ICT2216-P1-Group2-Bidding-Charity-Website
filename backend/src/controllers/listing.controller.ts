@@ -19,8 +19,8 @@ import { getMyListingTrackingDashboard } from '../services/listingTracking.servi
 import { closeExpiredAuctions } from '../services/payment.service';
 
 export const listActive = async (req: Request, res: Response): Promise<void> => {
-  const listings = await searchPublicListings(req.query);
-  res.json({ data: listings, total: listings.length });
+  const result = await searchPublicListings(req.query);
+  res.json(result);
 };
 
 export const listMine = async (req: Request, res: Response): Promise<void> => {
@@ -34,7 +34,7 @@ export const listMineTracking = async (req: Request, res: Response): Promise<voi
 
 export const getListing = async (req: Request, res: Response): Promise<void> => {
   const isAdmin = req.user?.roles?.includes('admin') ?? false;
-  res.json(await getPublicListing(req.params.uuid, isAdmin));
+  res.json(await getPublicListing(req.params.uuid, isAdmin, req.user?.id));
 };
 
 export const create = async (req: Request, res: Response): Promise<void> => {

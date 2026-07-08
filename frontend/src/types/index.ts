@@ -165,8 +165,8 @@ export interface AutoBidResponse {
 
 // ─── Payments & Receipts ─────────────────────────────────────────────────────
 
-export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'expired'
-export type EscrowState = 'not_held' | 'held' | 'released' | 'refunded'
+export type PaymentStatus = 'pending' | 'successful' | 'expired'
+export type EscrowState = 'not_held' | 'held' | 'released'
 
 export interface Payment {
   id: number
@@ -191,17 +191,6 @@ export interface PaymentWithListing extends Payment {
   has_shipping: boolean
   listing_status?: string
   listing_image?: string
-}
-
-export interface Receipt {
-  id: number
-  payment_id: number
-  listing_title: string
-  amount_paid: number
-  charity_name: string
-  charity_registration: string
-  receipt_number: string
-  created_at: string
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
@@ -304,6 +293,8 @@ export interface Receipt {
   receipt_ref: string
   integrity_hash: string
   generated_at: string
+  bidder_username: string
+  payment_ref: string
 }
 
 export interface AuditEvent {

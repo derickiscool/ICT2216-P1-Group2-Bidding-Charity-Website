@@ -252,6 +252,11 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
     listing.status = 'sold';
     await updateListing(listing);
 
+    // Generate receipt immediately when payment is completed — the bidder gets
+    // their donation receipt right away instead of waiting for delivery confirmation.
+    const { generateReceipt: genReceipt } = await import('./receipt.service');
+    await genReceipt(payment, listing, req.user?.username ?? 'bidder');
+
     await audit(
       req,
       'PAYMENT_COMPLETED',
@@ -266,17 +271,10 @@ export const completePayment = async (paymentUuid: string, req: Request): Promis
 };
 
 export const releaseEscrowForListing = async (listingId: number, req: Request): Promise<void> => {
-  const { getPaymentsForListing: getPayments, updatePayment: updPayment, getListingById: getListing } = await import('../repositories');
+  const { getPaymentsForListing: getPayments, updatePayment: updPayment } = await import('../repositories');
   const payments = await getPayments(listingId);
   const heldPayment = payments.find(p => p.escrow_state === 'held');
   if (!heldPayment) return;
-
-  // Generate receipt BEFORE releasing escrow — no receipt, no payout
-  const { generateReceipt: genReceipt } = await import('./receipt.service');
-  const listing = await getListing(listingId);
-  if (listing) {
-    await genReceipt(heldPayment, listing, req.user?.username ?? 'bidder');
-  }
 
   heldPayment.escrow_state = 'released';
   await updPayment(heldPayment);

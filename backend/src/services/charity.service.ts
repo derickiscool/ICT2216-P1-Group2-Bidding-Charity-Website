@@ -1,6 +1,6 @@
 import type { Request } from 'express';
-import type { CharityOrganisation, Listing, Payment } from '../types/domain';
-import { addCharity, getCharityByUuid, getPaymentsForListing, listCharities, listListings, updateCharity } from '../repositories';
+import type { CharityOrganisation, Listing } from '../types/domain';
+import { addCharity, getCharityByUuid, getPaymentsForListing, listCampaignsByCharity, listCharities, listListings, updateCharity, deleteCharityByUuid } from '../repositories';
 import { badRequest, notFound } from '../utils/errors';
 import { sanitizeText, sha256 } from '../utils/security';
 import { audit } from './audit.service';
@@ -16,6 +16,18 @@ const detectMime = (buffer: Buffer): 'application/pdf' | 'image/png' | 'image/jp
 
 export const registerCharity = async (req: Request): Promise<CharityOrganisation> => {
   if (!req.user) throw badRequest('Authentication required');
+
+  const allCharities = await listCharities();
+  const existing = allCharities.find(c => c.ownerUserId === req.user!.id);
+  if (existing) {
+    if (existing.status === 'pending') {
+      throw badRequest('Your charity registration is already pending review.', 'CHARITY_PENDING_REVIEW');
+    }
+    if (existing.status === 'rejected') {
+      await deleteCharityByUuid(existing.uuid);
+    }
+  }
+
   const file = req.file;
   const organisationName = sanitizeText(req.body.organisationName ?? req.body.name, 160);
   const description = sanitizeText(req.body.description, 1000);
@@ -76,8 +88,33 @@ export const getCharityDashboard = async (ownerUserId: number, charityId?: numbe
     : allCharities.find(c => c.ownerUserId === ownerUserId) ?? null;
 
   const allListings = await listListings();
-  const organisationName = charity?.organisationName ?? '';
-  const listings = allListings.filter(l => l.charityName.toLowerCase() === organisationName.toLowerCase());
+  // FR09/FR20: use the actual campaign ownership relation instead of the
+  // denormalised charityName text stored on each listing. This keeps the
+  // dashboard and review counts accurate even if a charity name changes, and
+  // prevents listings from another charity with a similar name from appearing.
+  const charityCampaigns = charity ? await listCampaignsByCharity(charity.id) : [];
+  const campaignIds = new Set(charityCampaigns.map(campaign => campaign.id));
+
+  // Strict FR09 routing rule:
+  // - Donor-created listings stay invisible to the charity while status='pending'
+  //   because they are still waiting for the first admin check.
+  // - The charity only sees listings after the admin forwards them to
+  //   status='charity_review', plus listings that have already completed the
+  //   charity stage and became auction/history records.
+  // - Admin-side rejections/changes-requested are not routed to the charity.
+  const charityRoutedStatuses = new Set<Listing['status']>([
+    'charity_review',
+    'active',
+    'sold',
+    'shipped',
+    'delivered',
+    'expired',
+    'cancelled',
+  ]);
+  const listings = allListings.filter(l =>
+    campaignIds.has(l.campaign_id) &&
+    (charityRoutedStatuses.has(l.status) || (l.status === 'rejected' && l.review_stage === 'charity')),
+  );
 
   // Fetch payments for each sold listing to compute fund statistics and per-item flags
   const soldListings = listings.filter(l => l.status === 'sold');

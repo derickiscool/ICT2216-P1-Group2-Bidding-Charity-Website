@@ -73,6 +73,7 @@ export interface BidForGoodRepository {
   getCharityByOwnerUserId(ownerUserId: number): Promise<CharityOrganisation | undefined>;
   listCharities(): Promise<CharityOrganisation[]>;
   updateCharity(record: CharityOrganisation): Promise<void>;
+  deleteCharityByUuid(uuid: string): Promise<void>;
 
   addCampaign(input: NewCampaignInput): Promise<Campaign>;
   getCampaignById(id: number): Promise<Campaign | undefined>;
@@ -119,6 +120,8 @@ export interface BidForGoodRepository {
     charity_name: string;
     receipt_ref: string;
     integrity_hash: string;
+    bidder_username: string;
+    payment_ref: string;
   }): Promise<Receipt>;
   getReceiptByUuid(uuid: string): Promise<Receipt | undefined>;
   getReceiptByPaymentId(paymentId: number): Promise<Receipt | undefined>;
