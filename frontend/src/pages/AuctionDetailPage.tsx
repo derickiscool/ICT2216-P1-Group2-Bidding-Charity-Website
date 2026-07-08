@@ -335,9 +335,11 @@ export default function AuctionDetailPage() {
           <p className="text-lg font-bold mb-4" style={{ color: 'var(--bfg-slate)' }}>Listing not found</p>
           <p className="text-sm mb-6" style={{ color: 'var(--bfg-text-muted)' }}>{pageError}</p>
           <div className="flex items-center justify-center gap-3">
-            <Link to={user && user.roles.includes('admin') ? '/admin' : '/dashboard'} className="px-6 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'var(--bfg-linen)', color: 'var(--bfg-slate)', border: '1px solid var(--bfg-beige)' }}>
-              Dashboard
-            </Link>
+            {isAuthenticated && (
+              <Link to={user && user.roles.includes('admin') ? '/admin' : '/dashboard'} className="px-6 py-2.5 rounded-xl text-sm font-bold" style={{ background: 'var(--bfg-linen)', color: 'var(--bfg-slate)', border: '1px solid var(--bfg-beige)' }}>
+                Dashboard
+              </Link>
+            )}
             <Link to="/auctions" className="px-6 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'var(--bfg-emerald)' }}>
               Browse Auctions
             </Link>
