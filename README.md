@@ -2,56 +2,44 @@
 
 BidForGood is a charity auction web application where users can bid on donated items, services, or experiences, with proceeds going to verified charity organisations.
 
-This branch focuses on Ezra's assigned secure implementation scope for Deliverable 2. It builds on the merged team frontend/backend codebase and implements security controls for registration, login, charity registration, auction configuration, bidding, search filtering, CI, dependency audit, and automated tests.
+This branch focuses on secure implementation scope for Deliverable 2. It builds on the merged team frontend/backend codebase and implements security controls for registration, login, charity registration, auction configuration, bidding, search filtering, CI, dependency audit, and automated tests.
 
 ## Current Implementation Scope
 
-changes made to this branch is work in progress, as more stuff is added, more of it will be logged
+Implemented:
 
-Implemented in this branch:
-
-- Secure user registration with OTP verification before account creation.
+- Secure user registration with OTP email verification before account creation.
 - Duplicate-email enumeration suppression during registration.
-- Breached/common-password rejection using built-in strings and a breached-password denylist.
-- Login/logout with generic failure messages, failed-login tracking, and temporary lockout.
-- HttpOnly cookie session management using JWT, `sid`, `jti`, expiry, and server-side session records.
-- CSRF protection for state-changing authenticated requests.
-- Cookie-only authentication; `Authorization: Bearer` fallback is intentionally not accepted.
-- Charity registration supporting-document validation for PDF, PNG, and JPEG using declared MIME type and magic-byte checks.
+- Breached/common-password rejection using built-in strings, a breached-password denylist, and a dictionary-word list.
+- Login/logout with generic failure messages, failed-login tracking, and temporary lockout backed by a persistent cache.
+- Passwordless (OTP-based) login flow as an alternative to password login.
+- Admin accounts require password + OTP to log in.
+- Forced password change on first login for accounts issued a temporary password.
+- HttpOnly cookie session management using JWT, sid, jti, sliding inactivity refresh, absolute session expiry, and server-side - session records.
+- CSRF protection for all state-changing authenticated requests.
+- Cookie-only authentication; Authorization: Bearer fallback is intentionally not accepted.
+- Charity registration supporting-document validation for PDF, PNG, and JPEG using declared MIME type and magic-byte checks; - document stored encrypted at rest (AES-256-GCM).
 - Admin-only charity registration review workflow.
+- Charity staff account management (create, edit, deactivate) scoped to approved charity organisations.
+- Charity campaign management (create, edit, close) with BLOB image storage encrypted at rest.
+- Two-stage listing review workflow: admin approval followed by charity-staff review.
 - Auction configuration locking once a listing becomes active.
 - Bidder-only bid placement with CSRF, minimum increment validation, self-bidding prevention, per-listing mutex, and bid-flood protection.
+- Automated bidding (auto-bid) with configurable max amount and auto-increment.
+- Payment and escrow flow: deadline enforcement, payment completion, and escrow release.
+- Donation receipt generation with integrity hash; bidder receipt retrieval.
+- Donor shipping confirmation and bidder delivery confirmation workflow.
+- Donor listing tracking dashboard.
 - Public listing search/browse that only exposes active listings.
 - Unsafe SQL-like search/filter syntax rejection.
-- Audit logging for security-relevant events with sensitive-field redaction.
+- Listing filtering by category, condition, price range, campaign, and end time.
+- Encryption at rest for sensitive fields: listing images, campaign images, charity documents, delivery tracking numbers, and payment amounts (AES-256-GCM).
+- Profile management: username, full name, contact number updates; password change with old-password verification.
+- Audit logging for security-relevant events with sensitive-field redaction and tamper-evident hash chaining.
+- Structured HTTP request logging with rotating log files.
 - GitHub Actions CI with dependency installation, Gitleaks secret scan, build, test, and high-severity npm audit.
-- Backend automated SFR tests.
-
-Not implemented in this branch:
-
-- Payment and escrow flow.
-- Donation receipt generation.
-- Delivery confirmation.
-- Automated bidding.
-- Persistent watchlist.
-- Full charity campaign management.
-- Full donor/bidder/charity/admin dashboards.
-- Docker/nginx/AWS deployment pipeline.
-- OWASP ZAP/DAST execution.
-
-## SFR Mapping
-
-| Requirement | Status in this branch |
-|---|---|
-| SFR01 | Implemented: OTP registration, duplicate-email enumeration suppression, breached-password rejection. |
-| SFR02 | Implemented: secure login/logout, lockout, cookie-only session authentication. |
-| SFR04 | Implemented: charity supporting-document MIME and magic-byte validation. |
-| SFR05 | Implemented: charity registration remains pending until admin review. |
-| SFR08 | Implemented: active auction configuration fields are locked. |
-| SFR10 | Implemented: bid validation, CSRF, velocity checking, and per-listing mutex. |
-| SFR12 | Implemented: public search only returns active listings. |
-| SFR13 | Implemented: malformed/SQL-like search syntax is rejected. |
-| FSR08 | Implemented: Gitleaks secret scan in GitHub Actions. |
+- OWASP ZAP security header hardening applied and verified.
+- Backend automated SFR tests covering auth, bidding, listings, payments, sessions, input validation, and error handling.
 
 ## Tech Stack
 
@@ -71,41 +59,49 @@ Not implemented in this branch:
 ```text
 BidForGood/
 ├── .github/
+│   ├── actions/
+│   │   └── key-setup/
 │   └── workflows/
-│       └── ci.yml
+├── .husky/
+│   └── _/
 ├── backend/
 │   ├── data/
-│   │   └── breached-passwords.txt
-│   ├── src/
-│   │   ├── app.ts
-│   │   ├── index.ts
-│   │   ├── controllers/
-│   │   ├── middleware/
-│   │   ├── repositories/
-│   │   ├── routes/
-│   │   ├── services/
-│   │   ├── tests/
-│   │   ├── types/
-│   │   └── utils/
-│   ├── package.json
-│   └── tsconfig.json
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   ├── pages/
-│   │   ├── services/
-│   │   ├── store/
-│   │   ├── styles/
-│   │   └── types/
-│   ├── package.json
-│   └── vite.config.ts
+│   ├── db/
+│   │   └── init/
+│   ├── scripts/
+│   └── src/
+│       ├── __tests__/
+│       │   ├── helpers/
+│       │   ├── middleware/
+│       │   ├── repositories/
+│       │   ├── routes/
+│       │   ├── services/
+│       │   └── utils/
+│       ├── controllers/
+│       ├── middleware/
+│       ├── models/
+│       ├── repositories/
+│       ├── routes/
+│       ├── services/
+│       ├── types/
+│       └── utils/
 ├── docs/
-│   ├── evidence/
-│   └── implementation/
-├── package.json
-├── package-lock.json
-└── README.md
+├── frontend/
+│   └── src/
+│       ├── __tests__/
+│       │   ├── config/
+│       │   └── store/
+│       ├── components/
+│       │   ├── auctions/
+│       │   └── layout/
+│       ├── config/
+│       ├── hooks/
+│       ├── pages/
+│       ├── services/
+│       ├── store/
+│       ├── styles/
+│       └── types/
+└── package.json
 ```
 
 ## Local Setup
@@ -160,6 +156,7 @@ Run this command to get the encryption key:
 cd backend
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
+Paste the generated key into backend/.env as shown below.
 ```env
 DATA_ENCRYPTION_KEY=<your_generated_32_byte_base64_key>
 ```
@@ -189,34 +186,61 @@ npm audit --audit-level=high: PASS
 All demo accounts use the password `S3cure!Pass2026`. Loaded automatically on first `docker compose up` (fresh volume), or on demand with `npm run seed` (from `backend/`) — see `backend/db/init/seed.sql`.
 
 ```text
-admin@bidforgood.test     (admin)
-donor@bidforgood.test     (donor)
-bidder@bidforgood.test    (bidder)
-bidder2@bidforgood.test   (bidder)  — second bidder, used to demo competing/outbid scenarios
-charity@bidforgood.test   (charity) — owns the approved demo charity
-charity2@bidforgood.test  (charity) — owns the pending demo charity
+ssdp1g2@gmail.com       (admin)
+donor1@bidforgood.test  (donor)
+donor2@bidforgood.test  (donor)
+donor3@bidforgood.test  (donor)   
+bidder1@bidforgood.test (bidder)
+bidder2@bidforgood.test (bidder)
+bidder3@bidforgood.test (bidder)
+bidder4@bidforgood.test (bidder)
+bidder5@bidforgood.test (bidder)
+charity1@bidforgood.test (charity) 
+charity2@bidforgood.test (charity) 
+charity3@bidforgood.test (charity) 
+charity4@bidforgood.test (charity) 
+staff1@bidforgood.test (charity_staff)
 ```
 
 **Charities**
 
 | Organisation | Status | Owner |
 |---|---|---|
-| Children's Hospital Trust | approved | `charity@bidforgood.test` |
-| Green Paws Animal Rescue | pending | `charity2@bidforgood.test` — log in as `admin` to review/approve it |
+| Children's Hospital | approved | `charity1@bidforgood.test` |
+| Green Paws Animal Rescue | approved | `charity2@bidforgood.test` |
+| Food Bank SG | approved | `charity3@bidforgood.test` |
+| Arts for Youth | approved | `charity4@bidforgood.test` |
 
 **Listings** — only `active` listings appear on the public Browse Auctions page (5 of the 8 below); the rest are reachable through role-specific views (donor's own listings, admin's review queue, etc.).
 
 | Title | Category | Status | Current Bid | Notes |
 |---|---|---|---|---|
-| Signed Premier League Jersey | Sports | active | $1,250 | 2 bids from `bidder` |
-| Private Dining Experience | Experiences | active | $3,800 | 2 bids from `bidder` |
+| Signed Premier League Jersey | Sports | active | $1,250 | 2 bids |
+| Private Dining Experience | Experiences | active | $3,800 | 2 bids |
+| Professional Photography Session | Experiences | active | $350 | 1 bid |
+| Vintage Polaroid Camera | Collectibles | active | $220 | 1 bid |
+| Limited Edition Art Print | Art | active | $400 | no bids yet |
+| Designer Handbag | Fashion | active | $950 | 3 bids |
+| Wireless Noise-Cancelling Headphones | Electronics | active | $280 | 2 bids |
 | Vintage Vinyl Record Collection | Collectibles | active | $150 | no bids yet |
-| Wireless Noise-Cancelling Headphones | Electronics | active | $280 | `bidder` outbid by `bidder2` |
-| Professional Photography Session | Experiences | active | $350 | 1 bid from `bidder2` |
-| Pending Vintage Camera | Collectibles | pending | $400 | awaiting admin review, hidden from Browse |
-| Antique Pocket Watch | Collectibles | sold | $750 | closed auction, won by `bidder` |
-| Handcrafted Ceramic Vase | Art | sold | $320 | won by `bidder`, pending payment — use this to test SFR14/SFR15 |
-| Weekend Spa Getaway | Experiences | draft | $1,500 | not yet submitted by the donor |
+| Mechanical Keyboard | Electronics | active | $210 | 2 bids |
+| Weekend Spa Getaway Voucher | Experiences | active | $500 | no bids yet |
+| Antique Tea Set | Collectibles | active | $420 | 4 bids |
+| Smart Watch | Electronics | active | $430 | 3 bids |
+| Yoga Mat Premium Set | Sports | active | $80 | no bids yet |
+| Board Game Collection | Hobbies | active | $105 | 2 bids |
+| Antique Pocket Watch | Collectibles | sold | $750 | won by `bidder1`, payment pending |
+| Handcrafted Ceramic Vase | Art | sold | $320 | won by `bidder1`, payment pending |
+| Leather Messenger Bag | Fashion | sold | $400 | won by `bidder2`, paid, escrow held, awaiting shipping |
+| Bluetooth Speaker | Electronics | sold | $180 | won by `bidder3`, paid, escrow held, awaiting shipping |
+| Gaming Console | Electronics | shipped | $780 | won by `bidder5`, awaiting delivery confirmation |
+| Cookbook Collection | Books | shipped | $120 | won by `bidder4`, awaiting delivery confirmation |
+| Acoustic Guitar | Music | delivered | $550 | won by `bidder1`, completed |
+| Fitness Tracker | Electronics | delivered | $200 | won by `bidder2`, completed |
+| Vintage Film Camera | Collectibles | expired | $300 | no bids, auction expired |
+| Signed Novel | Books | expired | $350 | 2 bids, auction expired |
+| Charity Review Painting | Art | pending | $500 | awaiting admin/charity approval, hidden from Browse |
+| Antique Vase | Collectibles | changes_requested | $400 | admin requested description/provenance updates |
 
 ## Security Notes
 
