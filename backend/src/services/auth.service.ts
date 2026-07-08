@@ -48,7 +48,7 @@ export const beginRegistration = async (input: RegisterInput, req?: Request): Pr
   const fullName = safeString(input.full_name, 120);
   const submittedUsername = safeString(input.username, 40);
   const roles: UserRole[] = Array.isArray(input.roles) && input.roles.length > 0
-    ? input.roles.filter((r): r is UserRole => VALID_ROLES.has(r)).slice(0, 2)
+    ? input.roles.filter((r): r is UserRole => VALID_ROLES.has(r)).slice(0, 1)
     : ['bidder'];
   const password = String(input.password ?? '');
   const generic = { message: GENERIC_REGISTRATION_MESSAGE };

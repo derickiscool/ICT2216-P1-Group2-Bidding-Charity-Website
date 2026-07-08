@@ -74,7 +74,7 @@ export default function RegisterPage() {
   const { register, verifyRegistration, isLoading } = useAuthStore()
 
   const [form, setForm] = useState({ full_name: '', email: '', username: '', password: '', confirm: '' })
-  const [roles, setRoles] = useState<UserRole[]>(['bidder'])
+  const [role, setRole] = useState<UserRole>('bidder')
   const [showPwd, setShowPwd] = useState(false)
   const [showCfm, setShowCfm] = useState(false)
   const [agreed, setAgreed] = useState(false)
@@ -90,9 +90,6 @@ export default function RegisterPage() {
     setForm(prev => ({ ...prev, [f]: e.target.value }))
     setErrors(prev => ({ ...prev, [f]: '' }))
   }
-
-  const toggleRole = (r: UserRole) =>
-    setRoles(prev => prev.includes(r) ? (prev.length > 1 ? prev.filter(x => x !== r) : prev) : [...prev, r])
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -113,7 +110,7 @@ export default function RegisterPage() {
     e.preventDefault(); setGlobalErr(null); setNotice(null)
     if (!validate()) return
     try {
-      const message = await register({ full_name: form.full_name, email: form.email, username: form.username, password: form.password, roles })
+      const message = await register({ full_name: form.full_name, email: form.email, username: form.username, password: form.password, roles: [role] })
       setNotice(message)
       setStep('otp')
     } catch (err) {
@@ -288,13 +285,10 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <label className="text-sm font-medium" style={{ color: C.slate }}>I want to…</label>
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: C.mauveLight, color: C.mauve }}>Both can be selected</span>
-              </div>
+              <label className="block text-sm font-medium mb-2" style={{ color: C.slate }}>I want to…</label>
               <div className="flex gap-3">
-                <RoleCard label="Bid on items" desc="Browse and bid on charity auctions" selected={roles.includes('bidder')} onToggle={() => toggleRole('bidder')} />
-                <RoleCard label="Donate items" desc="List items for charity auctions" selected={roles.includes('donor')} onToggle={() => toggleRole('donor')} />
+                <RoleCard label="Bid on items" desc="Browse and bid on charity auctions" selected={role === 'bidder'} onToggle={() => setRole('bidder')} />
+                <RoleCard label="Donate items" desc="List items for charity auctions" selected={role === 'donor'} onToggle={() => setRole('donor')} />
               </div>
             </div>
 

@@ -67,13 +67,6 @@ export default function AboutPage() {
               onMouseLeave={e => e.currentTarget.style.background = 'var(--bfg-emerald)'}>
               Browse Auctions <ArrowRight className="w-4 h-4" />
             </Link>
-            <Link to="/charities"
-              className="inline-flex items-center gap-2 px-8 py-3.5 text-white font-medium rounded-xl transition-colors"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(187,176,155,0.22)' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}>
-              View Charities
-            </Link>
           </div>
 
         </div>
@@ -141,13 +134,6 @@ export default function AboutPage() {
               onMouseEnter={e => e.currentTarget.style.background = 'var(--bfg-emerald-dark)'}
               onMouseLeave={e => e.currentTarget.style.background = 'var(--bfg-emerald)'}>
               Browse Auctions <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link to="/charities"
-              className="px-8 py-3.5 font-medium rounded-xl transition-colors inline-flex items-center gap-2"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(187,176,155,0.22)', color: 'white' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}>
-              View Charities
             </Link>
           </div>
         </div>
