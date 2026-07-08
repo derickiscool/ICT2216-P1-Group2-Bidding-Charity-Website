@@ -8,7 +8,7 @@ import { notFound } from '../utils/errors';
 import { complete, listMine, processDeadlines, regenerateReceipt } from '../controllers/payment.controller';
 import { getReceiptByPaymentUuid } from '../services/receipt.service';
 
-const router = Router();
+const router: Router = Router();
 
 // Bidder-facing payment deadline screen.
 router.get('/mine', asyncHandler(authenticate), requireRole('bidder'), asyncHandler(listMine));

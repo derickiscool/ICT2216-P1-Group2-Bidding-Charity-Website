@@ -177,6 +177,9 @@ const parseRedisReply = (buffer: Buffer, offset = 0): { reply: RedisReply; offse
 const memoryStore = new MemoryLoginAttemptStore();
 
 const createStore = (): LoginAttemptStore => {
+  if (process.env.NODE_ENV === 'production' && process.env.LOGIN_ATTEMPT_CACHE !== 'redis') {
+    throw new Error('LOGIN_ATTEMPT_CACHE=redis is required in production for centralized failed-login tracking.');
+  }
   if (process.env.LOGIN_ATTEMPT_CACHE === 'redis') {
     if (!process.env.REDIS_URL) throw new Error('REDIS_URL must be configured when LOGIN_ATTEMPT_CACHE=redis.');
     return new RedisLoginAttemptStore(process.env.REDIS_URL);

@@ -4,6 +4,8 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { createApp } from './app';
 import { processAuctionDeadlines } from './services/payment.service';
+import { purgeExpiredSessions } from './services/session.service';
+import { writeSecurityLog } from './services/securityLog.service';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -39,6 +41,26 @@ const startPaymentDeadlineWorker = () => {
 };
 
 if (process.env.NODE_ENV !== 'test') startPaymentDeadlineWorker();
+
+const startSessionCleanupWorker = () => {
+  const run = async () => {
+    try {
+      await purgeExpiredSessions();
+    } catch (error) {
+      await writeSecurityLog({
+        type: 'SESSION_CLEANUP_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }).catch(() => undefined);
+    }
+  };
+
+  void run();
+  const interval = setInterval(() => { void run(); }, 5 * 60_000);
+  interval.unref();
+};
+
+if (process.env.NODE_ENV !== 'test') startSessionCleanupWorker();
 
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {

@@ -4,7 +4,7 @@ import { createApp } from '../../app';
 import {
   resetRepositoryForTests,
 } from '../../repositories/postgres.repository';
-import { readDevOtpForTest, clearDevOtpForTest, clearDevPasswordChangeOtpForTest } from '../../services/otpDelivery.service';
+import { readDevOtpForTest, clearDevEmailChangeOtpForTest, clearDevOtpForTest, clearDevPasswordChangeOtpForTest } from '../../services/otpDelivery.service';
 import { clearLoginAttemptCacheForTests } from '../../services/loginAttemptCache.service';
 import { closePool, query } from '../../utils/db';
 
@@ -22,7 +22,7 @@ export type ApiResponse = {
   message: string;
   code: string;
   token?: string;
-  errors: { password: string };
+  errors: Record<string, string>;
   user: { email: string; contactNumber?: string };
   data: TestListing[];
   id: number;
@@ -40,9 +40,11 @@ export const startServer = async () => {
   process.env.NODE_ENV = 'test';
   process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-ci';
   process.env.MAIL_DELIVERY_DISABLED = 'true';
+  process.env.SEED_DEMO_PASSWORD = 'S3cure!Pass2026';
   delete process.env.LOGIN_ATTEMPT_CACHE;
   delete process.env.REDIS_URL;
   clearDevOtpForTest();
+  clearDevEmailChangeOtpForTest();
   clearDevPasswordChangeOtpForTest();
   clearLoginAttemptCacheForTests();
   await resetRepositoryForTests();

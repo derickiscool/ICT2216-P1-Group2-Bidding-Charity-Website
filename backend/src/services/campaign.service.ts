@@ -5,7 +5,7 @@ import {
   getCharityById, getCharityByOwnerUserId, listCampaignsByCharity, updateCampaign,
 } from '../repositories';
 import { badRequest, forbidden, notFound } from '../utils/errors';
-import { sanitizeText } from '../utils/security';
+import { containsScriptLikeContent, safeString, sanitizeText } from '../utils/security';
 import { audit } from './audit.service';
 
 const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -39,8 +39,12 @@ const requireApproved = (charity: CharityOrganisation): void => {
 
 const validateCampaignFields = (body: Record<string, unknown>) => {
   const errors: Record<string, string> = {};
-  const name = sanitizeText(body.name, 90);
-  const description = sanitizeText(body.description, 600);
+  const rawName = safeString(body.name, 90);
+  const rawDescription = safeString(body.description, 600);
+  if (containsScriptLikeContent(rawName)) errors.name = 'Campaign name cannot contain script-like content.';
+  if (containsScriptLikeContent(rawDescription)) errors.description = 'Campaign description cannot contain script-like content.';
+  const name = sanitizeText(rawName, 90);
+  const description = sanitizeText(rawDescription, 600);
 
   if (name.length < 5) errors.name = 'Campaign name must be at least 5 characters.';
   if (description.length < 20) errors.description = 'Description must be at least 20 characters.';

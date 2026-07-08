@@ -1,4 +1,5 @@
 import multer from 'multer';
+import type { RequestHandler } from 'express';
 import { badRequest } from '../utils/errors';
 
 // Image-upload guardrails for FR07
@@ -19,7 +20,7 @@ const ALLOWED_LISTING_IMAGE_MIME_TYPES = new Set([
 // (MulterError LIMIT_FIELD_VALUE, surfaced to users as "An unexpected error occurred").
 const MAX_EXISTING_IMAGES_FIELD_BYTES = Math.ceil(MAX_LISTING_IMAGE_BYTES * 1.4) * MAX_LISTING_IMAGES + 1024;
 
-export const uploadListingImages = multer({
+export const uploadListingImages: RequestHandler = multer({
   storage: multer.memoryStorage(),
   limits: {
     files: MAX_LISTING_IMAGES,

@@ -19,6 +19,7 @@ const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, 
 const OTP_TTL_MS = 3 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
 const VALID_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity_staff', 'charity', 'admin']);
+const PUBLIC_REGISTRATION_ROLES = new Set<UserRole>(['bidder', 'donor', 'charity']);
 const GENERIC_REGISTRATION_MESSAGE = 'If the account can be registered, a verification OTP will be sent to the submitted email address.';
 const PASSWORD_POLICY_MESSAGE = 'Password must be 8-128 characters and must not match known breached, common, or dictionary passwords.';
 const LOGIN_LOCKOUT_MESSAGE = 'Too many failed login attempts. Please try again later.';
@@ -62,6 +63,12 @@ export const beginRegistration = async (input: RegisterInput, req?: Request): Pr
   }
   if (!isStrongPassword(password)) errors.password = PASSWORD_POLICY_MESSAGE;
   if (roles.length === 0) errors.roles = 'At least one valid role is required.';
+  if (roles.some(role => !PUBLIC_REGISTRATION_ROLES.has(role))) {
+    errors.roles = 'This role cannot be selected during public registration.';
+  }
+  if (roles.includes('charity') && roles.length > 1) {
+    errors.roles = 'Charity organisation accounts must be registered separately from bidder or donor accounts.';
+  }
 
   if (usernameManagedByUser) {
     const existingUsername = await findUserByUsername(submittedUsername);
@@ -300,15 +307,15 @@ export const requestPasswordReset = async (emailInput: string, req?: Request): P
     await audit(req, 'AUTH_PASSWORD_RESET_SUPPRESSED', { email }, 'user');
     return { message: GENERIC_RESET_MESSAGE };
   }
-  const otp = crypto.randomInt(100000, 1000000).toString();
+  const resetToken = randomToken(32);
   await savePasswordResetToken({
     email,
-    tokenHash: sha256(otp),
+    tokenHash: sha256(resetToken),
     expiresAt: new Date(Date.now() + RESET_OTP_TTL_MS),
     attempts: 0,
     createdAt: new Date(),
   });
-  await sendPasswordResetOtp(email, otp);
+  await sendPasswordResetOtp(email, resetToken);
   await audit(req, 'AUTH_PASSWORD_RESET_REQUESTED', { email }, 'user', user.uuid, user.id);
   return { message: GENERIC_RESET_MESSAGE };
 };

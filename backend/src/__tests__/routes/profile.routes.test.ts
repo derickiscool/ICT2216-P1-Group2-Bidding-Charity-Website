@@ -9,7 +9,9 @@ import {
   registerVerifiedUser,
 } from '../helpers/setup';
 import {
+  clearDevEmailChangeOtpForTest,
   clearDevPasswordChangeOtpForTest,
+  readDevEmailChangeOtpForTest,
   readDevPasswordChangeOtpForTest,
 } from '../../services/otpDelivery.service';
 
@@ -72,6 +74,48 @@ describe('FR03 — profile details and contact number updates', () => {
     assert.equal(res.response.status, 400);
     const errors = res.body.errors as unknown as Record<string, string>;
     assert.match(errors.email, /cannot be changed/i);
+  });
+
+  test('updates email only after password reauthentication and both email codes are verified', async () => {
+    const email = 'fr03-email-change@example.com';
+    const newEmail = 'fr03-email-change-new@example.com';
+    await registerVerifiedUser({ email, username: 'fr03emailchange', full_name: 'FR03 Email Change', password: PASSWORD, roles: ['bidder'] });
+    const { cookie, csrf } = await loginAs(email, PASSWORD);
+    clearDevEmailChangeOtpForTest();
+
+    const start = await postJson(
+      '/api/users/profile/email/request',
+      { currentPassword: PASSWORD, newEmail },
+      authHeaders(cookie, csrf),
+    );
+    assert.equal(start.response.status, 202);
+
+    const currentCode = readDevEmailChangeOtpForTest(email);
+    assert.match(String(currentCode), /^\d{6}$/);
+
+    const currentVerified = await postJson(
+      '/api/users/profile/email/verify-current',
+      { verificationCode: currentCode },
+      authHeaders(cookie, csrf),
+    );
+    assert.equal(currentVerified.response.status, 202);
+
+    const newCode = readDevEmailChangeOtpForTest(newEmail);
+    assert.match(String(newCode), /^\d{6}$/);
+
+    const changed = await putJson(
+      '/api/users/profile/email',
+      { verificationCode: newCode },
+      authHeaders(cookie, csrf),
+    );
+    assert.equal(changed.response.status, 200);
+    assert.equal(changed.body.user.email, newEmail);
+
+    const oldLogin = await postJson('/api/auth/login', { email, password: PASSWORD });
+    assert.equal(oldLogin.response.status, 401);
+
+    const newLogin = await postJson('/api/auth/login', { email: newEmail, password: PASSWORD });
+    assert.equal(newLogin.response.status, 200);
   });
 });
 

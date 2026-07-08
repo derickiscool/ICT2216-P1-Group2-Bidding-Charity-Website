@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { getApprovedCharities, getCharities, getCharityDashboard, registerCharity, reviewCharity, streamCharityDocument } from '../services/charity.service';
-import { getCharityById, listAllActiveCampaigns, listListings } from '../repositories';
+import { getCharityById, listAllActiveCampaigns } from '../repositories';
 
 export const createCharityRegistration = async (req: Request, res: Response): Promise<void> => {
   const charity = await registerCharity(req);
@@ -14,21 +14,13 @@ export const listCharityRegistrations = async (_req: Request, res: Response): Pr
 // Public endpoint — returns only approved charities for the donor listing creation form.
 export const listApprovedCharities = async (_req: Request, res: Response): Promise<void> => {
   const charities = await getApprovedCharities();
-  const allListings = await listListings();
   // Shape the response to only expose what the public needs (no internal document hashes, etc.)
   res.json(
-    charities.map(c => {
-      const charityListings = allListings.filter(
-        l => l.charityName.toLowerCase() === c.organisationName.toLowerCase() && l.status === 'sold'
-      );
-      const totalRaised = charityListings.reduce((sum, l) => sum + Number(l.current_bid), 0);
-      return {
-        id: c.id,
-        name: c.organisationName,
-        description: c.description,
-        totalRaised,
-      };
-    })
+    charities.map(c => ({
+      id: c.id,
+      name: c.organisationName,
+      description: c.description,
+    }))
   );
 };
 

@@ -253,6 +253,7 @@ export interface Payment {
   payment_ref: string;
   escrow_state: EscrowState;
   status: PaymentStatus;
+  escrow_release_hash?: string;
   payment_deadline: string;
   offered_at: string;
   paid_at?: string;

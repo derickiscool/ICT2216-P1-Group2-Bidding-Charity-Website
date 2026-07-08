@@ -62,6 +62,7 @@ export interface BidForGoodRepository {
   updateSession(record: SessionRecord): Promise<void>;
   revokeSession(sid: string): Promise<void>;
   revokeAllSessionsByUserId(userId: number): Promise<void>;
+  purgeExpiredSessions(now?: Date): Promise<number>;
 
   savePasswordResetToken(token: PasswordResetToken): Promise<void>;
   getPasswordResetTokenByEmail(email: string): Promise<PasswordResetToken | undefined>;
@@ -73,7 +74,6 @@ export interface BidForGoodRepository {
   getCharityByOwnerUserId(ownerUserId: number): Promise<CharityOrganisation | undefined>;
   listCharities(): Promise<CharityOrganisation[]>;
   updateCharity(record: CharityOrganisation): Promise<void>;
-  deleteCharityByUuid(uuid: string): Promise<void>;
 
   addCampaign(input: NewCampaignInput): Promise<Campaign>;
   getCampaignById(id: number): Promise<Campaign | undefined>;

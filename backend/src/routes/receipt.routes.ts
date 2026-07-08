@@ -5,7 +5,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { listMine, viewReceipt, viewReceiptByPayment } from '../controllers/receipt.controller';
 import { requireRole } from '../middleware/rbac.middleware';
 
-const router = Router();
+const router: Router = Router();
 
 router.get('/mine', asyncHandler(authenticate), requireRole('bidder'), asyncHandler(listMine));
 router.get('/by-payment/:uuid', asyncHandler(authenticate), asyncHandler(viewReceiptByPayment));

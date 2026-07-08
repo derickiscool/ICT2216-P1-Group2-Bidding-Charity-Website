@@ -18,13 +18,14 @@ Then set the backend environment:
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=bidforgood
-DB_USER=postgres
+DB_USER=bidforgood_app
 DB_PASSWORD=your_password_here
 JWT_SECRET=replace_with_at_least_32_random_characters
-LOGIN_ATTEMPT_CACHE=memory
+LOGIN_ATTEMPT_CACHE=redis
 ```
 
-For a multi-server deployment, use the central Redis-compatible in-memory
+Production must use a least-privilege database user. Create it with only the
+permissions required by the application, and use a central Redis-compatible
 cache for failed-login tracking:
 
 ```bash
