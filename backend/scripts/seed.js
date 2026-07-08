@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { run: secureStoredData } = require('./secure-stored-data');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const pool = new Pool({
@@ -16,6 +17,7 @@ const run = async () => {
   const sql = fs.readFileSync(seedPath, 'utf8');
   await pool.query(sql);
   await pool.end();
+  await secureStoredData();
   console.log(`Demo data seeded into database "${process.env.DB_NAME || 'bidforgood'}".`);
 };
 
