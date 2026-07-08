@@ -1,12 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { frontendSecurityHeaders } from './src/config/securityHeaders'
+import { frontendDevSecurityHeaders, frontendSecurityHeaders } from './src/config/securityHeaders'
 
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    headers: frontendSecurityHeaders,
+    headers: frontendDevSecurityHeaders,
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
